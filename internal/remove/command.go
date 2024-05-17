@@ -19,8 +19,8 @@ import (
 type Command struct {
 	KeepLocal bool `long:"keep-local" description:"by default, the local files will be deleted upon successfully deleted in S3; specify this to keep the local files intact"`
 	Args      struct {
-		Files []flags.Filename `positional-arg-name:"file" description:"the local files each containing a single S3 URI"`
-	} `positional-args:"yes" required:"yes"`
+		Files []flags.Filename `positional-arg-name:"file" description:"the local files each containing a single S3 URI" required:"yes"`
+	} `positional-args:"yes"`
 
 	client *s3.Client
 }

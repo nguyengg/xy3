@@ -18,8 +18,8 @@ import (
 type Command struct {
 	MaxConcurrency int `short:"P" long:"max-concurrency" description:"use up to max-concurrency number of goroutines at a time. If not given, default to the number of logical CPUs." default:"0"`
 	Args           struct {
-		Files []flags.Filename `positional-arg-name:"file" description:"the local files each containing a single S3 URI"`
-	} `positional-args:"yes" required:"yes"`
+		Files []flags.Filename `positional-arg-name:"file" description:"the local files each containing a single S3 URI" required:"yes"`
+	} `positional-args:"yes"`
 
 	client *s3.Client
 }
