@@ -3,11 +3,11 @@ package main
 import (
 	"fmt"
 	"github.com/jessevdk/go-flags"
+	"github.com/nguyengg/xy3/internal/download"
+	"github.com/nguyengg/xy3/internal/remove"
+	"github.com/nguyengg/xy3/internal/upload"
 	"os"
 	"runtime"
-	"xy3/internal/download"
-	"xy3/internal/remove"
-	"xy3/internal/upload"
 )
 
 var opts struct {

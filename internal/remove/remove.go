@@ -7,10 +7,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/nguyengg/xy3/internal/manifest"
 	"log"
 	"os"
 	"path/filepath"
-	"xy3/internal/manifest"
 )
 
 func (c *Command) remove(ctx context.Context, name string) error {

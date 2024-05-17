@@ -10,6 +10,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/nguyengg/xy3/internal"
+	"github.com/nguyengg/xy3/internal/manifest"
 	"golang.org/x/time/rate"
 	"hash"
 	"io"
@@ -19,8 +21,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"xy3/internal"
-	"xy3/internal/manifest"
 )
 
 // defaultPartSize is the size in bytes of each part.

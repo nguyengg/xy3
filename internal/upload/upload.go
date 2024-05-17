@@ -9,6 +9,8 @@ import (
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/nguyengg/xy3/internal"
+	"github.com/nguyengg/xy3/internal/manifest"
 	"golang.org/x/time/rate"
 	"io"
 	"log"
@@ -19,8 +21,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"xy3/internal"
-	"xy3/internal/manifest"
 )
 
 // maxUploadSize is the limit of the file size (5 TiB) that S3 multipart upload allows.
