@@ -87,7 +87,7 @@ func (c *Command) download(ctx context.Context, name string) error {
 
 	// attempt to create the local file that will store the downloaded artifact.
 	// if we fail to download the file complete, clean up by deleting the local file.
-	file, err = internal.OpenExclFile(basename, ext)
+	file, err = internal.OpenExclFile(strings.TrimSuffix(basename, ext), ext)
 	success := false
 	defer func(file *os.File) {
 		if name, _ = file.Name(), file.Close(); !success {
