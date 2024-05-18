@@ -11,7 +11,6 @@ import (
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/manifest"
-	"golang.org/x/time/rate"
 	"io"
 	"log"
 	"math"
@@ -70,7 +69,6 @@ func (c *Command) upload(ctx context.Context, name string) error {
 	logger.Printf(`start uploading %d parts to "s3://%s/%s"`, partCount, c.Bucket, key)
 
 	// for upload progress, only log every few seconds.
-	sometimes := rate.Sometimes{Interval: 3 * time.Second}
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 
@@ -161,17 +159,11 @@ func (c *Command) upload(ctx context.Context, name string) error {
 
 			i++
 			parts = append(parts, result.Part)
-
-			sometimes.Do(func() {
-				logger.Printf("uploaded %d/%d parts so far", i, partCount)
-			})
 		case <-ctx.Done():
 			logger.Printf("cancelled")
 			return nil
 		case <-ticker.C:
-			sometimes.Do(func() {
-				logger.Printf("no new part; uploaded %d/%d parts so far", i+1, partCount)
-			})
+			logger.Printf("uploaded %d/%d parts so far", i+1, partCount)
 		}
 	}
 	close(outputs)

@@ -12,7 +12,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/manifest"
-	"golang.org/x/time/rate"
 	"hash"
 	"io"
 	"log"
@@ -101,7 +100,6 @@ func (c *Command) download(ctx context.Context, name string) error {
 	logger.Printf(`start downloading %d parts from "s3://%s/%s" to "%s"`, partCount, man.Bucket, man.Key, file.Name())
 
 	// for download progress, only log every few seconds.
-	sometimes := rate.Sometimes{Interval: 3 * time.Second}
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 
@@ -168,17 +166,11 @@ func (c *Command) download(ctx context.Context, name string) error {
 				i++
 				part, ok = parts[i]
 			}
-
-			sometimes.Do(func() {
-				logger.Printf("downloaded %d/%d and wrote %d parts so far", n, partCount, i)
-			})
 		case <-ctx.Done():
 			logger.Printf("cancelled")
 			return nil
 		case <-ticker.C:
-			sometimes.Do(func() {
-				logger.Printf("no new part; downloaded %d/%d and wrote %d parts so far", n, partCount, i)
-			})
+			logger.Printf("downloaded %d/%d and wrote %d parts so far", n, partCount, i)
 		}
 
 	}
