@@ -2,9 +2,6 @@ package download
 
 import (
 	"context"
-	"crypto/sha256"
-	"crypto/sha512"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -12,7 +9,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/manifest"
-	"hash"
 	"io"
 	"log"
 	"math"
@@ -51,16 +47,9 @@ func (c *Command) download(ctx context.Context, name string) error {
 	ext := filepath.Ext(basename)
 
 	// while downloading, also computes checksum to verify against the downloaded content.
-	var h hash.Hash
-	switch {
-	case strings.HasPrefix(man.Checksum, "sha384-"):
-		h = sha512.New384()
-	case strings.HasPrefix(man.Checksum, "sha256-"):
-		h = sha256.New()
-	case man.Checksum == "":
-		break
-	default:
-		return fmt.Errorf("unknown checksum algorithm: %v", man.Checksum)
+	h, err := internal.NewFromChecksumString(man.Checksum)
+	if err != nil {
+		return err
 	}
 
 	// the S3 HeadObject request will give the size of the file which can be used to do range GETs.
@@ -100,7 +89,7 @@ func (c *Command) download(ctx context.Context, name string) error {
 	logger.Printf(`start downloading %d parts from "s3://%s/%s" to "%s"`, partCount, man.Bucket, man.Key, file.Name())
 
 	// for download progress, only log every few seconds.
-	ticker := time.NewTicker(3 * time.Second)
+	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
 	// first loop starts all the goroutines that are responsible for downloading the parts concurrently.
@@ -184,10 +173,8 @@ func (c *Command) download(ctx context.Context, name string) error {
 		return nil
 	}
 
-	expected := strings.SplitN(man.Checksum, "-", 2)[1]
-	actual := base64.StdEncoding.EncodeToString(h.Sum(nil))
-	if expected != actual {
-		logger.Printf("checksum does not match: expect %s, got %s", expected, actual)
+	if actual := h.SumToChecksumString(nil); man.Checksum != actual {
+		logger.Printf("checksum does not match: expect %s, got %s", man.Checksum, actual)
 	} else {
 		logger.Printf("checksum matches")
 	}

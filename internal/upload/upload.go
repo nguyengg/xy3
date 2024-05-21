@@ -9,6 +9,7 @@ import (
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/dustin/go-humanize"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"io"
@@ -43,9 +44,20 @@ func (c *Command) upload(ctx context.Context, name string) error {
 	ext := filepath.Ext(basename)
 	logger := log.New(os.Stderr, `"`+basename+`" `, log.LstdFlags|log.Lmsgprefix)
 
-	file, size, checksum, contentType, err := c.validate(name)
+	// preflight involves validation and possibly compressing a directory.
+	filename, size, checksum, contentType, err := c.preflight(ctx, logger, name)
+	if size > maxUploadSize {
+		return fmt.Errorf("upload size (%d - %s) is larger than limit (%d - %s)",
+			size, humanize.Bytes(uint64(size)),
+			maxUploadSize, humanize.Bytes(uint64(maxUploadSize)))
+	}
+	if size == 0 {
+		return fmt.Errorf("upload file is empty")
+	}
+
+	file, err := os.Open(filename)
 	if err != nil {
-		return err
+		return fmt.Errorf("open file error: %w", err)
 	}
 	defer func(file *os.File) {
 		_ = file.Close()
@@ -60,6 +72,7 @@ func (c *Command) upload(ctx context.Context, name string) error {
 		Bucket:              c.Bucket,
 		Key:                 key,
 		ExpectedBucketOwner: c.ExpectedBucketOwner,
+		Size:                size,
 		Checksum:            checksum,
 	}
 
@@ -69,7 +82,7 @@ func (c *Command) upload(ctx context.Context, name string) error {
 	logger.Printf(`start uploading %d parts to "s3://%s/%s"`, partCount, c.Bucket, key)
 
 	// for upload progress, only log every few seconds.
-	ticker := time.NewTicker(3 * time.Second)
+	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
 	// start the multipart upload, and if the operation fails then use a deferred function to abort the multipart upload.
@@ -203,8 +216,8 @@ func (c *Command) upload(ctx context.Context, name string) error {
 	logger.Printf(`wrote to manifest "%s"`, file.Name())
 
 	if c.Delete {
-		logger.Printf(`deleting file "%s"`, name)
-		if err = os.Remove(name); err != nil {
+		logger.Printf(`deleting file "%s"`, filename)
+		if err = os.Remove(filename); err != nil {
 			logger.Printf("delete file error: %v", err)
 		}
 	}

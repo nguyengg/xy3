@@ -11,6 +11,7 @@ type Manifest struct {
 	Bucket              string  `json:"bucket"`
 	Key                 string  `json:"key"`
 	ExpectedBucketOwner *string `json:"expectedBucketOwner,omitempty"`
+	Size                int64   `json:"size,omitempty"`
 	Checksum            string  `json:"checksum,omitempty"`
 }
 
