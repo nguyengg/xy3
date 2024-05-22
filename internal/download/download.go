@@ -86,6 +86,11 @@ func (c *Command) download(ctx context.Context, name string) error {
 		}
 	}(file)
 
+	var w io.Writer = file
+	if h != nil {
+		w = io.MultiWriter(file, h)
+	}
+
 	logger.Printf(`start downloading %d parts from "s3://%s/%s" to "%s"`, partCount, man.Bucket, man.Key, file.Name())
 
 	// for download progress, only log every few seconds.
@@ -141,13 +146,8 @@ func (c *Command) download(ctx context.Context, name string) error {
 			n++
 
 			for part, ok := parts[i]; ok; {
-				if _, err = file.Write(part.Data); err != nil {
+				if _, err = w.Write(part.Data); err != nil {
 					return fmt.Errorf("write part %d/%d to file error: %w", i, partCount, err)
-				}
-				if h != nil {
-					if _, err = h.Write(part.Data); err != nil {
-						return fmt.Errorf("compute file checksum error: %w", err)
-					}
 				}
 
 				delete(parts, i)
@@ -174,6 +174,7 @@ func (c *Command) download(ctx context.Context, name string) error {
 	}
 
 	if actual := h.SumToChecksumString(nil); man.Checksum != actual {
+		// TODO fix the bug where the actual checksum is always different from the expected checksum.
 		logger.Printf("checksum does not match: expect %s, got %s", man.Checksum, actual)
 	} else {
 		logger.Printf("checksum matches")
