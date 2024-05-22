@@ -1,0 +1,83 @@
+package zipper
+
+import (
+	"context"
+	"io/fs"
+	"log"
+	"os"
+	"path/filepath"
+)
+
+// ProgressReporter is called to provide update on compressing individual files.
+//
+//   - src: path of the file being added to the archive
+//   - dst: relative path of the file in the archive
+//   - written: number of bytes of the file that has been read and written to archive so far
+//   - done: is true only when the file has been read and written in its entirety
+//
+// The method will be called at least once for every file being compressed. If the file is small enough to fit into one
+// read (see DefaultBufferSize), then the method is called exactly once with `done` being true.
+type ProgressReporter func(src, dst string, written int64, done bool)
+
+// DefaultProgressReporter is the default report that only reports upon a file being successfully added to archive.
+func DefaultProgressReporter(src, dst string, written int64, done bool) {
+	if done {
+		log.Printf(`added "%s" to archive`, dst)
+	}
+}
+
+// NewDirectoryProgressReporter creates a progress reporter intended to be used for compressing a directory.
+//
+// Specifically, the new progress reporter is aware of how many files are there to be compressed by doing a preflight
+// filepath.WalkDir (also cancellable), and for each file being compressed, the reporter is aware of the total number of
+// bytes for that file. If the initial filepath.WalkDir fails, its error wil be returned.
+//
+//   - src: path of the file being added to the archive
+//   - dst: relative path of the file in the archive
+//   - written: number of bytes of the file that has been read and written to archive so far
+//   - size: the total number of bytes of the file being compressed. Can be -1 if os.Stat fails.
+//   - done: is true only when the file has been read and written in its entirety (written==size)
+//   - wc: the number of files that has been written to archive so far
+//   - fc: the total number of files to be written to archive
+func NewDirectoryProgressReporter(ctx context.Context, root string, reporter func(src, dst string, written, size int64, done bool, wc, fc int)) (ProgressReporter, error) {
+	sizes := make(map[string]int64)
+	var wc, fc int
+
+	return func(src, dst string, written int64, done bool) {
+			size, ok := sizes[src]
+			if !ok {
+				fi, err := os.Stat(src)
+				if err != nil {
+					sizes[src] = -1
+					size = -1
+				} else {
+					size = fi.Size()
+				}
+			}
+
+			if done {
+				wc++
+				delete(sizes, src)
+			}
+
+			reporter(src, dst, written, size, done, wc, fc)
+		}, filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			select {
+			case <-ctx.Done():
+				// ctx.Err is not supposed to return nil here if ctx.Done() is closed.
+				if err = ctx.Err(); err == nil {
+					return filepath.SkipAll
+				}
+				return err
+			default:
+				break
+			}
+
+			if err != nil || d.IsDir() || !d.Type().IsRegular() {
+				return err
+			}
+
+			fc++
+			return nil
+		})
+}

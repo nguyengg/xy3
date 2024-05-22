@@ -1,14 +1,13 @@
 package upload
 
 import (
-	"archive/zip"
-	"compress/flate"
 	"context"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/nguyengg/xy3/internal"
+	"github.com/nguyengg/xy3/internal/cksum"
+	"github.com/nguyengg/xy3/internal/zipper"
 	"io"
-	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -38,84 +37,37 @@ func (c *Command) compress(ctx context.Context, logger *log.Logger, root string)
 		}
 	}()
 
-	// use MultiWriter to compress and compute checksum at the same time.
-	h := internal.NewHasher()
-	w := zip.NewWriter(io.MultiWriter(out, h))
-	w.RegisterCompressor(zip.Deflate, func(w io.Writer) (io.WriteCloser, error) {
-		return flate.NewWriter(w, flate.BestCompression)
-	})
-	defer func(w *zip.Writer) {
-		_ = w.Close()
-	}(w)
-
 	// report compress progress every few seconds.
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
-	// to be able to report progress, we'll do filepath.WalkDir twice, the first time to tally up the number of files,
-	// the second time to actually perform the archiving.
-	fc := 0
-	if err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	// use MultiWriter to compress and compute checksum at the same time.
+	h := cksum.NewHasher()
+	z := zipper.New()
+	z.ProgressReporter, err = zipper.NewDirectoryProgressReporter(ctx, root, func(src, dst string, written, size int64, done bool, wc, fc int) {
+		if done && wc == fc {
+			logger.Printf("[%d/%d] done compressing all files", wc, fc)
+			return
+		}
+
 		select {
-		case <-ctx.Done():
-			return filepath.SkipAll
 		case <-ticker.C:
-			logger.Printf("found %d files to be compressed so far", fc)
+			if done {
+				logger.Printf("[%d/%d] done compressing %s", wc, fc, dst)
+			} else {
+				logger.Printf("[%d/%d] compressed %.2f%% of %s so far", wc, fc, 100.0*float64(written)/float64(size), dst)
+			}
 		default:
+			break
 		}
-
-		if err != nil || d.IsDir() || !d.Type().IsRegular() {
-			return err
-		}
-
-		fc++
-		return nil
-	}); err != nil {
-		return
+	})
+	if err == nil {
+		err = z.CompressDir(ctx, root, io.MultiWriter(out, h), false)
 	}
-
-	cc := 0
-	if err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		select {
-		case <-ctx.Done():
-			return filepath.SkipAll
-		case <-ticker.C:
-			logger.Printf("compressed %d/%d files so far", cc, fc)
-		default:
-		}
-
-		if err != nil || d.IsDir() || !d.Type().IsRegular() {
-			return err
-		}
-
-		src, err := os.Open(path)
-		if err != nil {
-			return fmt.Errorf(`open file "%s" error: %w`, path, err)
-		}
-		defer func(f *os.File) {
-			_ = f.Close()
-		}(src)
-
-		p, err := filepath.Rel(root, path)
-		if err != nil {
-			return fmt.Errorf(`determine file "%s" rel path error: %w`, path, err)
-		}
-		dst, err := w.Create(filepath.Join(base, p))
-		if _, err = io.Copy(dst, src); err != nil {
-			return fmt.Errorf(`archive file "%s", error: %w`, path, err)
-		}
-
-		cc++
-		return nil
-	}); err != nil {
-		return
-	}
-
-	if err = ctx.Err(); err != nil {
+	if err != nil {
 		return
 	}
 
 	checksum = h.SumToChecksumString(nil)
-	logger.Printf("done compressing %d/%d files", cc, fc)
 	return
 }

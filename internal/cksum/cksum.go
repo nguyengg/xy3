@@ -1,4 +1,4 @@
-package internal
+package cksum
 
 import (
 	"crypto/sha256"
@@ -16,8 +16,8 @@ type Hasher struct {
 
 func NewHasher() *Hasher {
 	return &Hasher{
-		w:      sha512.New384(),
-		prefix: "sha384-",
+		w:      sha256.New(),
+		prefix: "sha256-",
 	}
 }
 

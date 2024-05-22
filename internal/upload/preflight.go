@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/nguyengg/xy3/internal"
+	"github.com/nguyengg/xy3/internal/cksum"
 	"io"
 	"log"
 	"net/http"
@@ -67,7 +67,7 @@ func (c *Command) preflight(ctx context.Context, logger *log.Logger, name string
 		contentType = &v
 	}
 
-	h := internal.NewHasher()
+	h := cksum.NewHasher()
 	_, err = h.Write(data)
 	if err != nil {
 		_, err = io.Copy(h, file)

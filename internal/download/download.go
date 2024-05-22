@@ -8,6 +8,7 @@ import (
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/nguyengg/xy3/internal"
+	"github.com/nguyengg/xy3/internal/cksum"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"io"
 	"log"
@@ -47,7 +48,7 @@ func (c *Command) download(ctx context.Context, name string) error {
 	ext := filepath.Ext(basename)
 
 	// while downloading, also computes checksum to verify against the downloaded content.
-	h, err := internal.NewFromChecksumString(man.Checksum)
+	h, err := cksum.NewFromChecksumString(man.Checksum)
 	if err != nil {
 		return err
 	}
