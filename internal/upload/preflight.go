@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 )
 
 // preflight validates the file (specified by "name" argument) to be uploaded.
@@ -16,9 +17,10 @@ import (
 // If the file is a directory, an archive will be created to recursively compress all files in the directory, and the
 // name of the archive is returned as the filename parameter. Otherwise, the returned filename parameter will be
 // identical to the name argument.
-func (c *Command) preflight(ctx context.Context, logger *log.Logger, name string) (filename string, size int64, checksum string, contentType *string, err error) {
+func (c *Command) preflight(ctx context.Context, logger *log.Logger, name string) (filename, ext string, size int64, checksum string, contentType *string, err error) {
+	filename, ext = name, filepath.Ext(name)
+
 	// name can either be a file or a directory, so use stat to determine what to do.
-	filename = name
 	fi, err := os.Stat(name)
 	if err != nil {
 		err = fmt.Errorf("describe file error: %w", err)
@@ -26,7 +28,7 @@ func (c *Command) preflight(ctx context.Context, logger *log.Logger, name string
 	}
 
 	if fi.IsDir() {
-		filename, checksum, err = c.compress(ctx, logger, name)
+		filename, ext, checksum, contentType, err = c.compress(ctx, logger, name)
 		if err != nil {
 			err = fmt.Errorf("compress directory error: %w", err)
 			return

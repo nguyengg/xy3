@@ -41,11 +41,10 @@ type uploadOutput struct {
 
 func (c *Command) upload(ctx context.Context, name string) error {
 	basename := filepath.Base(name)
-	ext := filepath.Ext(basename)
 	logger := log.New(os.Stderr, `"`+basename+`" `, log.LstdFlags|log.Lmsgprefix)
 
 	// preflight involves validation and possibly compressing a directory.
-	filename, size, checksum, contentType, err := c.preflight(ctx, logger, name)
+	filename, ext, size, checksum, contentType, err := c.preflight(ctx, logger, name)
 	if size > maxUploadSize {
 		return fmt.Errorf("upload size (%d - %s) is larger than limit (%d - %s)",
 			size, humanize.Bytes(uint64(size)),
@@ -63,7 +62,7 @@ func (c *Command) upload(ctx context.Context, name string) error {
 		_ = file.Close()
 	}(file)
 
-	key, err := c.findUnusedS3Key(ctx, basename, ext)
+	key, err := c.findUnusedS3Key(ctx, strings.TrimSuffix(filename, ext), ext)
 	if err != nil {
 		return err
 	}
@@ -91,7 +90,7 @@ func (c *Command) upload(ctx context.Context, name string) error {
 		Key:                 aws.String(key),
 		ExpectedBucketOwner: c.ExpectedBucketOwner,
 		ContentType:         contentType,
-		Metadata:            map[string]string{"name": basename, "checksum": checksum},
+		Metadata:            map[string]string{"name": filename, "checksum": checksum},
 		StorageClass:        s3types.StorageClassIntelligentTiering,
 	})
 	if err != nil {
@@ -207,7 +206,7 @@ func (c *Command) upload(ctx context.Context, name string) error {
 
 	// now generate the local .s3 file that contains the S3 URI. if writing to file fails, prints the JSON content to
 	// standard output so that they can be saved manually later.
-	if file, err = internal.OpenExclFile(strings.TrimSuffix(basename, ext), ext+".s3"); err == nil {
+	if file, err = internal.OpenExclFile(strings.TrimSuffix(filename, ext), ext+".s3"); err == nil {
 		err = man.MarshalTo(file)
 	}
 	if _ = file.Close(); err != nil {
@@ -226,8 +225,8 @@ func (c *Command) upload(ctx context.Context, name string) error {
 }
 
 // findUnusedS3Key returns an S3 key pointing to a non-existing S3 object that can be used to upload file.
-func (c *Command) findUnusedS3Key(ctx context.Context, basename, ext string) (string, error) {
-	key := c.Prefix + basename
+func (c *Command) findUnusedS3Key(ctx context.Context, stem, ext string) (string, error) {
+	key := c.Prefix + stem + ext
 	for i := 0; ; {
 		if _, err := c.client.HeadObject(ctx, &s3.HeadObjectInput{
 			Bucket:              aws.String(c.Bucket),
@@ -246,7 +245,7 @@ func (c *Command) findUnusedS3Key(ctx context.Context, basename, ext string) (st
 			return "", fmt.Errorf("find unused S3 key error: %w", err)
 		}
 		i++
-		key = c.Prefix + strings.TrimSuffix(basename, ext) + "-" + strconv.Itoa(i) + ext
+		key = c.Prefix + stem + "-" + strconv.Itoa(i) + ext
 	}
 
 	return key, nil

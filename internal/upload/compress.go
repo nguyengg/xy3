@@ -5,6 +5,7 @@ import (
 	"compress/flate"
 	"context"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/nguyengg/xy3/internal"
 	"io"
 	"io/fs"
@@ -18,11 +19,12 @@ import (
 //
 // All files in the archive include root's basename in its path, meaning the top-level file of the archive output is
 // the root directory itself.
-func (c *Command) compress(ctx context.Context, logger *log.Logger, root string) (name string, checksum string, err error) {
+func (c *Command) compress(ctx context.Context, logger *log.Logger, root string) (name, ext, checksum string, contentType *string, err error) {
 	base := filepath.Base(root)
+	ext, contentType = ".zip", aws.String("application/zip")
 
 	// a new file will always be created, and if the operation fails, the file will be auto deleted.
-	out, err := internal.OpenExclFile(base, ".zip")
+	out, err := internal.OpenExclFile(base, ext)
 	if err != nil {
 		err = fmt.Errorf("create archive error: %w", err)
 		return
