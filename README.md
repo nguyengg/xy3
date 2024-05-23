@@ -14,7 +14,7 @@ The program has three subcommands and can be used as standalone program as well:
 * [Download](#download)
 * [Remove](#remove)
 
-```shell
+```
 $ xy3 -h
 Usage:
   main [OPTIONS] <download | remove | upload>
@@ -33,7 +33,7 @@ Available commands:
 
 ## Upload
 
-```shell
+```
 $ xy3 up -h
 Usage:
   xy3 [OPTIONS] upload [upload-OPTIONS] [file...]
@@ -68,7 +68,7 @@ Help Options:
 
 ## Download
 
-```shell
+```
 $ xy3 up -h
 Usage:
   xy3 [OPTIONS] download [download-OPTIONS] file...
@@ -91,7 +91,7 @@ Help Options:
 
 ## Remove
 
-```shell
+```
 $ xy3 rm -h
 Usage:
   xy3 [OPTIONS] remove [remove-OPTIONS] file...
