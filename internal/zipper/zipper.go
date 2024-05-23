@@ -13,20 +13,6 @@ import (
 
 // Zipper is used to recursively compress (with zip) a directory or file with progress report and cancellable context.
 type Zipper struct {
-	// JunkRoot determines whether all compressed files are under a single root directory hierarchy or not.
-	//
-	// For example, when compressing directory named "test" with JunkRoot being false by default, all files in that
-	// directory and their children will be added to archive using these paths:
-	// 		test/a.txt
-	//		test/path/b.txt
-	//		test/another/path/c.txt
-	//
-	// If JunkRoot is true, the files will use these paths:
-	//		a.txt
-	//		path/b.txt
-	//		another/path/c.txt
-	JunkRoot bool
-
 	// ProgressReporter controls how progress is reported.
 	ProgressReporter ProgressReporter
 
@@ -46,7 +32,7 @@ func New() *Zipper {
 	}
 }
 
-// NoCompressionZipWriter returns a zip.Writer that registers flate.NoCompression as its compression.
+// NoCompressionZipWriter returns a zip.Writer that registers flate.NoCompression as its compressor.
 func NoCompressionZipWriter(w io.Writer) *zip.Writer {
 	zw := zip.NewWriter(w)
 	zw.RegisterCompressor(zip.Deflate, func(w io.Writer) (io.WriteCloser, error) {
@@ -55,7 +41,7 @@ func NoCompressionZipWriter(w io.Writer) *zip.Writer {
 	return zw
 }
 
-// BestCompressionZipWriter returns a zip.Writer that registers flate.BestCompression as its compression.
+// BestCompressionZipWriter returns a zip.Writer that registers flate.BestCompression as its compressor.
 func BestCompressionZipWriter(w io.Writer) *zip.Writer {
 	zw := zip.NewWriter(w)
 	zw.RegisterCompressor(zip.Deflate, func(w io.Writer) (io.WriteCloser, error) {
