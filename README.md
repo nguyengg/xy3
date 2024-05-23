@@ -3,9 +3,10 @@
 `xy3` is born out of my need to create S3 backups while using [XYplorer](https://en.wikipedia.org/wiki/XYplorer). Here
 are the XYplorer's file associations that I use:
 ```
-|"Download from S3" s3>"xy3.exe" "download" -p default
-|"Delete from S3" s3>"xy3.exe" "rm" -p default
-|"Upload to S3" *>"xy3.exe" "upload" -b "bucket-name" -k "<curfolder>/" -p default
+|"Download from S3" s3>"xy3.exe" "download"
+|"Delete from S3" s3>"xy3.exe" "rm"
+|"Compress and upload to S3" \>"xy3.exe" "upload" -b "bucket-name" -k "<curfolder>/"
+|"Upload to S3" *>"xy3.exe" "upload" -b "bucket-name" -k "<curfolder>/"
 ```
 
 The program has three subcommands and can be used as standalone program as well:
@@ -16,7 +17,7 @@ The program has three subcommands and can be used as standalone program as well:
 ```shell
 $ xy3 -h
 Usage:
-  xy3 [OPTIONS] <download | remove | upload>
+  main [OPTIONS] <download | remove | upload>
 
 Application Options:
   -p, --profile= override AWS_PROFILE if given
@@ -27,7 +28,7 @@ Help Options:
 Available commands:
   download  download files from S3 (aliases: down)
   remove    remove both local and S3 files (aliases: rm)
-  upload    upload files to S3 (aliases: up)
+  upload    upload files or directories (after compressing the directories with zip) to S3 (aliases: up)
 ```
 
 ## Upload
@@ -35,7 +36,7 @@ Available commands:
 ```shell
 $ xy3 up -h
 Usage:
-  xy3 [OPTIONS] upload [upload-OPTIONS] file...
+  xy3 [OPTIONS] upload [upload-OPTIONS] [file...]
 
 Application Options:
   -p, --profile=                   override AWS_PROFILE if given
@@ -50,14 +51,19 @@ Help Options:
           --expected-bucket-owner= optional ExpectedBucketOwner field to
                                    apply to all S3 operations
       -d, --delete                 if given, the local files will be
-                                   deleted only if uploaded successfully
+                                   deleted only upon successful upload. If
+                                   compressing a directory, the directory
+                                   will not be deleted but the intermediate
+                                   archive will be.
       -P, --max-concurrency=       use up to max-concurrency number of
                                    goroutines at a time. If not given,
                                    default to the number of logical CPUs.
                                    (default: 0)
 
 [upload command arguments]
-  file:                            the local files to be uploaded to S3
+  file:                            the local files or directories (after
+                                   compressing the directories with zip)
+                                   to be uploaded to S3
 ```
 
 ## Download
