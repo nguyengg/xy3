@@ -49,9 +49,9 @@ func (c *Command) compress(ctx context.Context, logger *log.Logger, root string)
 		select {
 		case <-ticker.C:
 			if done {
-				logger.Printf("[%d/%d] done compressing %s", wc, fc, dst)
+				logger.Printf(`[%d/%d] done compressing "%s"`, wc, fc, dst)
 			} else {
-				logger.Printf("[%d/%d] compressed %.2f%% of %s so far", wc, fc, 100.0*float64(written)/float64(size), dst)
+				logger.Printf(`[%d/%d] compressed %.2f%% of "%s" so far`, wc, fc, 100.0*float64(written)/float64(size), dst)
 			}
 		default:
 			break

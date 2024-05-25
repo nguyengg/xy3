@@ -154,7 +154,7 @@ partLoop:
 
 				for part, ok := parts[nextPartToWrite]; ok; {
 					if _, err = w.Write(part.Data); err != nil {
-						return fmt.Errorf("write part %d/%d to file error: %w", nextPartToWrite, partCount, err)
+						return fmt.Errorf("write part %d/%d to file error: %w", nextPartToWrite-1, partCount, err)
 					}
 
 					delete(parts, nextPartToWrite)
@@ -166,7 +166,7 @@ partLoop:
 				logger.Printf("cancelled")
 				return nil
 			case <-ticker.C:
-				logger.Printf("downloaded %d/%d and wrote %d parts so far", downloadedPartCount, partCount, nextPartToWrite)
+				logger.Printf("downloaded %d/%d and wrote %d parts so far", downloadedPartCount, partCount, nextPartToWrite-1)
 			}
 		}
 	}
