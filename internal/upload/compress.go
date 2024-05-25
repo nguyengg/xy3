@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/nguyengg/xy3/internal"
-	"github.com/nguyengg/xy3/internal/cksum"
 	"github.com/nguyengg/xy3/internal/zipper"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -18,7 +16,7 @@ import (
 //
 // All files in the archive include root's basename in its path, meaning the top-level file of the archive output is
 // the root directory itself.
-func (c *Command) compress(ctx context.Context, logger *log.Logger, root string) (name, ext, checksum string, contentType *string, err error) {
+func (c *Command) compress(ctx context.Context, logger *log.Logger, root string) (name, ext string, contentType *string, err error) {
 	base := filepath.Base(root)
 	ext, contentType = ".zip", aws.String("application/zip")
 
@@ -41,8 +39,6 @@ func (c *Command) compress(ctx context.Context, logger *log.Logger, root string)
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
-	// use MultiWriter to compress and compute checksum at the same time.
-	h := cksum.NewHasher()
 	z := zipper.New()
 	z.ProgressReporter, err = zipper.NewDirectoryProgressReporter(ctx, root, func(src, dst string, written, size int64, done bool, wc, fc int) {
 		if done && wc == fc {
@@ -62,12 +58,7 @@ func (c *Command) compress(ctx context.Context, logger *log.Logger, root string)
 		}
 	})
 	if err == nil {
-		err = z.CompressDir(ctx, root, io.MultiWriter(out, h), false)
+		err = z.CompressDir(ctx, root, out, false)
 	}
-	if err != nil {
-		return
-	}
-
-	checksum = h.SumToChecksumString(nil)
 	return
 }

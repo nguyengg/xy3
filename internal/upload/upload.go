@@ -11,6 +11,7 @@ import (
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/dustin/go-humanize"
 	"github.com/nguyengg/xy3/internal"
+	"github.com/nguyengg/xy3/internal/cksum"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"log"
 	"math"
@@ -49,7 +50,7 @@ func (c *Command) upload(ctx context.Context, name string) error {
 	logger := log.New(os.Stderr, `"`+basename+`" `, log.LstdFlags|log.Lmsgprefix)
 
 	// preflight involves validation and possibly compressing a directory.
-	filename, ext, size, checksum, contentType, err := c.preflight(ctx, logger, name)
+	filename, ext, size, contentType, err := c.preflight(ctx, logger, name)
 	if size > maxUploadSize {
 		return fmt.Errorf("upload size (%d - %s) is larger than limit (%d - %s)",
 			size, humanize.Bytes(uint64(size)),
@@ -81,7 +82,6 @@ func (c *Command) upload(ctx context.Context, name string) error {
 		Key:                 key,
 		ExpectedBucketOwner: c.ExpectedBucketOwner,
 		Size:                size,
-		Checksum:            checksum,
 	}
 
 	logger.Printf(`start uploading %d parts to "s3://%s/%s"`, partCount, c.Bucket, key)
@@ -92,7 +92,7 @@ func (c *Command) upload(ctx context.Context, name string) error {
 		Key:                 aws.String(key),
 		ExpectedBucketOwner: c.ExpectedBucketOwner,
 		ContentType:         contentType,
-		Metadata:            map[string]string{"name": filename, "checksum": checksum},
+		Metadata:            map[string]string{"name": filename},
 		StorageClass:        s3types.StorageClassIntelligentTiering,
 	})
 	if err != nil {
@@ -140,8 +140,8 @@ func (c *Command) upload(ctx context.Context, name string) error {
 
 	// main goroutine is responsible for:
 	//	1. divvy up the file into parts.
-	//	2. send each part to the inputCh.
-	//	3. simultaneously and afterward read from outputCh to report progress.
+	//	2. send each part to the inputs channel. also compute the hash checksum of the file.
+	//	3. simultaneously and afterward read from outputs channel to report progress.
 	file, err := os.Open(filename)
 	if err != nil {
 		return fmt.Errorf("open file error: %w", err)
@@ -152,6 +152,7 @@ func (c *Command) upload(ctx context.Context, name string) error {
 
 	parts := make([]s3types.CompletedPart, 0, partCount)
 	remainingSize := size
+	hash := cksum.NewHasher()
 partLoop:
 	for partNumber, n := 1, 0; partNumber <= partCount; partNumber++ {
 		data := make([]byte, partSize)
@@ -161,11 +162,15 @@ partLoop:
 			return fmt.Errorf("read file error: %w", err)
 		}
 
-		if remainingSize -= int64(n); n < partSize {
+		if remainingSize -= int64(n); n != partSize {
 			// the last part might be truncated but never 0.
 			if remainingSize != 0 {
 				return fmt.Errorf("read only %d/%d bytes", n, partSize)
 			}
+			data = data[:n]
+		}
+		if _, err = hash.Write(data); err != nil {
+			return fmt.Errorf("hash data error: %w", err)
 		}
 
 		for {
@@ -185,7 +190,7 @@ partLoop:
 				logger.Printf("cancelled")
 				return nil
 			case <-ticker.C:
-				logger.Printf("uploaded %d/%d parts so far", partNumber, partCount)
+				logger.Printf("uploading %d/%d parts so far", partNumber, partCount)
 			}
 		}
 	}
@@ -230,7 +235,6 @@ partLoop:
 		if !errors.Is(err, context.Canceled) {
 			err = fmt.Errorf("complete multipart upload error: %w", err)
 		}
-
 		return err
 	}
 
@@ -239,6 +243,7 @@ partLoop:
 
 	// now generate the local .s3 file that contains the S3 URI. if writing to file fails, prints the JSON content to
 	// standard output so that they can be saved manually later.
+	man.Checksum = hash.SumToChecksumString(nil)
 	if file, err = internal.OpenExclFile(strings.TrimSuffix(filename, ext), ext+".s3"); err == nil {
 		err = man.MarshalTo(file)
 	}

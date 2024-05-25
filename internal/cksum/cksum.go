@@ -16,8 +16,8 @@ type Hasher struct {
 
 func NewHasher() *Hasher {
 	return &Hasher{
-		w:      sha256.New(),
-		prefix: "sha256-",
+		w:      sha512.New384(),
+		prefix: "sha384-",
 	}
 }
 
