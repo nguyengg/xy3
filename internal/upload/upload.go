@@ -12,7 +12,6 @@ import (
 	"github.com/dustin/go-humanize"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/manifest"
-	"io"
 	"log"
 	"math"
 	"os"
@@ -20,14 +19,20 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
-// maxUploadSize is the limit of the file size (5 TiB) that S3 multipart upload allows.
-const maxUploadSize = int64(1_099_511_627_776)
+// https://docs.aws.amazon.com/AmazonS3/latest/userguide/qfacts.html
+const (
+	maxUploadSize = int64(1_099_511_627_776)
+	maxPartCount  = 10_000
+	minPartSize   = 5_242_880
+	maxPartSize   = 5_368_709_120
+)
 
 // defaultPartSize is the size in bytes of each part.
-const defaultPartSize = 8_388_608
+const defaultPartSize = int(8_388_608)
 
 type uploadInput struct {
 	PartNumber int32
@@ -51,17 +56,21 @@ func (c *Command) upload(ctx context.Context, name string) error {
 			maxUploadSize, humanize.Bytes(uint64(maxUploadSize)))
 	}
 	if size == 0 {
-		return fmt.Errorf("upload file is empty")
+		return fmt.Errorf("file is empty")
 	}
 
-	file, err := os.Open(filename)
-	if err != nil {
-		return fmt.Errorf("open file error: %w", err)
+	// we do know the exact number of parts since we know the file's size and the size of each part.
+	partSize := defaultPartSize
+	partCount := int(math.Ceil(float64(size) / float64(partSize)))
+	if partCount > maxPartCount {
+		return fmt.Errorf("part size too small as it result in part count (%d) exceeding limit (%d)", partCount, maxPartCount)
 	}
-	defer func(file *os.File) {
-		_ = file.Close()
-	}(file)
 
+	// for upload progress, only log every few seconds.
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	// find an unused S3 key that can be used for the CreateMultipartUpload call.
 	key, err := c.findUnusedS3Key(ctx, strings.TrimSuffix(filename, ext), ext)
 	if err != nil {
 		return err
@@ -75,14 +84,7 @@ func (c *Command) upload(ctx context.Context, name string) error {
 		Checksum:            checksum,
 	}
 
-	// we do know the exact number of parts since we know the file's size and the size of each part.
-	partSize := defaultPartSize
-	partCount := int(math.Ceil(float64(size) / float64(partSize)))
 	logger.Printf(`start uploading %d parts to "s3://%s/%s"`, partCount, c.Bucket, key)
-
-	// for upload progress, only log every few seconds.
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
 
 	// start the multipart upload, and if the operation fails then use a deferred function to abort the multipart upload.
 	createMultipartUploadOutput, err := c.client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
@@ -97,13 +99,13 @@ func (c *Command) upload(ctx context.Context, name string) error {
 		if !errors.Is(err, context.Canceled) {
 			err = fmt.Errorf("create multipart upload error: %w", err)
 		}
-		return nil
+		return err
 	}
 
 	success := false
 	defer func() {
 		if !success {
-			logger.Printf("aborting multipart upload")
+			logger.Printf(`aborting multipart upload "%s"`, aws.ToString(createMultipartUploadOutput.UploadId))
 			if _, err := c.client.AbortMultipartUpload(context.Background(), &s3.AbortMultipartUploadInput{
 				Bucket:              aws.String(c.Bucket),
 				Key:                 aws.String(key),
@@ -116,52 +118,83 @@ func (c *Command) upload(ctx context.Context, name string) error {
 	}()
 
 	// first loop starts all the goroutines that are responsible for uploading the parts concurrently.
-	inputs := make(chan uploadInput, partCount)
-	outputs := make(chan uploadOutput, partCount)
+	inputs := make(chan uploadInput, c.MaxConcurrency)
+	outputs := make(chan uploadOutput, c.MaxConcurrency)
+	closeInputs := sync.OnceFunc(func() { close(inputs) })
+	closeOutputs := sync.OnceFunc(func() { close(outputs) })
+	defer func() {
+		closeInputs()
+		closeOutputs()
+	}()
+
 	for i := 0; i < c.MaxConcurrency; i++ {
-		go c.do(ctx, s3.UploadPartInput{
-			Bucket:              &c.Bucket,
-			Key:                 &key,
-			UploadId:            createMultipartUploadOutput.UploadId,
-			ExpectedBucketOwner: c.ExpectedBucketOwner,
-		}, partCount, inputs, outputs)
+		go func() {
+			c.do(ctx, s3.UploadPartInput{
+				Bucket:              &c.Bucket,
+				Key:                 &key,
+				UploadId:            createMultipartUploadOutput.UploadId,
+				ExpectedBucketOwner: c.ExpectedBucketOwner,
+			}, partCount, inputs, outputs)
+		}()
 	}
 
-	// main goroutine is responsible for divvying up the file into parts, sending each part to the inputCh, then reading
-	// outputCh to report progress. we know main goroutine will never block because the capacities of inputCh and
-	// outputCh equal to exact number of parts.
-	remainingSize := size
-	for partNumber := 1; partNumber <= partCount; partNumber++ {
-		// the last part might be truncated but ever 0.
-		var data []byte
-		if partNumber == partCount {
-			data = make([]byte, remainingSize)
-		} else {
-			data = make([]byte, partSize)
-		}
+	// main goroutine is responsible for:
+	//	1. divvy up the file into parts.
+	//	2. send each part to the inputCh.
+	//	3. simultaneously and afterward read from outputCh to report progress.
+	file, err := os.Open(filename)
+	if err != nil {
+		return fmt.Errorf("open file error: %w", err)
+	}
+	defer func(file *os.File) {
+		_ = file.Close()
+	}(file)
 
-		var n int
+	parts := make([]s3types.CompletedPart, 0, partCount)
+	remainingSize := size
+partLoop:
+	for partNumber, n := 1, 0; partNumber <= partCount; partNumber++ {
+		data := make([]byte, partSize)
+
 		n, err = file.Read(data)
-		if err != nil && err != io.EOF {
+		if err != nil {
 			return fmt.Errorf("read file error: %w", err)
 		}
-		if n != len(data) {
-			return fmt.Errorf("read only %d/%d bytes", n, len(data))
-		}
-		remainingSize -= int64(n)
 
-		inputs <- uploadInput{
-			PartNumber: int32(partNumber),
-			Data:       data,
+		if remainingSize -= int64(n); n < partSize {
+			// the last part might be truncated but never 0.
+			if remainingSize != 0 {
+				return fmt.Errorf("read only %d/%d bytes", n, partSize)
+			}
+		}
+
+		for {
+			select {
+			case inputs <- uploadInput{
+				PartNumber: int32(partNumber),
+				Data:       data,
+			}:
+				continue partLoop
+			case result := <-outputs:
+				if result.Err != nil {
+					return result.Err
+				}
+
+				parts = append(parts, result.Part)
+			case <-ctx.Done():
+				logger.Printf("cancelled")
+				return nil
+			case <-ticker.C:
+				logger.Printf("uploaded %d/%d parts so far", partNumber, partCount)
+			}
 		}
 	}
 	if remainingSize != 0 {
 		return fmt.Errorf("expected remaining size to be 0, got %d", remainingSize)
 	}
-	close(inputs)
+	closeInputs()
 
 	// now wait for all uploads to complete.
-	parts := make([]s3types.CompletedPart, 0)
 	for i := len(parts); i < partCount; {
 		select {
 		case result := <-outputs:
@@ -178,7 +211,7 @@ func (c *Command) upload(ctx context.Context, name string) error {
 			logger.Printf("uploaded %d/%d parts so far", i+1, partCount)
 		}
 	}
-	close(outputs)
+	closeOutputs()
 
 	// must sort all parts by PartNumber because S3 can't be bothered to do this.
 	slices.SortFunc(parts, func(a, b s3types.CompletedPart) int {
