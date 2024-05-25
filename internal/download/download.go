@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -99,8 +100,14 @@ func (c *Command) download(ctx context.Context, name string) error {
 	defer ticker.Stop()
 
 	// first loop starts all the goroutines that are responsible for downloading the parts concurrently.
-	inputs := make(chan downloadInput, partCount)
-	outputs := make(chan downloadOutput, partCount)
+	inputs := make(chan downloadInput, c.MaxConcurrency)
+	outputs := make(chan downloadOutput, c.MaxConcurrency)
+	closeInputs := sync.OnceFunc(func() { close(inputs) })
+	closeOutputs := sync.OnceFunc(func() { close(outputs) })
+	defer func() {
+		closeInputs()
+		closeOutputs()
+	}()
 	for i := 0; i < c.MaxConcurrency; i++ {
 		go c.do(ctx, s3.GetObjectInput{
 			Bucket:              &man.Bucket,
@@ -109,34 +116,64 @@ func (c *Command) download(ctx context.Context, name string) error {
 		}, partCount, inputs, outputs)
 	}
 
-	// main goroutine is responsible for sending each part to the inputCh, then reading outputCh to report progress and
-	// assemble file. we know main goroutine will never block because the capacities of inputCh and outputCh equal to
-	// exact number of parts.
-	for partNumber, start := 1, 0; ; {
+	// main goroutine is responsible for:
+	//	1. sending each part to the inputs channel.
+	//	2. simultaneously and afterward read from outputs channel to report progress and write to file.
+	//
+	// the downloaded parts are stored in this map, and if the next part is available for writing to file then do
+	// right away to keep as little as data in memory as possible.
+	parts := make(map[int]*downloadOutput, partCount)
+	downloadedPartCount := 0
+	nextPartToWrite := 1
+partLoop:
+	for partNumber, startRange := 1, 0; ; {
 		if partNumber == partCount {
 			inputs <- downloadInput{
 				PartNumber: partNumber,
-				Range:      fmt.Sprintf("bytes=%d-", start),
+				Range:      fmt.Sprintf("bytes=%d-", startRange),
 			}
 			break
 		}
 
-		inputs <- downloadInput{
-			PartNumber: partNumber,
-			Range:      fmt.Sprintf("bytes=%d-%d", start, start+partSize-1),
+		for {
+			select {
+			case inputs <- downloadInput{
+				PartNumber: partNumber,
+				Range:      fmt.Sprintf("bytes=%d-%d", startRange, startRange+partSize-1),
+			}:
+				partNumber++
+				startRange += partSize
+				continue partLoop
+			case result := <-outputs:
+				if result.Err != nil {
+					return result.Err
+				}
+
+				parts[result.PartNumber] = &result
+				downloadedPartCount++
+
+				for part, ok := parts[nextPartToWrite]; ok; {
+					if _, err = w.Write(part.Data); err != nil {
+						return fmt.Errorf("write part %d/%d to file error: %w", nextPartToWrite, partCount, err)
+					}
+
+					delete(parts, nextPartToWrite)
+
+					nextPartToWrite++
+					part, ok = parts[nextPartToWrite]
+				}
+			case <-ctx.Done():
+				logger.Printf("cancelled")
+				return nil
+			case <-ticker.C:
+				logger.Printf("downloaded %d/%d and wrote %d parts so far", downloadedPartCount, partCount, nextPartToWrite)
+			}
 		}
-
-		partNumber++
-		start += partSize
 	}
-	close(inputs)
+	closeInputs()
 
-	// now wait for all downloads to complete.
-	// store the parts but if the next part is available for writing to file then do so right away to keep the part
-	// mappings small.
-	parts := make(map[int]*downloadOutput, partCount)
-	n := 0
-	for i := 1; i <= partCount; {
+	// now continue receiving and writing remaining download parts.
+	for nextPartToWrite <= partCount {
 		select {
 		case result := <-outputs:
 			if result.Err != nil {
@@ -144,27 +181,26 @@ func (c *Command) download(ctx context.Context, name string) error {
 			}
 
 			parts[result.PartNumber] = &result
-			n++
+			downloadedPartCount++
 
-			for part, ok := parts[i]; ok; {
+			for part, ok := parts[nextPartToWrite]; ok; {
 				if _, err = w.Write(part.Data); err != nil {
-					return fmt.Errorf("write part %d/%d to file error: %w", i, partCount, err)
+					return fmt.Errorf("write part %d/%d to file error: %w", nextPartToWrite, partCount, err)
 				}
 
-				delete(parts, i)
+				delete(parts, nextPartToWrite)
 
-				i++
-				part, ok = parts[i]
+				nextPartToWrite++
+				part, ok = parts[nextPartToWrite]
 			}
 		case <-ctx.Done():
 			logger.Printf("cancelled")
 			return nil
 		case <-ticker.C:
-			logger.Printf("downloaded %d/%d and wrote %d parts so far", n, partCount, i)
+			logger.Printf("downloaded %d/%d and wrote %d parts so far", downloadedPartCount, partCount, nextPartToWrite)
 		}
-
 	}
-	close(outputs)
+	closeOutputs()
 
 	logger.Printf("done downloading")
 	success = true
