@@ -60,3 +60,44 @@ func main() {
 	}
 }
 ```
+
+If you want to use [github.com/aws/aws-sdk-go-v2/feature/s3/manager](https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/feature/s3/manager)
+that comes with the SDK and adds logging:
+```go
+package main
+
+import (
+	"bytes"
+	"context"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/nguyengg/xy3"
+	"log"
+	"os"
+	"os/signal"
+)
+
+func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
+	defer stop()
+
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		log.Panicf("create SDK default config error: %v", err)
+	}
+
+	client := s3.NewFromConfig(cfg)
+
+	// use a logger for all UploadPart.
+	uploader := manager.NewUploader(client, xy3.LogSuccessfulUploadPart(log.Default()))
+
+	// or specify them on a specific upload call.
+	_, _ = uploader.Upload(ctx, &s3.PutObjectInput{
+		Bucket: aws.String("my-bucket"),
+		Key:    aws.String("my-key"),
+		Body:   bytes.NewReader([]byte("hello, world!")),
+	}, xy3.LogSuccessfulUploadPartWithExpectedPartCount(log.Default(), 100))
+}
+```
