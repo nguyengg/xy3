@@ -5,94 +5,58 @@
 are the XYplorer's file associations that I use:
 ```
 |"Download from S3" s3>"xy3.exe" "download"
-|"Delete from S3" s3>"xy3.exe" "rm"
+|"Delete from S3" s3>"xy3.exe" "remove"
 |"Compress and upload to S3" \>"xy3.exe" "upload" -b "bucket-name" -k "<curfolder>/"
 |"Upload to S3" *>"xy3.exe" "upload" -b "bucket-name" -k "<curfolder>/"
 ```
 
-The program has three subcommands and can be used as standalone program as well:
-* [Upload](#upload)
-* [Download](#download)
-* [Remove](#remove)
+## CLI
 
-```
-$ xy3 -h
-Usage:
-  xy3 [OPTIONS] <download | remove | upload>
+```shell
+# Uploading a file will generate a local .s3 (JSON) file that stores metadata about how to retrieve the file.
+# For example, this command will create doc.txt.s3 and log.zip.s3.
+xy3 up -b "bucket-name" -k "key-prefix/" --expected-bucket-owner "1234" doc.txt log.zip
 
-Application Options:
-  -p, --profile= override AWS_PROFILE if given
+# Downloading from the JSON .s3 files will create unique names to prevent duplicates.
+# For example, since doc.txt and log.zip still exist, this command will create doc-1.txt and log-1.zip.
+xy3 down doc.txt.s3 log.zip.s3
 
-Help Options:
-  -h, --help     Show this help message
-
-Available commands:
-  download  download files from S3 (aliases: down)
-  remove    remove both local and S3 files (aliases: rm)
-  upload    upload files or directories (after compressing the directories with zip) to S3 (aliases: up)
+# To remove both local and remote files, use this command.
+xy3 remove doc.txt.s3 log.zip.s3
 ```
 
-## Upload
+## Go Package
 
-```
-$ xy3 up -h
-Usage:
-  xy3 [OPTIONS] upload [upload-OPTIONS] [file...]
+```go
+package main
 
-Application Options:
-  -p, --profile=                   override AWS_PROFILE if given
+import (
+	"context"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/nguyengg/xy3"
+	"log"
+	"os"
+	"os/signal"
+)
 
-Help Options:
-  -h, --help                       Show this help message
+func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
+	defer stop()
 
-[upload command options]
-      -b, --bucket=                name of the S3 bucket containing the files
-      -k, --key-prefix=            key prefix to apply to all S3 operations
-          --expected-bucket-owner= optional ExpectedBucketOwner field to apply to all S3 operations
-      -d, --delete                 if given, the local files will be deleted only upon successful upload. If compressing a directory, the directory will
-                                   not be deleted but the intermediate archive will be.
-      -P, --max-concurrency=       use up to max-concurrency number of goroutines at a time for parallel uploads. (default: 5)
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		log.Panicf("create SDK default config error: %v", err)
+	}
 
-[upload command arguments]
-  file:                            the local files or directories (after compressing the directories with zip) to be uploaded to S3
-```
+	client := s3.NewFromConfig(cfg)
 
-## Download
-
-```
-$ xy3 down -h
-Usage:
-  xy3 [OPTIONS] download [download-OPTIONS] [file...]
-
-Application Options:
-  -p, --profile=             override AWS_PROFILE if given
-
-Help Options:
-  -h, --help                 Show this help message
-
-[download command options]
-      -P, --max-concurrency= use up to max-concurrency number of goroutines at a time for range downloads. (default: 5)
-
-[download command arguments]
-  file:                      the local files each containing a single S3 URI
-```
-
-## Remove
-
-```
-$ xy3 rm -h
-Usage:
-  xy3 [OPTIONS] remove [remove-OPTIONS] [file...]
-
-Application Options:
-  -p, --profile=        override AWS_PROFILE if given
-
-Help Options:
-  -h, --help            Show this help message
-
-[remove command options]
-          --keep-local  by default, the local files will be deleted upon successfully deleted in S3; specify this to keep the local files intact
-
-[remove command arguments]
-  file:                 the local files each containing a single S3 URI
+	if _, err = xy3.Upload(ctx, client, "path/to/file.zip", &s3.CreateMultipartUploadInput{
+		Bucket:              aws.String("my-bucket"),
+		Key:                 aws.String("my-key"),
+	}); err != nil {
+		log.Panicf("upload error: %v", err)
+	}
+}
 ```
