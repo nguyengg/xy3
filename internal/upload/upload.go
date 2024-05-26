@@ -93,9 +93,15 @@ func (c *Command) upload(ctx context.Context, name string) error {
 			_, _ = hash.Write(data)
 		}
 	}); err != nil {
-
+		// if context is cancelled, log whether abort was successful because caller of this method won't log that.
+		var mErr xy3.MultipartUploadError
+		if errors.Is(err, context.Canceled) && errors.As(err, &mErr) {
+			logger.Printf("upload error: %s", mErr.Error())
+		}
 		return err
 	}
+
+	logger.Printf(`done uploading to "s3://%s/%s"`, c.Bucket, key)
 
 	// now generate the local .s3 file that contains the S3 URI. if writing to file fails, prints the JSON content to
 	// standard output so that they can be saved manually later.
@@ -107,6 +113,7 @@ func (c *Command) upload(ctx context.Context, name string) error {
 	if err, _ = m.MarshalTo(f), f.Close(); err != nil {
 		return err
 	}
+
 	logger.Printf(`wrote to manifest "%s"`, f.Name())
 
 	if c.Delete {
