@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 )
 
 // preflight validates the file (specified by "name" argument) to be uploaded.
@@ -15,11 +14,11 @@ import (
 // If the file is a directory, an archive will be created to recursively compress all files in the directory, and the
 // name of the archive is returned as the filename parameter. Otherwise, the returned filename parameter will be
 // identical to the name argument.
-func (c *Command) preflight(ctx context.Context, logger *log.Logger, name string) (filename, ext string, size int64, contentType *string, err error) {
-	filename, ext = name, filepath.Ext(name)
+func (c *Command) preflight(ctx context.Context, logger *log.Logger, name string) (filename string, size int64, contentType *string, err error) {
+	filename = name
 
 	// name can either be a file or a directory, so use stat to determine what to do.
-	fi, err := os.Stat(name)
+	fi, err := os.Stat(filename)
 	if err != nil {
 		err = fmt.Errorf("describe file error: %w", err)
 		return
@@ -28,7 +27,7 @@ func (c *Command) preflight(ctx context.Context, logger *log.Logger, name string
 
 	switch {
 	case fi.IsDir():
-		filename, ext, contentType, err = c.compress(ctx, logger, name)
+		filename, contentType, err = c.compress(ctx, logger, name)
 		if err != nil {
 			err = fmt.Errorf("compress directory error: %w", err)
 			return
@@ -46,7 +45,7 @@ func (c *Command) preflight(ctx context.Context, logger *log.Logger, name string
 
 	// at this point, it's a regular file so read the first 512 bytes to detect its content type.
 	var file *os.File
-	if file, err = os.Open(name); err != nil {
+	if file, err = os.Open(filename); err != nil {
 		err = fmt.Errorf("open file error: %w", err)
 		return
 	}

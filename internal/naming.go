@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -26,4 +27,14 @@ func OpenExclFile(stem, ext string) (file *os.File, err error) {
 			return nil, fmt.Errorf("create file error: %w", err)
 		}
 	}
+}
+
+// SplitStemAndExt splits the given name into the stem and extension part.
+//
+// The extension starts at the final dot. If there is no dot, ext is empty string.
+func SplitStemAndExt(name string) (stem string, ext string) {
+	name = filepath.Base(name)
+	ext = filepath.Ext(name)
+	stem = strings.TrimSuffix(name, ext)
+	return
 }

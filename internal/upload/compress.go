@@ -16,12 +16,12 @@ import (
 //
 // All files in the archive include root's basename in its path, meaning the top-level file of the archive output is
 // the root directory itself.
-func (c *Command) compress(ctx context.Context, logger *log.Logger, root string) (name, ext string, contentType *string, err error) {
+func (c *Command) compress(ctx context.Context, logger *log.Logger, root string) (name string, contentType *string, err error) {
 	base := filepath.Base(root)
-	ext, contentType = ".zip", aws.String("application/zip")
+	contentType = aws.String("application/zip")
 
 	// a new file will always be created, and if the operation fails, the file will be auto deleted.
-	out, err := internal.OpenExclFile(base, ext)
+	out, err := internal.OpenExclFile(base, ".zip")
 	if err != nil {
 		err = fmt.Errorf("create archive error: %w", err)
 		return
