@@ -21,17 +21,6 @@ import (
 	"time"
 )
 
-// https://docs.aws.amazon.com/AmazonS3/latest/userguide/qfacts.html
-const (
-	maxUploadSize = int64(1_099_511_627_776)
-	maxPartCount  = 10_000
-	minPartSize   = 5_242_880
-	maxPartSize   = 5_368_709_120
-)
-
-// defaultPartSize is the size in bytes of each part.
-const defaultPartSize = int(8_388_608)
-
 type uploadInput struct {
 	PartNumber int32
 	Data       []byte
