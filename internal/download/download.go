@@ -7,6 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/cksum"
 	"github.com/nguyengg/xy3/internal/manifest"
@@ -21,7 +22,7 @@ import (
 )
 
 // defaultPartSize is the size in bytes of each part.
-const defaultPartSize = 8_388_608
+const defaultPartSize = xy3.MinPartSize // 8_388_608
 
 type downloadInput struct {
 	PartNumber int
@@ -126,7 +127,7 @@ func (c *Command) download(ctx context.Context, name string) error {
 	downloadedPartCount := 0
 	nextPartToWrite := 1
 partLoop:
-	for partNumber, startRange := 1, 0; ; {
+	for partNumber, startRange := 1, int64(0); ; {
 		if partNumber == partCount {
 			inputs <- downloadInput{
 				PartNumber: partNumber,

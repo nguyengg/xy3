@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"strings"
 )
 
@@ -20,7 +19,7 @@ type Command struct {
 	Prefix              string  `short:"k" long:"key-prefix" description:"key prefix to apply to all S3 operations"`
 	ExpectedBucketOwner *string `long:"expected-bucket-owner" description:"optional ExpectedBucketOwner field to apply to all S3 operations"`
 	Delete              bool    `short:"d" long:"delete" description:"if given, the local files will be deleted only upon successful upload. If compressing a directory, the directory will not be deleted but the intermediate archive will be."`
-	MaxConcurrency      int     `short:"P" long:"max-concurrency" description:"use up to max-concurrency number of goroutines at a time. If 0 is given, use the logical CPU count" default:"5"`
+	MaxConcurrency      int     `short:"P" long:"max-concurrency" description:"use up to max-concurrency number of goroutines at a time for parallel uploads." default:"5"`
 	Args                struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the local files or directories (after compressing the directories with zip) to be uploaded to S3" required:"yes"`
 	} `positional-args:"yes"`
@@ -33,14 +32,8 @@ func (c *Command) Execute(args []string) error {
 		return fmt.Errorf("unknown positional arguments: %s", strings.Join(args, " "))
 	}
 
-	switch {
-	case c.MaxConcurrency < 0:
-		return fmt.Errorf("max-concurrency cannot be negative")
-	case c.MaxConcurrency == 0:
-		c.MaxConcurrency = runtime.NumCPU()
-		log.Printf("using max concurrency %d (logical CPU count)", c.MaxConcurrency)
-	default:
-		log.Printf("using max concurrency %d", c.MaxConcurrency)
+	if c.MaxConcurrency <= 0 {
+		return fmt.Errorf("max-concurrency must be positive")
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
