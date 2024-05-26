@@ -93,11 +93,6 @@ func (c *Command) upload(ctx context.Context, name string) error {
 			_, _ = hash.Write(data)
 		}
 	}); err != nil {
-		// if context is cancelled, log whether abort was successful because caller of this method won't log that.
-		var mErr xy3.MultipartUploadError
-		if errors.Is(err, context.Canceled) && errors.As(err, &mErr) {
-			logger.Printf("upload error: %s", mErr.Error())
-		}
 		return err
 	}
 

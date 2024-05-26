@@ -107,28 +107,42 @@ func (u MultipartUploader) upload(ctx context.Context, name string, input *s3.Cr
 	})
 	defer cf()
 
-	// res will be returned if res.Err is non-nil.
-	res := MultipartUploadError{Abort: AbortNotAttempted}
+	var uploadId string
 	if output, err := u.client.CreateMultipartUpload(ctx, input); err != nil {
 		return nil, err
 	} else {
-		res.UploadID = output.UploadId
+		uploadId = aws.ToString(output.UploadId)
 	}
 
-	if !u.DisableAbortOnFailure {
-		defer func() {
-			if _, err = u.client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
+	// wrapErr is responsible for attempting to call abort.
+	wrapErr := func(err error) error {
+		if err == nil {
+			return nil
+		}
+
+		mErr := MultipartUploadError{
+			Err:      err,
+			UploadID: uploadId,
+			Abort:    AbortNotAttempted,
+			AbortErr: nil,
+		}
+		if !u.DisableAbortOnFailure {
+			if _, mErr.AbortErr = u.client.AbortMultipartUpload(context.Background(), &s3.AbortMultipartUploadInput{
 				Bucket:              input.Bucket,
 				Key:                 input.Key,
-				UploadId:            res.UploadID,
+				UploadId:            &uploadId,
 				ExpectedBucketOwner: input.ExpectedBucketOwner,
 				RequestPayer:        input.RequestPayer,
-			}); err == nil {
-				res.Abort = AbortSuccess
+			}); mErr.AbortErr == nil {
+				mErr.Abort = AbortSuccess
+				log.Printf("abort success: %v", mErr)
 			} else {
-				res.Abort = AbortFailure
+				mErr.Abort = AbortFailure
+				log.Printf("abort error: %v", mErr)
 			}
-		}()
+		}
+
+		return mErr
 	}
 
 	// start the workers here. they will share a pool of buffers.
@@ -140,7 +154,7 @@ func (u MultipartUploader) upload(ctx context.Context, name string, input *s3.Cr
 	inputs := make(chan uploadInput, u.Concurrency)
 	outputs := make(chan uploadOutput, u.Concurrency)
 	for range u.Concurrency {
-		go u.newWorker(input, res.UploadID, partCount, bufPool).do(ctx, inputs, outputs)
+		go u.newWorker(input, uploadId, partCount, bufPool).do(ctx, inputs, outputs)
 	}
 
 	// main goroutine is responsible for:
@@ -155,15 +169,13 @@ func (u MultipartUploader) upload(ctx context.Context, name string, input *s3.Cr
 		r.N = partSize
 		n, err = buf.ReadFrom(r)
 		if err != nil {
-			res.Err = err
-			return nil, res
+			return nil, wrapErr(err)
 		}
 
 		if remain -= n; n != partSize {
 			// the last part might be truncated but never 0.
 			if remain != 0 {
-				res.Err = fmt.Errorf("read only %d/%d bytes", n, partSize)
-				return nil, res
+				return nil, wrapErr(fmt.Errorf("read only %d/%d bytes", n, partSize))
 			}
 		}
 
@@ -180,8 +192,8 @@ func (u MultipartUploader) upload(ctx context.Context, name string, input *s3.Cr
 			}:
 				break sendInputLoop
 			case result := <-outputs:
-				if res.Err = result.err; res.Err != nil {
-					return nil, res
+				if err = result.err; err != nil {
+					return nil, wrapErr(err)
 				}
 
 				parts = append(parts, result.part)
@@ -189,8 +201,7 @@ func (u MultipartUploader) upload(ctx context.Context, name string, input *s3.Cr
 					u.PostUploadPart(result.part, partCount)
 				}
 			case <-ctx.Done():
-				res.Err = ctx.Err()
-				return nil, res
+				return nil, wrapErr(ctx.Err())
 			}
 		}
 	}
@@ -204,8 +215,8 @@ func (u MultipartUploader) upload(ctx context.Context, name string, input *s3.Cr
 	for n := int32(len(parts)); n < partCount; {
 		select {
 		case result := <-outputs:
-			if res.Err = result.err; res.Err != nil {
-				return nil, res
+			if err = result.err; err != nil {
+				return nil, wrapErr(err)
 			}
 
 			parts = append(parts, result.part)
@@ -214,8 +225,7 @@ func (u MultipartUploader) upload(ctx context.Context, name string, input *s3.Cr
 				u.PostUploadPart(result.part, partCount)
 			}
 		case <-ctx.Done():
-			res.Err = ctx.Err()
-			return nil, res
+			return nil, wrapErr(ctx.Err())
 		}
 	}
 
@@ -227,7 +237,7 @@ func (u MultipartUploader) upload(ctx context.Context, name string, input *s3.Cr
 	output, err := u.client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
 		Bucket:               input.Bucket,
 		Key:                  input.Key,
-		UploadId:             res.UploadID,
+		UploadId:             &uploadId,
 		ExpectedBucketOwner:  input.ExpectedBucketOwner,
 		MultipartUpload:      &s3types.CompletedMultipartUpload{Parts: parts},
 		RequestPayer:         input.RequestPayer,
@@ -235,11 +245,7 @@ func (u MultipartUploader) upload(ctx context.Context, name string, input *s3.Cr
 		SSECustomerKey:       input.SSECustomerKey,
 		SSECustomerKeyMD5:    input.SSECustomerKeyMD5,
 	})
-	if err != nil {
-		res.Err = err
-		return output, res
-	}
-	return output, nil
+	return output, wrapErr(err)
 }
 
 // validate checks that file is valid for upload, and return an opened file on success.
@@ -281,13 +287,13 @@ type worker struct {
 	bufPool   *sync.Pool
 }
 
-func (u MultipartUploader) newWorker(input *s3.CreateMultipartUploadInput, uploadId *string, partCount int32, bufPool *sync.Pool) *worker {
+func (u MultipartUploader) newWorker(input *s3.CreateMultipartUploadInput, uploadId string, partCount int32, bufPool *sync.Pool) *worker {
 	return &worker{
 		client: u.client,
 		input: &s3.UploadPartInput{
 			Bucket:               input.Bucket,
 			Key:                  input.Key,
-			UploadId:             uploadId,
+			UploadId:             aws.String(uploadId),
 			ChecksumAlgorithm:    input.ChecksumAlgorithm,
 			ExpectedBucketOwner:  input.ExpectedBucketOwner,
 			RequestPayer:         input.RequestPayer,

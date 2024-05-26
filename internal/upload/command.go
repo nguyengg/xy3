@@ -49,17 +49,16 @@ func (c *Command) Execute(args []string) error {
 	success := 0
 	n := len(c.Args.Files)
 	for i, file := range c.Args.Files {
-		if err = c.upload(ctx, string(file)); err != nil {
-			if errors.Is(err, context.Canceled) {
-				log.Printf("interrupted; successfully uploaded %d/%d files", success, n)
-				return nil
-			}
-
-			log.Printf("%d/%d: upload %s error: %v", i+1, n, filepath.Base(string(file)), err)
-			continue
+		if err = c.upload(ctx, string(file)); err == nil {
+			success++
 		}
 
-		success++
+		log.Printf(`%d/%d: upload "%s" error: %v`, i+1, n, filepath.Base(string(file)), err)
+
+		if errors.Is(err, context.Canceled) {
+			log.Printf("interrupted; successfully uploaded %d/%d files", success, n)
+			return nil
+		}
 	}
 
 	log.Printf("successfully uploaded %d/%d files", success, n)
