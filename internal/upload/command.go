@@ -7,10 +7,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jessevdk/go-flags"
+	"github.com/nguyengg/xy3"
 	"log"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 )
 
@@ -51,14 +51,30 @@ func (c *Command) Execute(args []string) error {
 	for i, file := range c.Args.Files {
 		if err = c.upload(ctx, string(file)); err == nil {
 			success++
+			continue
 		}
 
-		log.Printf(`%d/%d: upload "%s" error: %v`, i+1, n, filepath.Base(string(file)), err)
-
+		// if an error happens due to context being cancelled (interrupt signal), manually log about whether the
+		// multipart upload was successfully aborted.
 		if errors.Is(err, context.Canceled) {
-			log.Printf("interrupted; successfully uploaded %d/%d files", success, n)
-			return nil
+			var mErr = xy3.MultipartUploadError{}
+			if errors.As(err, &mErr) {
+				switch mErr.Abort {
+				case xy3.AbortSuccess:
+					log.Printf(`%d/%d: upload "%s" was interrupted and its multipart upload was aborted successfully`, i+1, n, file)
+				case xy3.AbortFailure:
+					log.Printf(`%d/%d: upload "%s" was interrupted and its multipart upload (upload Id %s) was not aborted successfully: %v`, i+1, n, file, mErr.UploadID, mErr.AbortErr)
+				default:
+					log.Printf(`%d/%d: upload "%s" was interrupted without an attempt to abort its multipart upload (upload Id %s)`, i+1, n, file, mErr.UploadID)
+				}
+				break
+			}
+
+			log.Printf(`%d/%d: upload "%s" was interrupted without having started a multipart upload`, i+1, n, file)
+			break
 		}
+
+		log.Printf(`%d/%d: upload "%s" error: %v`, i+1, n, file, err)
 	}
 
 	log.Printf("successfully uploaded %d/%d files", success, n)
