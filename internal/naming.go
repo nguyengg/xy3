@@ -29,6 +29,25 @@ func OpenExclFile(stem, ext string) (file *os.File, err error) {
 	}
 }
 
+// MkExclDir creates a new directory with the condition that the directory did not exist prior to this call.
+//
+// Stem is the desired name of the directory. The actual directory that is created might have numeric suffixes in its
+// name which is the first return value.
+func MkExclDir(stem string) (name string, err error) {
+	name = stem
+	for i := 0; ; {
+		switch err = os.Mkdir(name, 0755); {
+		case err == nil:
+			return
+		case errors.Is(err, os.ErrExist):
+			i++
+			name = stem + "-" + strconv.Itoa(i)
+		default:
+			return "", fmt.Errorf("create directory error: %w", err)
+		}
+	}
+}
+
 // SplitStemAndExt splits the given name into the stem and extension part.
 //
 // The extension starts at the final dot. If there is no dot, ext is empty string.
