@@ -1,4 +1,4 @@
-package uncompress
+package extract
 
 import (
 	"archive/zip"
@@ -21,7 +21,7 @@ import (
 
 type Command struct {
 	Args struct {
-		Files []flags.Filename `positional-arg-name:"file" description:"the local .zip files to be uncompressed" required:"yes"`
+		Files []flags.Filename `positional-arg-name:"file" description:"the local .zip files to be extracted" required:"yes"`
 	} `positional-args:"yes"`
 }
 
@@ -49,7 +49,7 @@ func (c *Command) Execute(args []string) error {
 	failures := make([]Failure, 0)
 
 	for i, file := range c.Args.Files {
-		output, err := c.uncompress(ctx, string(file))
+		output, err := c.extract(ctx, string(file))
 		if err != nil {
 			log.Printf(`%d/%d: uncompress "%s" error: %v`, i+1, n, file, err)
 			failures = append(failures, Failure{
@@ -68,8 +68,8 @@ func (c *Command) Execute(args []string) error {
 	return nil
 }
 
-// uncompress returns the newly created directory if successful.
-func (c *Command) uncompress(ctx context.Context, name string) (output string, err error) {
+// extract extracts the content of the named ZIP file and returns the newly created directory.
+func (c *Command) extract(ctx context.Context, name string) (output string, err error) {
 	r, err := zip.OpenReader(name)
 	if err != nil {
 		return "", err

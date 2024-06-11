@@ -8,7 +8,7 @@ are the XYplorer's file associations that I use:
 |"Delete from S3" s3>"xy3.exe" "remove"
 |"Compress and upload to S3" \>"xy3.exe" "upload" -b "bucket-name" -k "<curfolder>/"
 |"Upload to S3" *>"xy3.exe" "upload" -b "bucket-name" -k "<curfolder>/"
-|"Uncompress files" zip>"xy3.exe" "uncompress"
+|"Extract files" zip>"xy3.exe" extract
 ```
 
 ## CLI
