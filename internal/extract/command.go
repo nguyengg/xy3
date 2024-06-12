@@ -1,15 +1,16 @@
 package extract
 
 import (
-	"archive/zip"
 	"context"
 	"errors"
 	"fmt"
 	"github.com/dustin/go-humanize"
 	"github.com/jessevdk/go-flags"
+	"github.com/mholt/archiver/v4"
 	"github.com/nguyengg/xy3/internal"
 	"golang.org/x/time/rate"
 	"io"
+	"io/fs"
 	"log"
 	"os"
 	"os/signal"
@@ -21,7 +22,7 @@ import (
 
 type Command struct {
 	Args struct {
-		Files []flags.Filename `positional-arg-name:"file" description:"the local .zip files to be extracted" required:"yes"`
+		Files []flags.Filename `positional-arg-name:"file" description:"the local archives to be extracted" required:"yes"`
 	} `positional-args:"yes"`
 }
 
@@ -70,13 +71,12 @@ func (c *Command) Execute(args []string) error {
 
 // extract extracts the content of the named ZIP file and returns the newly created directory.
 func (c *Command) extract(ctx context.Context, name string) (string, error) {
-	r, err := zip.OpenReader(name)
+	fsys, err := archiver.FileSystem(ctx, name)
 	if err != nil {
 		return "", err
 	}
-	defer r.Close()
 
-	topLevelDir, err := c.topLevelDir(ctx, r.File)
+	topLevelDir, fc, err := c.topLevelDir(ctx, fsys)
 	if err != nil {
 		return "", err
 	}
@@ -88,59 +88,93 @@ func (c *Command) extract(ctx context.Context, name string) (string, error) {
 	}
 
 	sometimes := rate.Sometimes{Interval: 5 * time.Second}
-	n := len(r.File)
-	for i, f := range r.File {
-		if f.FileInfo().IsDir() {
-			continue
+	i := 0
+	if err = fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
 		}
 
-		if err = c.copy(ctx, i+1, n, pathFn(f.Name), f); err != nil {
-			_ = os.Remove(output)
-			return "", err
+		fm := d.Type()
+		if !fm.IsRegular() {
+			return nil
+		}
+
+		if err = os.MkdirAll(filepath.Dir(path), fm.Perm()); err != nil {
+			return err
+		}
+
+		f, err := fsys.Open(path)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+
+		w, err := os.OpenFile(pathFn(path), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, fm.Perm())
+		if err != nil {
+			return err
+		}
+		defer w.Close()
+
+		if err = c.copy(ctx, i, fc, w, f); err != nil {
+			return err
 		}
 
 		select {
 		case <-ctx.Done():
-			_ = os.Remove(output)
-			return "", ctx.Err()
+			return ctx.Err()
 		default:
+			i++
 			sometimes.Do(func() {
-				log.Printf(`[%d/%d] done uncompressing "%s"`, i+1, n, f.Name)
+				log.Printf(`[%d/%d] done uncompressing "%s"`, i, fc, path)
 			})
+			return nil
 		}
+	}); err != nil {
+		_ = os.Remove(output)
+		return "", err
 	}
 
 	return output, nil
 }
 
-// topLevelDir returns the top-level directory that is ancestor to all files in the archive.
+// topLevelDir returns the top-level directory that is ancestor to all files in the named archive passed as an fs.FS.
 //
 // This exists only if all files in the archive has the same top-level directory. If at least two files don't share the
 // same top-level directory, return an empty string. If the archive contains only one file but the file does not belong
 // to any directory, an empty string is also returned.
-func (c *Command) topLevelDir(ctx context.Context, files []*zip.File) (root string, err error) {
-	for _, f := range files {
-		if f.FileInfo().IsDir() {
-			continue
+//
+// The method also returns the number of files in the archive.
+func (c *Command) topLevelDir(ctx context.Context, fsys fs.FS) (root string, fileCount int, err error) {
+	err = fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
+		if d.IsDir() || !d.Type().IsRegular() {
+			return nil
+		}
+		fileCount++
 
-		switch paths := strings.SplitN(f.Name, "/", 2); {
+		switch paths := strings.SplitN(path, "/", 2); {
 		case len(paths) == 1:
 			// no root dir so must create one.
 			fallthrough
 		case root != "" && root != paths[0]:
 			root = ""
-			return
+			return nil
 		default:
 			root = paths[0]
 		}
 
 		select {
 		case <-ctx.Done():
-			return "", ctx.Err()
+			return ctx.Err()
 		default:
+			return nil
 		}
-	}
+	})
 
 	return
 }
@@ -175,32 +209,23 @@ func (c *Command) createOutputDir(topLevelDir, stem string) (output string, path
 }
 
 // copy is an implementation of io.Copy that is cancellable and also provides progress report.
-func (c *Command) copy(ctx context.Context, i, n int, path string, f *zip.File) error {
+func (c *Command) copy(ctx context.Context, i, n int, w io.Writer, f fs.File) (err error) {
+	fi, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	name := fi.Name()
+	size := uint64(fi.Size())
+
 	sometimes := rate.Sometimes{Interval: 5 * time.Second}
 	sometimes.Do(func() {})
-
-	if err := os.MkdirAll(filepath.Dir(path), f.Mode()); err != nil {
-		return err
-	}
-
-	w, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
-	if err != nil {
-		return err
-	}
-	defer w.Close()
-
-	r, err := f.Open()
-	if err != nil {
-		return err
-	}
-	defer r.Close()
 
 	buf := make([]byte, 32*1024)
 
 	var nr, nw int
-	var written int64
+	var read int64
 	for {
-		nr, err = r.Read(buf)
+		nr, err = f.Read(buf)
 
 		if nr > 0 {
 			switch nw, err = w.Write(buf[0:nr]); {
@@ -212,14 +237,14 @@ func (c *Command) copy(ctx context.Context, i, n int, path string, f *zip.File) 
 				return fmt.Errorf("invalid write: expected to write %d bytes, wrote %d bytes instead", nr, nw)
 			}
 
-			written += int64(nw)
+			read += int64(nr)
 
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
 			default:
 				sometimes.Do(func() {
-					log.Printf(`[%d/%d] uncompressed %.2f%% of "%s" (%s) so far`, i, n, float64(written)/float64(f.CompressedSize64)*100.0, f.Name, humanize.Bytes(f.CompressedSize64))
+					log.Printf(`[%d/%d] uncompressed %.2f%% of "%s" (%s) so far`, i, n, float64(read)/float64(size)*100.0, name, humanize.Bytes(uint64(size)))
 				})
 			}
 		}
