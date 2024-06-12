@@ -7,6 +7,7 @@ import (
 	"github.com/nguyengg/xy3/internal/extract"
 	"github.com/nguyengg/xy3/internal/remove"
 	"github.com/nguyengg/xy3/internal/upload"
+	"log"
 	"os"
 	"runtime"
 )
@@ -20,6 +21,8 @@ var opts struct {
 }
 
 func main() {
+	log.SetFlags(0)
+
 	p := flags.NewParser(&opts, flags.Default)
 	p.CommandHandler = func(command flags.Commander, args []string) error {
 		if opts.Profile != "" {
