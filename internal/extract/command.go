@@ -1,13 +1,13 @@
 package extract
 
 import (
+	"archive/zip"
 	"context"
 	"errors"
 	"fmt"
 	"github.com/dustin/go-humanize"
 	"github.com/jessevdk/go-flags"
 	"github.com/mholt/archiver/v4"
-	"github.com/nguyengg/xy3/internal"
 	"golang.org/x/time/rate"
 	"io"
 	"io/fs"
@@ -52,13 +52,24 @@ func (c *Command) Execute(args []string) error {
 	for i, file := range c.Args.Files {
 		output, err := c.extract(ctx, string(file))
 		if err != nil {
-			log.Printf(`%d/%d: uncompress "%s" error: %v`, i+1, n, file, err)
+			log.Printf(`%d/%d: extract "%s" error: %v`, i+1, n, file, err)
 			failures = append(failures, Failure{
 				File: string(file),
 				Err:  err,
 			})
+
+			// TODO add a flag to leave existing artifacts intact.
+			if output != "" {
+				if err = os.RemoveAll(output); err != nil {
+					log.Printf(`%d/%d: delete "%s" error: %v`, i+1, n, output, err)
+				}
+			}
+
+			if errors.Is(err, context.Canceled) {
+				return err
+			}
 		} else {
-			log.Printf(`%d/%d: successfully uncompressed "%s" to "%s"`, i+1, n, file, output)
+			log.Printf(`%d/%d: successfully extracted "%s" to "%s"`, i+1, n, file, output)
 			successes = append(successes, Success{
 				File:   string(file),
 				Output: output,
@@ -69,118 +80,22 @@ func (c *Command) Execute(args []string) error {
 	return nil
 }
 
-// extract extracts the content of the named ZIP file and returns the newly created directory.
+// extract extracts the content of the named archive and returns the newly created directory.
 func (c *Command) extract(ctx context.Context, name string) (string, error) {
-	fsys, err := archiver.FileSystem(ctx, name)
+	if in, err := zip.OpenReader(name); err == nil {
+		defer in.Close()
+		return (&ZipExtractor{Name: name, In: in}).Extract(ctx)
+	}
+
+	in, err := archiver.FileSystem(ctx, name)
 	if err != nil {
 		return "", err
 	}
-
-	topLevelDir, fc, err := c.topLevelDir(ctx, fsys)
-	if err != nil {
-		return "", err
-	}
-
-	stem, _ := internal.SplitStemAndExt(name)
-	output, pathFn, err := c.createOutputDir(topLevelDir, stem)
-	if err != nil {
-		return "", err
-	}
-
-	sometimes := rate.Sometimes{Interval: 5 * time.Second}
-	i := 0
-	if err = fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-
-		fm := d.Type()
-		if !fm.IsRegular() {
-			return nil
-		}
-
-		if err = os.MkdirAll(filepath.Dir(path), fm.Perm()); err != nil {
-			return err
-		}
-
-		f, err := fsys.Open(path)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-
-		w, err := os.OpenFile(pathFn(path), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, fm.Perm())
-		if err != nil {
-			return err
-		}
-		defer w.Close()
-
-		if err = c.copy(ctx, i, fc, w, f); err != nil {
-			return err
-		}
-
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			i++
-			sometimes.Do(func() {
-				log.Printf(`[%d/%d] done uncompressing "%s"`, i, fc, path)
-			})
-			return nil
-		}
-	}); err != nil {
-		_ = os.Remove(output)
-		return "", err
-	}
-
-	return output, nil
-}
-
-// topLevelDir returns the top-level directory that is ancestor to all files in the named archive passed as an fs.FS.
-//
-// This exists only if all files in the archive has the same top-level directory. If at least two files don't share the
-// same top-level directory, return an empty string. If the archive contains only one file but the file does not belong
-// to any directory, an empty string is also returned.
-//
-// The method also returns the number of files in the archive.
-func (c *Command) topLevelDir(ctx context.Context, fsys fs.FS) (root string, fileCount int, err error) {
-	err = fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() || !d.Type().IsRegular() {
-			return nil
-		}
-		fileCount++
-
-		switch paths := strings.SplitN(path, "/", 2); {
-		case len(paths) == 1:
-			// no root dir so must create one.
-			fallthrough
-		case root != "" && root != paths[0]:
-			root = ""
-			return nil
-		default:
-			root = paths[0]
-		}
-
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			return nil
-		}
-	})
-
-	return
+	return (&FSExtractor{Name: name, In: in}).Extract(ctx)
 }
 
 // createOutputDir creates the output directory and the function to join the output path for each file in the archive.
-func (c *Command) createOutputDir(topLevelDir, stem string) (output string, pathFn func(string) string, err error) {
+func createOutputDir(topLevelDir, stem string) (output string, pathFn func(string) string, err error) {
 	if output = topLevelDir; output != "" {
 		pathFn = func(s string) string {
 			return filepath.Join("", s)
@@ -208,15 +123,19 @@ func (c *Command) createOutputDir(topLevelDir, stem string) (output string, path
 	}
 }
 
-// copy is an implementation of io.Copy that is cancellable and also provides progress report.
-func (c *Command) copy(ctx context.Context, i, n int, w io.Writer, f fs.File) (err error) {
-	fi, err := f.Stat()
-	if err != nil {
-		return err
+// createExclFile creates a new exclusive file for writing and ensures all parent directories to the file exist.
+//
+// Caller must close the writer.
+func createExclFile(name string, perm fs.FileMode) (*os.File, error) {
+	if err := os.MkdirAll(filepath.Dir(name), perm); err != nil {
+		return nil, err
 	}
-	name := fi.Name()
-	size := uint64(fi.Size())
 
+	return os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
+}
+
+// copyWithProgress is a custom implementation of io.Copy that is cancellable and also provides progress report.
+func copyWithProgress(ctx context.Context, dst io.Writer, src io.Reader, i, n int, name string, size int64) (err error) {
 	sometimes := rate.Sometimes{Interval: 5 * time.Second}
 	sometimes.Do(func() {})
 
@@ -225,10 +144,10 @@ func (c *Command) copy(ctx context.Context, i, n int, w io.Writer, f fs.File) (e
 	var nr, nw int
 	var read int64
 	for {
-		nr, err = f.Read(buf)
+		nr, err = src.Read(buf)
 
 		if nr > 0 {
-			switch nw, err = w.Write(buf[0:nr]); {
+			switch nw, err = dst.Write(buf[0:nr]); {
 			case err != nil:
 				return err
 			case nr < nw:
@@ -244,7 +163,7 @@ func (c *Command) copy(ctx context.Context, i, n int, w io.Writer, f fs.File) (e
 				return ctx.Err()
 			default:
 				sometimes.Do(func() {
-					log.Printf(`[%d/%d] uncompressed %.2f%% of "%s" (%s) so far`, i, n, float64(read)/float64(size)*100.0, name, humanize.Bytes(uint64(size)))
+					log.Printf(`[%d/%d] (%s - %.2f%%) %s`, i, n, humanize.Bytes(uint64(size)), float64(read)/float64(size)*100.0, name)
 				})
 			}
 		}
