@@ -3,10 +3,11 @@ package extract
 import (
 	"archive/zip"
 	"context"
-	"github.com/dustin/go-humanize"
+	"fmt"
 	"github.com/nguyengg/xy3/internal"
-	"golang.org/x/time/rate"
-	"log"
+	"github.com/schollz/progressbar/v3"
+	"io"
+	"os"
 	"strings"
 	"time"
 )
@@ -19,7 +20,7 @@ type ZipExtractor struct {
 
 // Extract extracts contents from the ZIP archive and writes to a newly created directory.
 func (x *ZipExtractor) Extract(ctx context.Context) (string, error) {
-	topLevelDir, err := x.topLevelDir(ctx)
+	topLevelDir, uncompressedSize, err := x.topLevelDir(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -30,10 +31,22 @@ func (x *ZipExtractor) Extract(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	sometimes := rate.Sometimes{Interval: 5 * time.Second}
-	n := len(x.In.File)
+	// equivalent to progressbar.DefaultBytes but with higher OptionThrottle to reduce flickering.
+	bar := progressbar.NewOptions64(int64(uncompressedSize),
+		progressbar.OptionSetDescription("extracting"),
+		progressbar.OptionSetWriter(os.Stderr),
+		progressbar.OptionShowBytes(true),
+		progressbar.OptionSetWidth(10),
+		progressbar.OptionThrottle(1*time.Second),
+		progressbar.OptionShowCount(),
+		progressbar.OptionOnCompletion(func() {
+			_, _ = fmt.Fprint(os.Stderr, "\n")
+		}),
+		progressbar.OptionSpinnerType(14),
+		progressbar.OptionFullWidth(),
+		progressbar.OptionSetRenderBlankState(true))
 
-	for i, f := range x.In.File {
+	for _, f := range x.In.File {
 		if f.FileInfo().IsDir() {
 			continue
 		}
@@ -49,7 +62,7 @@ func (x *ZipExtractor) Extract(ctx context.Context) (string, error) {
 			return output, err
 		}
 
-		err = copyWithProgress(ctx, w, r, i, n, f.Name, int64(f.UncompressedSize64))
+		err = copyWithContext(ctx, io.MultiWriter(w, bar), r)
 		_, _ = w.Close(), r.Close()
 		if err != nil {
 			return output, err
@@ -59,12 +72,10 @@ func (x *ZipExtractor) Extract(ctx context.Context) (string, error) {
 		case <-ctx.Done():
 			return output, ctx.Err()
 		default:
-			sometimes.Do(func() {
-				log.Printf(`[%d/%d] (%s) %s`, i+1, n, humanize.Bytes(f.UncompressedSize64), f.Name)
-			})
 		}
 	}
 
+	_ = bar.Close()
 	return output, nil
 }
 
@@ -73,11 +84,13 @@ func (x *ZipExtractor) Extract(ctx context.Context) (string, error) {
 // This exists only if all files in the archive has the same top-level directory. If at least two files don't share the
 // same top-level directory, return an empty string. If the archive contains only one file but the file does not belong
 // to any directory, an empty string is also returned.
-func (x *ZipExtractor) topLevelDir(ctx context.Context) (root string, err error) {
+func (x *ZipExtractor) topLevelDir(ctx context.Context) (root string, uncompressedSize uint64, err error) {
 	for _, f := range x.In.File {
 		if f.FileInfo().IsDir() {
 			continue
 		}
+
+		uncompressedSize += f.UncompressedSize64
 
 		switch paths := strings.SplitN(f.Name, "/", 2); {
 		case len(paths) == 1:
@@ -92,7 +105,7 @@ func (x *ZipExtractor) topLevelDir(ctx context.Context) (root string, err error)
 
 		select {
 		case <-ctx.Done():
-			return "", ctx.Err()
+			return "", uncompressedSize, ctx.Err()
 		default:
 		}
 	}

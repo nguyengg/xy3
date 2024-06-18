@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 )
@@ -14,7 +13,7 @@ import (
 // If the file is a directory, an archive will be created to recursively compress all files in the directory, and the
 // name of the archive is returned as the filename parameter. Otherwise, the returned filename parameter will be
 // identical to the name argument.
-func (c *Command) preflight(ctx context.Context, logger *log.Logger, name string) (filename string, size int64, contentType *string, err error) {
+func (c *Command) preflight(ctx context.Context, name string) (filename string, size int64, contentType *string, err error) {
 	filename = name
 
 	// name can either be a file or a directory, so use stat to determine what to do.
@@ -27,7 +26,7 @@ func (c *Command) preflight(ctx context.Context, logger *log.Logger, name string
 
 	switch {
 	case fi.IsDir():
-		filename, contentType, err = c.compress(ctx, logger, name)
+		filename, contentType, err = c.compress(ctx, name)
 		if err != nil {
 			err = fmt.Errorf("compress directory error: %w", err)
 			return

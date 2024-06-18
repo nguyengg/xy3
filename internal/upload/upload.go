@@ -13,7 +13,7 @@ import (
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/cksum"
 	"github.com/nguyengg/xy3/internal/manifest"
-	"golang.org/x/time/rate"
+	"github.com/schollz/progressbar/v3"
 	"log"
 	"os"
 	"path/filepath"
@@ -36,7 +36,7 @@ func (c *Command) upload(ctx context.Context, name string) error {
 	logger := log.New(os.Stderr, `"`+basename+`" `, log.LstdFlags|log.Lmsgprefix)
 
 	// preflight involves validation and possibly compressing a directory.
-	filename, size, contentType, err := c.preflight(ctx, logger, name)
+	filename, size, contentType, err := c.preflight(ctx, name)
 
 	// find an unused S3 key that can be used for the CreateMultipartUpload call.
 	stem, ext := internal.SplitStemAndExt(filename)
@@ -51,11 +51,10 @@ func (c *Command) upload(ctx context.Context, name string) error {
 		Size:                size,
 	}
 
-	// for upload progress, only log every few seconds.
-	sometimes := rate.Sometimes{Interval: 5 * time.Second}
 	hash := cksum.NewHasher()
 
 	logger.Printf(`start uploading to "s3://%s/%s"`, c.Bucket, key)
+
 	if _, err = xy3.Upload(ctx, c.client, filename, &s3.CreateMultipartUploadInput{
 		Bucket:              aws.String(c.Bucket),
 		Key:                 aws.String(key),
@@ -66,20 +65,34 @@ func (c *Command) upload(ctx context.Context, name string) error {
 	}, func(uploader *xy3.MultipartUploader) {
 		uploader.Concurrency = c.MaxConcurrency
 
-		var completedPartCount int32
-		uploader.PostUploadPart = func(part s3types.CompletedPart, partCount int32) {
-			completedPartCount++
+		// equivalent to progressbar.DefaultBytes but with higher OptionThrottle to reduce flickering.
+		bar := progressbar.NewOptions64(size,
+			progressbar.OptionSetDescription("uploading"),
+			progressbar.OptionSetWriter(os.Stderr),
+			progressbar.OptionShowBytes(true),
+			progressbar.OptionSetWidth(10),
+			progressbar.OptionThrottle(1*time.Second),
+			progressbar.OptionShowCount(),
+			progressbar.OptionOnCompletion(func() {
+				_, _ = fmt.Fprint(os.Stderr, "\n")
+			}),
+			progressbar.OptionSpinnerType(14),
+			progressbar.OptionFullWidth(),
+			progressbar.OptionSetRenderBlankState(true))
 
-			if completedPartCount == partCount {
-				logger.Printf("uploaded %d/%d parts", completedPartCount, partCount)
-			} else {
-				sometimes.Do(func() {
-					logger.Printf("uploaded %d/%d parts so far", completedPartCount, partCount)
-				})
-			}
-		}
+		var completedPartCount int32
+		parts := make(map[int32]int)
 		uploader.PreUploadPart = func(partNumber int32, data []byte) {
-			_, _ = hash.Write(data)
+			n, _ := hash.Write(data)
+			parts[partNumber] = n
+		}
+
+		uploader.PostUploadPart = func(part s3types.CompletedPart, partCount int32) {
+			if completedPartCount++; completedPartCount == partCount {
+				_ = bar.Close()
+			} else {
+				_ = bar.Add64(int64(parts[aws.ToInt32(part.PartNumber)]))
+			}
 		}
 	}); err != nil {
 		return err
