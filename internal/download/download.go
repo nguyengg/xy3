@@ -7,6 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/dustin/go-humanize"
 	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/cksum"
@@ -109,7 +110,7 @@ func (c *Command) download(ctx context.Context, name string) error {
 		w = io.MultiWriter(file, bar)
 	}
 
-	c.logger.Printf(`start downloading %d parts from "s3://%s/%s" to "%s"`, partCount, man.Bucket, man.Key, file.Name())
+	c.logger.Printf(`downloading %s from "s3://%s/%s" to "%s"`, humanize.Bytes(uint64(size)), man.Bucket, man.Key, file.Name())
 
 	// first loop starts all the goroutines that are responsible for downloading the parts concurrently.
 	inputs := make(chan downloadInput, c.MaxConcurrency)
@@ -207,19 +208,18 @@ partLoop:
 		}
 	}
 	closeOutputs()
-
-	c.logger.Printf("done downloading")
-	_, success = bar.Close(), true
+	_ = bar.Close()
+	success = true
 
 	if h == nil {
-		c.logger.Printf("no checksum to verify")
+		c.logger.Printf("done downloading; no checksum to verify")
 		return nil
 	}
 
 	if actual := h.SumToChecksumString(nil); man.Checksum != actual {
-		c.logger.Printf("checksum does not match: expect %s, got %s", man.Checksum, actual)
+		c.logger.Printf("done downloading; checksum does not match: expect %s, got %s", man.Checksum, actual)
 	} else {
-		c.logger.Printf("checksum matches")
+		c.logger.Printf("done downloading; checksum matches")
 	}
 
 	return nil

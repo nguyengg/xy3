@@ -7,10 +7,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jessevdk/go-flags"
+	"github.com/nguyengg/xy3/internal"
 	"log"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 )
 
@@ -46,7 +46,7 @@ func (c *Command) Execute(args []string) error {
 	success := 0
 	n := len(c.Args.Files)
 	for i, file := range c.Args.Files {
-		c.logger = log.New(os.Stderr, fmt.Sprintf("[%d/%d %s] ", i+1, n, filepath.Base(string(file))), 0)
+		c.logger = internal.NewLogger(i, n, file)
 
 		if err = c.download(ctx, string(file)); err == nil {
 			success++

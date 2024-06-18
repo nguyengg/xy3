@@ -9,6 +9,7 @@ import (
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/dustin/go-humanize"
 	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/cksum"
@@ -48,7 +49,7 @@ func (c *Command) upload(ctx context.Context, name string) error {
 
 	hash := cksum.NewHasher()
 
-	c.logger.Printf(`start uploading to "s3://%s/%s"`, c.Bucket, key)
+	c.logger.Printf(`uploading %s to "s3://%s/%s"`, humanize.Bytes(uint64(size)), c.Bucket, key)
 
 	if _, err = xy3.Upload(ctx, c.client, filename, &s3.CreateMultipartUploadInput{
 		Bucket:              aws.String(c.Bucket),
@@ -93,7 +94,7 @@ func (c *Command) upload(ctx context.Context, name string) error {
 		return err
 	}
 
-	c.logger.Printf(`done uploading to "s3://%s/%s"`, c.Bucket, key)
+	c.logger.Printf("done uploading")
 
 	// now generate the local .s3 file that contains the S3 URI. if writing to file fails, prints the JSON content to
 	// standard output so that they can be saved manually later.

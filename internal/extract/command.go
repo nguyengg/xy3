@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/jessevdk/go-flags"
 	"github.com/mholt/archiver/v4"
+	"github.com/nguyengg/xy3/internal"
 	"io"
 	"io/fs"
 	"log"
@@ -21,6 +22,8 @@ type Command struct {
 	Args struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the local archives to be extracted" required:"yes"`
 	} `positional-args:"yes"`
+
+	logger *log.Logger
 }
 
 type Success struct {
@@ -47,11 +50,11 @@ func (c *Command) Execute(args []string) error {
 	failures := make([]Failure, 0)
 
 	for i, file := range c.Args.Files {
-		log.Printf("[%d/%d %s]: start extracting", i+1, n, file)
+		c.logger = internal.NewLogger(i, n, file)
 
 		output, err := c.extract(ctx, string(file))
 		if err != nil {
-			log.Printf("[%d/%d %s]: extract error: %v", i+1, n, file, err)
+			c.logger.Printf("extract error: %v", err)
 			failures = append(failures, Failure{
 				File: string(file),
 				Err:  err,
@@ -66,7 +69,7 @@ func (c *Command) Execute(args []string) error {
 				return err
 			}
 		} else {
-			log.Printf(`[%d/%d %s]: successfully extracted to "%s"`, i+1, n, file, output)
+			c.logger.Printf(`extracted to "%s"`, output)
 			successes = append(successes, Success{
 				File:   string(file),
 				Output: output,
