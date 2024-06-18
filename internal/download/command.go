@@ -21,6 +21,7 @@ type Command struct {
 	} `positional-args:"yes"`
 
 	client *s3.Client
+	logger *log.Logger
 }
 
 func (c *Command) Execute(args []string) error {
@@ -45,17 +46,18 @@ func (c *Command) Execute(args []string) error {
 	success := 0
 	n := len(c.Args.Files)
 	for i, file := range c.Args.Files {
-		if err = c.download(ctx, string(file)); err != nil {
-			if errors.Is(err, context.Canceled) {
-				log.Printf("interrupted; successfully downloaded %d/%d files", success, n)
-				return nil
-			}
+		c.logger = log.New(os.Stderr, fmt.Sprintf("[%d/%d %s] ", i+1, n, filepath.Base(string(file))), 0)
 
-			log.Printf("%d/%d: download %s error: %v", i+1, n, filepath.Base(string(file)), err)
+		if err = c.download(ctx, string(file)); err == nil {
+			success++
 			continue
 		}
 
-		success++
+		if errors.Is(err, context.Canceled) {
+			break
+		}
+
+		c.logger.Printf("download error: %v", err)
 	}
 
 	log.Printf("successfully downloaded %d/%d files", success, n)

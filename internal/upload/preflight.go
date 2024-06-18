@@ -26,6 +26,8 @@ func (c *Command) preflight(ctx context.Context, name string) (filename string, 
 
 	switch {
 	case fi.IsDir():
+		c.logger.Printf("start archiving")
+
 		filename, contentType, err = c.compress(ctx, name)
 		if err != nil {
 			err = fmt.Errorf("compress directory error: %w", err)

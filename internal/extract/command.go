@@ -5,10 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/dustin/go-humanize"
 	"github.com/jessevdk/go-flags"
 	"github.com/mholt/archiver/v4"
-	"golang.org/x/time/rate"
 	"io"
 	"io/fs"
 	"log"
@@ -17,7 +15,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 )
 
 type Command struct {
@@ -50,9 +47,11 @@ func (c *Command) Execute(args []string) error {
 	failures := make([]Failure, 0)
 
 	for i, file := range c.Args.Files {
+		log.Printf("[%d/%d %s]: start extracting", i+1, n, file)
+
 		output, err := c.extract(ctx, string(file))
 		if err != nil {
-			log.Printf(`%d/%d: extract "%s" error: %v`, i+1, n, file, err)
+			log.Printf("[%d/%d %s]: extract error: %v", i+1, n, file, err)
 			failures = append(failures, Failure{
 				File: string(file),
 				Err:  err,
@@ -60,16 +59,14 @@ func (c *Command) Execute(args []string) error {
 
 			// TODO add a flag to leave existing artifacts intact.
 			if output != "" {
-				if err = os.RemoveAll(output); err != nil {
-					log.Printf(`%d/%d: delete "%s" error: %v`, i+1, n, output, err)
-				}
+				_ = os.RemoveAll(output)
 			}
 
 			if errors.Is(err, context.Canceled) {
 				return err
 			}
 		} else {
-			log.Printf(`%d/%d: successfully extracted "%s" to "%s"`, i+1, n, file, output)
+			log.Printf(`[%d/%d %s]: successfully extracted to "%s"`, i+1, n, file, output)
 			successes = append(successes, Success{
 				File:   string(file),
 				Output: output,
@@ -132,49 +129,6 @@ func createExclFile(name string, perm fs.FileMode) (*os.File, error) {
 	}
 
 	return os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
-}
-
-// copyWithProgress is a custom implementation of io.Copy that is cancellable and also provides progress report.
-func copyWithProgress(ctx context.Context, dst io.Writer, src io.Reader, i, n int, name string, size int64) (err error) {
-	sometimes := rate.Sometimes{Interval: 5 * time.Second}
-	sometimes.Do(func() {})
-
-	buf := make([]byte, 32*1024)
-
-	var nr, nw int
-	var read int64
-	for {
-		nr, err = src.Read(buf)
-
-		if nr > 0 {
-			switch nw, err = dst.Write(buf[0:nr]); {
-			case err != nil:
-				return err
-			case nr < nw:
-				return io.ErrShortWrite
-			case nr != nw:
-				return fmt.Errorf("invalid write: expected to write %d bytes, wrote %d bytes instead", nr, nw)
-			}
-
-			read += int64(nr)
-
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-				sometimes.Do(func() {
-					log.Printf(`[%d/%d] (%s - %.2f%%) %s`, i, n, humanize.Bytes(uint64(size)), float64(read)/float64(size)*100.0, name)
-				})
-			}
-		}
-
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-	}
 }
 
 // copyWithContext is a custom implementation of io.Copy that is cancellable.

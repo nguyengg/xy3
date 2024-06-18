@@ -14,9 +14,7 @@ import (
 	"github.com/nguyengg/xy3/internal/cksum"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/schollz/progressbar/v3"
-	"log"
 	"os"
-	"path/filepath"
 	"strconv"
 	"time"
 )
@@ -32,9 +30,6 @@ type uploadOutput struct {
 }
 
 func (c *Command) upload(ctx context.Context, name string) error {
-	basename := filepath.Base(name)
-	logger := log.New(os.Stderr, `"`+basename+`" `, log.LstdFlags|log.Lmsgprefix)
-
 	// preflight involves validation and possibly compressing a directory.
 	filename, size, contentType, err := c.preflight(ctx, name)
 
@@ -53,7 +48,7 @@ func (c *Command) upload(ctx context.Context, name string) error {
 
 	hash := cksum.NewHasher()
 
-	logger.Printf(`start uploading to "s3://%s/%s"`, c.Bucket, key)
+	c.logger.Printf(`start uploading to "s3://%s/%s"`, c.Bucket, key)
 
 	if _, err = xy3.Upload(ctx, c.client, filename, &s3.CreateMultipartUploadInput{
 		Bucket:              aws.String(c.Bucket),
@@ -98,7 +93,7 @@ func (c *Command) upload(ctx context.Context, name string) error {
 		return err
 	}
 
-	logger.Printf(`done uploading to "s3://%s/%s"`, c.Bucket, key)
+	c.logger.Printf(`done uploading to "s3://%s/%s"`, c.Bucket, key)
 
 	// now generate the local .s3 file that contains the S3 URI. if writing to file fails, prints the JSON content to
 	// standard output so that they can be saved manually later.
@@ -111,12 +106,12 @@ func (c *Command) upload(ctx context.Context, name string) error {
 		return err
 	}
 
-	logger.Printf(`wrote to manifest "%s"`, f.Name())
+	c.logger.Printf(`wrote to manifest "%s"`, f.Name())
 
 	if c.Delete {
-		logger.Printf(`deleting file "%s"`, filename)
+		c.logger.Printf(`deleting file "%s"`, filename)
 		if err = os.Remove(filename); err != nil {
-			logger.Printf("delete file error: %v", err)
+			c.logger.Printf("delete file error: %v", err)
 		}
 	}
 

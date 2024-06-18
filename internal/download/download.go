@@ -11,8 +11,8 @@ import (
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/cksum"
 	"github.com/nguyengg/xy3/internal/manifest"
+	"github.com/schollz/progressbar/v3"
 	"io"
-	"log"
 	"math"
 	"os"
 	"path/filepath"
@@ -36,8 +36,6 @@ type downloadOutput struct {
 }
 
 func (c *Command) download(ctx context.Context, name string) error {
-	logger := log.New(os.Stderr, `"`+filepath.Base(name)+`" `, log.LstdFlags|log.Lmsgprefix)
-
 	file, err := os.Open(name)
 	if err != nil {
 		return fmt.Errorf("open file error: %w", err)
@@ -82,23 +80,36 @@ func (c *Command) download(ctx context.Context, name string) error {
 	success := false
 	defer func(file *os.File) {
 		if name, _ = file.Name(), file.Close(); !success {
-			logger.Printf(`deleting file "%s"`, name)
+			c.logger.Printf(`deleting file "%s"`, name)
 			if err = os.Remove(name); err != nil {
-				logger.Printf("delete file error: %v", err)
+				c.logger.Printf("delete file error: %v", err)
 			}
 		}
 	}(file)
 
-	var w io.Writer = file
+	// equivalent to progressbar.DefaultBytes but with higher OptionThrottle to reduce flickering.
+	bar := progressbar.NewOptions64(size,
+		progressbar.OptionSetDescription("downloading"),
+		progressbar.OptionSetWriter(os.Stderr),
+		progressbar.OptionShowBytes(true),
+		progressbar.OptionSetWidth(10),
+		progressbar.OptionThrottle(1*time.Second),
+		progressbar.OptionShowCount(),
+		progressbar.OptionOnCompletion(func() {
+			_, _ = fmt.Fprint(os.Stderr, "\n")
+		}),
+		progressbar.OptionSpinnerType(14),
+		progressbar.OptionFullWidth(),
+		progressbar.OptionSetRenderBlankState(true))
+
+	var w io.Writer
 	if h != nil {
-		w = io.MultiWriter(file, h)
+		w = io.MultiWriter(file, bar, h)
+	} else {
+		w = io.MultiWriter(file, bar)
 	}
 
-	logger.Printf(`start downloading %d parts from "s3://%s/%s" to "%s"`, partCount, man.Bucket, man.Key, file.Name())
-
-	// for download progress, only log every few seconds.
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
+	c.logger.Printf(`start downloading %d parts from "s3://%s/%s" to "%s"`, partCount, man.Bucket, man.Key, file.Name())
 
 	// first loop starts all the goroutines that are responsible for downloading the parts concurrently.
 	inputs := make(chan downloadInput, c.MaxConcurrency)
@@ -164,10 +175,7 @@ partLoop:
 					part, ok = parts[nextPartToWrite]
 				}
 			case <-ctx.Done():
-				logger.Printf("cancelled")
-				return nil
-			case <-ticker.C:
-				logger.Printf("downloaded %d/%d and wrote %d parts so far", downloadedPartCount, partCount, nextPartToWrite-1)
+				return ctx.Err()
 			}
 		}
 	}
@@ -195,27 +203,23 @@ partLoop:
 				part, ok = parts[nextPartToWrite]
 			}
 		case <-ctx.Done():
-			logger.Printf("cancelled")
-			return nil
-		case <-ticker.C:
-			logger.Printf("downloaded %d/%d and wrote %d parts so far", downloadedPartCount, partCount, nextPartToWrite)
+			return ctx.Err()
 		}
 	}
 	closeOutputs()
 
-	logger.Printf("done downloading")
-	success = true
+	c.logger.Printf("done downloading")
+	_, success = bar.Close(), true
 
 	if h == nil {
-		logger.Printf("no checksum to verify")
+		c.logger.Printf("no checksum to verify")
 		return nil
 	}
 
 	if actual := h.SumToChecksumString(nil); man.Checksum != actual {
-		// TODO fix the bug where the actual checksum is always different from the expected checksum.
-		logger.Printf("checksum does not match: expect %s, got %s", man.Checksum, actual)
+		c.logger.Printf("checksum does not match: expect %s, got %s", man.Checksum, actual)
 	} else {
-		logger.Printf("checksum matches")
+		c.logger.Printf("checksum matches")
 	}
 
 	return nil

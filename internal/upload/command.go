@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 )
 
@@ -25,6 +26,7 @@ type Command struct {
 	} `positional-args:"yes"`
 
 	client *s3.Client
+	logger *log.Logger
 }
 
 func (c *Command) Execute(args []string) error {
@@ -49,6 +51,8 @@ func (c *Command) Execute(args []string) error {
 	success := 0
 	n := len(c.Args.Files)
 	for i, file := range c.Args.Files {
+		c.logger = log.New(os.Stderr, fmt.Sprintf("[%d/%d %s] ", i+1, n, filepath.Base(string(file))), 0)
+
 		if err = c.upload(ctx, string(file)); err == nil {
 			success++
 			continue
@@ -61,20 +65,20 @@ func (c *Command) Execute(args []string) error {
 			if errors.As(err, &mErr) {
 				switch mErr.Abort {
 				case xy3.AbortSuccess:
-					log.Printf(`%d/%d: upload "%s" was interrupted and its multipart upload was aborted successfully`, i+1, n, file)
+					c.logger.Printf("upload was interrupted and its multipart upload was aborted successfully")
 				case xy3.AbortFailure:
-					log.Printf(`%d/%d: upload "%s" was interrupted and its multipart upload (upload Id %s) was not aborted successfully: %v`, i+1, n, file, mErr.UploadID, mErr.AbortErr)
+					c.logger.Printf("upload was interrupted and its multipart upload (upload Id %s) was not aborted successfully: %v", mErr.UploadID, mErr.AbortErr)
 				default:
-					log.Printf(`%d/%d: upload "%s" was interrupted without an attempt to abort its multipart upload (upload Id %s)`, i+1, n, file, mErr.UploadID)
+					c.logger.Printf("upload was interrupted without an attempt to abort its multipart upload (upload Id %s)", mErr.UploadID)
 				}
 				break
 			}
 
-			log.Printf(`%d/%d: upload "%s" was interrupted without having started a multipart upload`, i+1, n, file)
+			c.logger.Printf("upload was interrupted without having started a multipart upload")
 			break
 		}
 
-		log.Printf(`%d/%d: upload "%s" error: %v`, i+1, n, file, err)
+		c.logger.Printf("upload error: %v", err)
 	}
 
 	log.Printf("successfully uploaded %d/%d files", success, n)

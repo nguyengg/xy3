@@ -2,11 +2,12 @@ package extract
 
 import (
 	"context"
-	"github.com/dustin/go-humanize"
+	"fmt"
 	"github.com/nguyengg/xy3/internal"
-	"golang.org/x/time/rate"
+	"github.com/schollz/progressbar/v3"
+	"io"
 	"io/fs"
-	"log"
+	"os"
 	"strings"
 	"time"
 )
@@ -19,7 +20,7 @@ type FSExtractor struct {
 
 // Extract extracts contents from the archive and writes to a newly created directory.
 func (x *FSExtractor) Extract(ctx context.Context) (string, error) {
-	topLevelDir, n, err := x.topLevelDir(ctx)
+	topLevelDir, _, size, err := x.topLevelDir(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -29,18 +30,24 @@ func (x *FSExtractor) Extract(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	log.Printf("topLevelDir=%s, output=%s", topLevelDir, output)
 
-	sometimes := rate.Sometimes{Interval: 5 * time.Second}
-	i := 0
+	// equivalent to progressbar.DefaultBytes but with higher OptionThrottle to reduce flickering.
+	bar := progressbar.NewOptions64(size,
+		progressbar.OptionSetDescription("extracting"),
+		progressbar.OptionSetWriter(os.Stderr),
+		progressbar.OptionShowBytes(true),
+		progressbar.OptionSetWidth(10),
+		progressbar.OptionThrottle(1*time.Second),
+		progressbar.OptionShowCount(),
+		progressbar.OptionOnCompletion(func() {
+			_, _ = fmt.Fprint(os.Stderr, "\n")
+		}),
+		progressbar.OptionSpinnerType(14),
+		progressbar.OptionFullWidth(),
+		progressbar.OptionSetRenderBlankState(true))
 
-	err = fs.WalkDir(x.In, ".", func(path string, d fs.DirEntry, err error) error {
+	if err = fs.WalkDir(x.In, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !d.Type().IsRegular() {
-			return err
-		}
-
-		fi, err := d.Info()
-		if err != nil {
 			return err
 		}
 
@@ -56,7 +63,7 @@ func (x *FSExtractor) Extract(ctx context.Context) (string, error) {
 		}
 		defer w.Close()
 
-		if err = copyWithProgress(ctx, w, f, i, n, path, fi.Size()); err != nil {
+		if err = copyWithContext(ctx, io.MultiWriter(w, bar), f); err != nil {
 			return err
 		}
 
@@ -64,13 +71,11 @@ func (x *FSExtractor) Extract(ctx context.Context) (string, error) {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			i++
-			sometimes.Do(func() {
-				log.Printf(`[%d/%d] (%s) %s`, i, n, humanize.Bytes(uint64(fi.Size())), path)
-			})
 			return nil
 		}
-	})
+	}); err == nil {
+		_ = bar.Close()
+	}
 
 	return output, err
 }
@@ -79,8 +84,8 @@ func (x *FSExtractor) Extract(ctx context.Context) (string, error) {
 //
 // See ZipExtractor.topLevelDir.
 //
-// The method also returns the number of files in the archive.
-func (x *FSExtractor) topLevelDir(ctx context.Context) (root string, n int, err error) {
+// The method also returns the number of files and total size in bytes in the archive.
+func (x *FSExtractor) topLevelDir(ctx context.Context) (root string, n int, size int64, err error) {
 	err = fs.WalkDir(x.In, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -88,6 +93,12 @@ func (x *FSExtractor) topLevelDir(ctx context.Context) (root string, n int, err 
 		if d.IsDir() || !d.Type().IsRegular() {
 			return nil
 		}
+		fi, err := d.Info()
+		if err != nil {
+			return err
+		}
+
+		size += fi.Size()
 		n++
 
 		switch paths := strings.SplitN(path, "/", 2); {
