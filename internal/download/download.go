@@ -12,14 +12,12 @@ import (
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/cksum"
 	"github.com/nguyengg/xy3/internal/manifest"
-	"github.com/schollz/progressbar/v3"
 	"io"
 	"math"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 )
 
 // defaultPartSize is the size in bytes of each part.
@@ -88,20 +86,7 @@ func (c *Command) download(ctx context.Context, name string) error {
 		}
 	}(file)
 
-	// equivalent to progressbar.DefaultBytes but with higher OptionThrottle to reduce flickering.
-	bar := progressbar.NewOptions64(size,
-		progressbar.OptionSetDescription("downloading"),
-		progressbar.OptionSetWriter(os.Stderr),
-		progressbar.OptionShowBytes(true),
-		progressbar.OptionSetWidth(10),
-		progressbar.OptionThrottle(1*time.Second),
-		progressbar.OptionShowCount(),
-		progressbar.OptionOnCompletion(func() {
-			_, _ = fmt.Fprint(os.Stderr, "\n")
-		}),
-		progressbar.OptionSpinnerType(14),
-		progressbar.OptionFullWidth(),
-		progressbar.OptionSetRenderBlankState(true))
+	bar := internal.DefaultBytes(size, "downloading")
 
 	var w io.Writer
 	if h != nil {

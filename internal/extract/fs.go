@@ -2,14 +2,10 @@ package extract
 
 import (
 	"context"
-	"fmt"
 	"github.com/nguyengg/xy3/internal"
-	"github.com/schollz/progressbar/v3"
 	"io"
 	"io/fs"
-	"os"
 	"strings"
-	"time"
 )
 
 // FSExtractor uses archiver.FileSystem to perform extraction so it can work on a lot more types of archives.
@@ -31,20 +27,7 @@ func (x *FSExtractor) Extract(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	// equivalent to progressbar.DefaultBytes but with higher OptionThrottle to reduce flickering.
-	bar := progressbar.NewOptions64(size,
-		progressbar.OptionSetDescription("extracting"),
-		progressbar.OptionSetWriter(os.Stderr),
-		progressbar.OptionShowBytes(true),
-		progressbar.OptionSetWidth(10),
-		progressbar.OptionThrottle(1*time.Second),
-		progressbar.OptionShowCount(),
-		progressbar.OptionOnCompletion(func() {
-			_, _ = fmt.Fprint(os.Stderr, "\n")
-		}),
-		progressbar.OptionSpinnerType(14),
-		progressbar.OptionFullWidth(),
-		progressbar.OptionSetRenderBlankState(true))
+	bar := internal.DefaultBytes(size, "extracting")
 
 	if err = fs.WalkDir(x.In, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !d.Type().IsRegular() {

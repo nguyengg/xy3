@@ -3,13 +3,9 @@ package extract
 import (
 	"archive/zip"
 	"context"
-	"fmt"
 	"github.com/nguyengg/xy3/internal"
-	"github.com/schollz/progressbar/v3"
 	"io"
-	"os"
 	"strings"
-	"time"
 )
 
 // ZipExtractor can only extract ZIP files.
@@ -31,20 +27,7 @@ func (x *ZipExtractor) Extract(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	// equivalent to progressbar.DefaultBytes but with higher OptionThrottle to reduce flickering.
-	bar := progressbar.NewOptions64(int64(uncompressedSize),
-		progressbar.OptionSetDescription("extracting"),
-		progressbar.OptionSetWriter(os.Stderr),
-		progressbar.OptionShowBytes(true),
-		progressbar.OptionSetWidth(10),
-		progressbar.OptionThrottle(1*time.Second),
-		progressbar.OptionShowCount(),
-		progressbar.OptionOnCompletion(func() {
-			_, _ = fmt.Fprint(os.Stderr, "\n")
-		}),
-		progressbar.OptionSpinnerType(14),
-		progressbar.OptionFullWidth(),
-		progressbar.OptionSetRenderBlankState(true))
+	bar := internal.DefaultBytes(int64(uncompressedSize), "extracting")
 
 	for _, f := range x.In.File {
 		if f.FileInfo().IsDir() {
