@@ -27,7 +27,7 @@ func main() {
 	// change window's title to cwd.
 	if runtime.GOOS == "windows" {
 		if dir, err := os.Getwd(); err == nil {
-			exec.Command("title", dir)
+			_ = exec.Command("title", dir).Run()
 		}
 	}
 
