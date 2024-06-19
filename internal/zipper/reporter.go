@@ -2,11 +2,13 @@ package zipper
 
 import (
 	"context"
+	"fmt"
 	"github.com/schollz/progressbar/v3"
 	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // ProgressReporter is called to provide update on compressing individual files.
@@ -119,13 +121,33 @@ func NewProgressBarReporter(ctx context.Context, root string, bar *progressbar.P
 	}
 
 	if bar == nil {
-		bar = progressbar.DefaultBytes(size, "archiving")
+		// equivalent to progressbar.DefaultBytes but with higher OptionThrottle to reduce flickering.
+		bar = progressbar.NewOptions64(size,
+			progressbar.OptionSetDescription("archiving"),
+			progressbar.OptionSetWriter(os.Stderr),
+			progressbar.OptionShowBytes(true),
+			progressbar.OptionSetWidth(10),
+			progressbar.OptionThrottle(1*time.Second),
+			progressbar.OptionShowCount(),
+			progressbar.OptionOnCompletion(func() {
+				_, _ = fmt.Fprint(os.Stderr, "\n")
+			}),
+			progressbar.OptionSpinnerType(14),
+			progressbar.OptionFullWidth(),
+			progressbar.OptionSetRenderBlankState(true))
 	} else {
 		bar.ChangeMax64(size)
 	}
 
+	var totalWritten int64
+	var previousSrc string
 	return func(src, dst string, written int64, done bool) {
-		if _ = bar.Add64(written); done {
+		if previousSrc != src {
+			totalWritten = 0
+			previousSrc = src
+		}
+
+		if _, totalWritten = bar.Add64(written-totalWritten), written; done {
 			if fc--; fc == 0 {
 				_ = bar.Close()
 			}
