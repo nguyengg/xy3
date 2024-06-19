@@ -9,6 +9,7 @@ import (
 	"github.com/nguyengg/xy3/internal/upload"
 	"log"
 	"os"
+	"os/exec"
 	"runtime"
 )
 
@@ -22,6 +23,13 @@ var opts struct {
 
 func main() {
 	log.SetFlags(0)
+
+	// change window's title to cwd.
+	if runtime.GOOS == "windows" {
+		if dir, err := os.Getwd(); err == nil {
+			exec.Command("title", dir)
+		}
+	}
 
 	p := flags.NewParser(&opts, flags.Default)
 	p.CommandHandler = func(command flags.Commander, args []string) error {
