@@ -52,9 +52,17 @@ func (c *Command) Execute(args []string) error {
 	for i, file := range c.Args.Files {
 		c.logger = internal.NewLogger(i, n, file)
 
-		output, err := c.extract(ctx, string(file))
-		if err != nil {
+		switch output, err := c.extract(ctx, string(file)); {
+		case err == nil:
+			successes = append(successes, Success{
+				File:   string(file),
+				Output: output,
+			})
+		case errors.Is(err, context.Canceled):
+			return err
+		default:
 			c.logger.Printf("extract error: %v", err)
+
 			failures = append(failures, Failure{
 				File: string(file),
 				Err:  err,
@@ -64,16 +72,6 @@ func (c *Command) Execute(args []string) error {
 			if output != "" {
 				_ = os.RemoveAll(output)
 			}
-
-			if errors.Is(err, context.Canceled) {
-				return err
-			}
-		} else {
-			c.logger.Printf(`extracted to "%s"`, output)
-			successes = append(successes, Success{
-				File:   string(file),
-				Output: output,
-			})
 		}
 	}
 
@@ -84,14 +82,14 @@ func (c *Command) Execute(args []string) error {
 func (c *Command) extract(ctx context.Context, name string) (string, error) {
 	if in, err := zip.OpenReader(name); err == nil {
 		defer in.Close()
-		return (&ZipExtractor{Name: name, In: in}).Extract(ctx)
+		return (&ZipExtractor{name, in, c.logger}).Extract(ctx)
 	}
 
 	in, err := archiver.FileSystem(ctx, name)
 	if err != nil {
 		return "", err
 	}
-	return (&FSExtractor{Name: name, In: in}).Extract(ctx)
+	return (&FSExtractor{name, in, c.logger}).Extract(ctx)
 }
 
 // createOutputDir creates the output directory and the function to join the output path for each file in the archive.

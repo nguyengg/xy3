@@ -5,18 +5,20 @@ import (
 	"github.com/nguyengg/xy3/internal"
 	"io"
 	"io/fs"
+	"log"
 	"strings"
 )
 
 // FSExtractor uses archiver.FileSystem to perform extraction so it can work on a lot more types of archives.
 type FSExtractor struct {
-	Name string
-	In   fs.FS
+	Name   string
+	In     fs.FS
+	logger *log.Logger
 }
 
 // Extract extracts contents from the archive and writes to a newly created directory.
 func (x *FSExtractor) Extract(ctx context.Context) (string, error) {
-	topLevelDir, _, size, err := x.topLevelDir(ctx)
+	topLevelDir, size, err := x.topLevelDir(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -28,6 +30,7 @@ func (x *FSExtractor) Extract(ctx context.Context) (string, error) {
 	}
 
 	bar := internal.DefaultBytes(size, "extracting")
+	x.logger.Printf(`extracting to "%s"`, output)
 
 	if err = fs.WalkDir(x.In, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !d.Type().IsRegular() {
@@ -68,7 +71,7 @@ func (x *FSExtractor) Extract(ctx context.Context) (string, error) {
 // See ZipExtractor.topLevelDir.
 //
 // The method also returns the number of files and total size in bytes in the archive.
-func (x *FSExtractor) topLevelDir(ctx context.Context) (root string, n int, size int64, err error) {
+func (x *FSExtractor) topLevelDir(ctx context.Context) (root string, size int64, err error) {
 	err = fs.WalkDir(x.In, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -82,7 +85,6 @@ func (x *FSExtractor) topLevelDir(ctx context.Context) (root string, n int, size
 		}
 
 		size += fi.Size()
-		n++
 
 		switch paths := strings.SplitN(path, "/", 2); {
 		case len(paths) == 1:

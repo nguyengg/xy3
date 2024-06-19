@@ -5,13 +5,15 @@ import (
 	"context"
 	"github.com/nguyengg/xy3/internal"
 	"io"
+	"log"
 	"strings"
 )
 
 // ZipExtractor can only extract ZIP files.
 type ZipExtractor struct {
-	Name string
-	In   *zip.ReadCloser
+	Name   string
+	In     *zip.ReadCloser
+	logger *log.Logger
 }
 
 // Extract extracts contents from the ZIP archive and writes to a newly created directory.
@@ -28,6 +30,7 @@ func (x *ZipExtractor) Extract(ctx context.Context) (string, error) {
 	}
 
 	bar := internal.DefaultBytes(int64(uncompressedSize), "extracting")
+	x.logger.Printf(`extracting to "%s"`, output)
 
 	for _, f := range x.In.File {
 		if f.FileInfo().IsDir() {
