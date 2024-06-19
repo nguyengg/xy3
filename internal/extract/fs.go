@@ -29,8 +29,8 @@ func (x *FSExtractor) Extract(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	bar := internal.DefaultBytes(size, "extracting")
 	x.logger.Printf(`extracting to "%s"`, output)
+	bar := internal.DefaultBytes(size, "extracting")
 
 	if err = fs.WalkDir(x.In, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !d.Type().IsRegular() {

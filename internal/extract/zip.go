@@ -29,8 +29,8 @@ func (x *ZipExtractor) Extract(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	bar := internal.DefaultBytes(int64(uncompressedSize), "extracting")
 	x.logger.Printf(`extracting to "%s"`, output)
+	bar := internal.DefaultBytes(int64(uncompressedSize), "extracting")
 
 	for _, f := range x.In.File {
 		if f.FileInfo().IsDir() {
