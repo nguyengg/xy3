@@ -86,6 +86,7 @@ func (c *Command) download(ctx context.Context, name string) error {
 		}
 	}(file)
 
+	c.logger.Printf(`downloading %s from "s3://%s/%s" to "%s"`, humanize.Bytes(uint64(size)), man.Bucket, man.Key, file.Name())
 	bar := internal.DefaultBytes(size, "downloading")
 
 	var w io.Writer
@@ -94,8 +95,6 @@ func (c *Command) download(ctx context.Context, name string) error {
 	} else {
 		w = io.MultiWriter(file, bar)
 	}
-
-	c.logger.Printf(`downloading %s from "s3://%s/%s" to "%s"`, humanize.Bytes(uint64(size)), man.Bucket, man.Key, file.Name())
 
 	// first loop starts all the goroutines that are responsible for downloading the parts concurrently.
 	inputs := make(chan downloadInput, c.MaxConcurrency)
