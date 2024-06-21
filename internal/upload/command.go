@@ -20,9 +20,10 @@ type Command struct {
 	Prefix              string  `short:"k" long:"key-prefix" description:"key prefix to apply to all S3 operations"`
 	ExpectedBucketOwner *string `long:"expected-bucket-owner" description:"optional ExpectedBucketOwner field to apply to all S3 operations"`
 	Delete              bool    `short:"d" long:"delete" description:"if given, the local files will be deleted only upon successful upload. If compressing a directory, the directory will not be deleted but the intermediate archive will be."`
+	XZ                  bool    `long:"xz" description:"if given, local directories will be tar-ed and compressed instead of using zip by default"`
 	MaxConcurrency      int     `short:"P" long:"max-concurrency" description:"use up to max-concurrency number of goroutines at a time for parallel uploads." default:"5"`
 	Args                struct {
-		Files []flags.Filename `positional-arg-name:"file" description:"the local files or directories (after compressing the directories with zip) to be uploaded to S3" required:"yes"`
+		Files []flags.Filename `positional-arg-name:"file" description:"the local files or directories (after compressing the contents of the directory) to be uploaded to S3. By default, zip will be used to compress directory's contents.'" required:"yes"`
 	} `positional-args:"yes"`
 
 	client *s3.Client

@@ -23,7 +23,14 @@ func (x *FSExtractor) Extract(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	stem, _ := internal.SplitStemAndExt(x.Name)
+	var stem string
+	switch {
+	case strings.HasSuffix(x.Name, ".tar.xz"):
+		stem = strings.TrimSuffix(x.Name, ".tar.xz")
+	default:
+		stem, _ = internal.SplitStemAndExt(x.Name)
+	}
+
 	output, pathFn, err := createOutputDir(topLevelDir, stem)
 	if err != nil {
 		return "", err
@@ -49,7 +56,7 @@ func (x *FSExtractor) Extract(ctx context.Context) (string, error) {
 		}
 		defer w.Close()
 
-		if err = copyWithContext(ctx, io.MultiWriter(w, bar), f); err != nil {
+		if err = internal.CopyWithContext(ctx, io.MultiWriter(w, bar), f); err != nil {
 			return err
 		}
 

@@ -48,7 +48,7 @@ func (x *ZipExtractor) Extract(ctx context.Context) (string, error) {
 			return output, err
 		}
 
-		err = copyWithContext(ctx, io.MultiWriter(w, bar), r)
+		err = internal.CopyWithContext(ctx, io.MultiWriter(w, bar), r)
 		_, _ = w.Close(), r.Close()
 		if err != nil {
 			return output, err

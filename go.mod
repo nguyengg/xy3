@@ -11,7 +11,7 @@ require (
 	github.com/jessevdk/go-flags v1.5.0
 	github.com/mholt/archiver/v4 v4.0.0-alpha.8
 	github.com/schollz/progressbar/v3 v3.14.4
-	golang.org/x/time v0.5.0
+	github.com/ulikunitz/xz v0.5.12
 )
 
 require (
@@ -47,7 +47,6 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.15 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/therootcompany/xz v1.0.1 // indirect
-	github.com/ulikunitz/xz v0.5.10 // indirect
 	go4.org v0.0.0-20200411211856-f5505b9728dd // indirect
 	golang.org/x/sys v0.21.0 // indirect
 	golang.org/x/term v0.21.0 // indirect

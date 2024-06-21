@@ -88,34 +88,8 @@ func NewDirectoryProgressReporter(ctx context.Context, root string, reporter fun
 //
 // If the given progress bar is nil, it will be created with progressbar.DefaultBytes.
 func NewProgressBarReporter(ctx context.Context, root string, bar *progressbar.ProgressBar) (ProgressReporter, error) {
-	var size int64
-	var fc int
-
-	if err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		select {
-		case <-ctx.Done():
-			// ctx.Err is not supposed to return nil here if ctx.Done() is closed.
-			if err = ctx.Err(); err == nil {
-				return filepath.SkipAll
-			}
-			return err
-		default:
-			break
-		}
-
-		if err != nil || d.IsDir() || !d.Type().IsRegular() {
-			return err
-		}
-
-		fi, err := d.Info()
-		if err != nil {
-			return err
-		}
-
-		size += fi.Size()
-		fc++
-		return nil
-	}); err != nil {
+	n, size, err := CountDirContents(ctx, root)
+	if err != nil {
 		return nil, err
 	}
 
@@ -134,9 +108,25 @@ func NewProgressBarReporter(ctx context.Context, root string, bar *progressbar.P
 		}
 
 		if _, totalWritten = bar.Add64(written-totalWritten), written; done {
-			if fc--; fc == 0 {
+			if n--; n == 0 {
 				_ = bar.Close()
 			}
 		}
 	}, nil
+}
+
+// CountDirContents uses WalkRegularFiles to count all regular files and returns the total size of those files as well.
+func CountDirContents(ctx context.Context, root string) (n int, size int64, err error) {
+	err = WalkRegularFiles(ctx, root, func(path string, d fs.DirEntry) error {
+		n++
+
+		fi, err := d.Info()
+		if err != nil {
+			return err
+		}
+
+		size += fi.Size()
+		return nil
+	})
+	return
 }

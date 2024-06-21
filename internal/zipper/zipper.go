@@ -80,7 +80,7 @@ func (z Zipper) CompressFile(ctx context.Context, name string, dst io.Writer) er
 //	test/path/b.txt
 //	test/another/path/c.txt
 //
-// If JunkRoot is true, the files will use these paths:
+// If junkRoot is true, the files will use these paths:
 //
 //	a.txt
 //	path/b.txt
@@ -99,22 +99,7 @@ func (z Zipper) CompressDir(ctx context.Context, root string, dst io.Writer, jun
 		}
 	}
 
-	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		select {
-		case <-ctx.Done():
-			// ctx.Err is not supposed to return nil here if ctx.Done() is closed.
-			if err = ctx.Err(); err == nil {
-				return filepath.SkipAll
-			}
-			return err
-		default:
-			break
-		}
-
-		if err != nil || d.IsDir() || !d.Type().IsRegular() {
-			return err
-		}
-
+	return WalkRegularFiles(ctx, root, func(path string, d fs.DirEntry) error {
 		src, err := os.Open(path)
 		if err != nil {
 			return err
@@ -174,4 +159,29 @@ func (z Zipper) copy(ctx context.Context, w io.Writer, r io.Reader, src, dst str
 			return err
 		}
 	}
+}
+
+// WalkRegularFiles is a specialisation of filepath.WalkDir that applies the callback only to regular files.
+//
+// This is the same method that Zipper.CompressDir will use to compress files.
+func WalkRegularFiles(ctx context.Context, root string, fn func(path string, d fs.DirEntry) error) error {
+	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		select {
+		case <-ctx.Done():
+			// ctx.Err is not supposed to return nil here if ctx.Done() is closed.
+			if err = ctx.Err(); err == nil {
+				return filepath.SkipAll
+			}
+			return err
+		default:
+			break
+		}
+
+		switch {
+		case err != nil, d.IsDir(), !d.Type().IsRegular():
+			return err
+		default:
+			return fn(path, d)
+		}
+	})
 }
