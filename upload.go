@@ -48,7 +48,7 @@ type MultipartUploader struct {
 	//
 	// The data slice should not be modified nor retained lest it impacts the actual data uploaded to S3. This hook will
 	// only be called from the main goroutine that calls Upload. It can be used to hash the file as there is a
-	// guaranteed ordering (ascending part number) to these calls.
+	// guaranteed ordering (ascending part number starting at 1, ending at partCount inclusive) to these calls.
 	PreUploadPart func(partNumber int32, data []byte)
 
 	// PostUploadPart is called after every successful [s3.Client.UploadPart].
@@ -58,10 +58,10 @@ type MultipartUploader struct {
 	// the parts being completed.
 	PostUploadPart func(part s3types.CompletedPart, partCount int32)
 
-	client *s3.Client
+	client UploadAPIClient
 }
 
-func newMultipartUploader(client *s3.Client, optFns ...func(*MultipartUploader)) (*MultipartUploader, error) {
+func newMultipartUploader(client UploadAPIClient, optFns ...func(*MultipartUploader)) (*MultipartUploader, error) {
 	var partUploadCount int32
 
 	u := &MultipartUploader{
@@ -286,7 +286,7 @@ func (u MultipartUploader) validate(name string) (f *os.File, size, partSize int
 }
 
 type uploadWorker struct {
-	client    *s3.Client
+	client    UploadAPIClient
 	input     *s3.UploadPartInput
 	partCount int32
 	bufPool   *sync.Pool

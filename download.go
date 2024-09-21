@@ -24,8 +24,10 @@ type Downloader struct {
 	// PostGetPart is called after every successful ranged [s3.Client.GetObject].
 	//
 	// By default, `log.Printf` will be used to print messages in format `downloaded %d/%d parts`. This hook will only
-	// be called from the main goroutine that calls Download. It can be used to hash the file as there is a guaranteed
-	// ordering (ascending part number) to these callbacks.
+	// be called from the main goroutine that calls Download; the hook will be called right after the data slice have
+	// been written to file. It can be used to hash the file as there is a guaranteed ordering (ascending part number
+	// starting at 1, ending at partCount inclusive) to these callbacks, though it would be preferable to wrap the
+	// io.Writer passed into Download as an io.MultiWriter instead.
 	//
 	// Implementations must not retain the data slice.
 	PostGetPart func(data []byte, partNumber, partCount int)
@@ -40,7 +42,7 @@ type Downloader struct {
 	// See AddExpectedBucketOwnerToGetObject for an example.
 	ModifyGetObjectInput func(*s3.GetObjectInput)
 
-	client *s3.Client
+	client DownloadAPIClient
 }
 
 // AddExpectedBucketOwnerToHeadObject modifies the s3.HeadObjectInput by adding the expected bucket owner.
@@ -57,12 +59,12 @@ func AddExpectedBucketOwnerToGetObject(expectedBucketOwner string) func(*s3.GetO
 	}
 }
 
-func newDownloader(client *s3.Client, optFns ...func(*Downloader)) (*Downloader, error) {
+func newDownloader(client DownloadAPIClient, optFns ...func(*Downloader)) (*Downloader, error) {
 	d := &Downloader{
 		PartSize:    MinPartSize,
 		Concurrency: DefaultConcurrency,
 		PostGetPart: func(data []byte, partNumber, partCount int) {
-			log.Printf("downloaded %d/%d parts", partNumber+1, partCount)
+			log.Printf("downloaded %d/%d parts", partNumber, partCount)
 		},
 		client: client,
 	}
@@ -105,8 +107,8 @@ func (d Downloader) download(ctx context.Context, bucket, key string, w io.Write
 	//	1. sending each part to the inputs channel.
 	//	2. simultaneously and afterward read from outputs channel to report progress and write to file.
 	//
-	// the downloaded parts are stored in this map, and if the next part is available for writing to file then do
-	// right away to keep as little as data in memory as possible.
+	// the downloaded parts are stored in this map, and if the next part is available for writing to file then perform
+	// the write right away to keep as little data in memory as possible.
 	parts := make(map[int]*downloadOutput, partCount)
 	downloadedPartCount := 0
 	nextPartToWrite := 1
@@ -140,7 +142,10 @@ partLoop:
 				for part, ok := parts[nextPartToWrite]; ok; {
 					if _, err = w.Write(part.Data); err != nil {
 						close(inputs)
-						return fmt.Errorf("write part %d/%d to file error: %w", nextPartToWrite-1, partCount, err)
+						return fmt.Errorf("write part %d/%d to file error: %w", nextPartToWrite, partCount, err)
+					}
+					if d.PostGetPart != nil {
+						d.PostGetPart(part.Data, nextPartToWrite, partCount)
 					}
 
 					delete(parts, nextPartToWrite)
@@ -172,6 +177,9 @@ partLoop:
 			for part, ok := parts[nextPartToWrite]; ok; {
 				if _, err = w.Write(part.Data); err != nil {
 					return fmt.Errorf("write part %d/%d to file error: %w", nextPartToWrite, partCount, err)
+				}
+				if d.PostGetPart != nil {
+					d.PostGetPart(part.Data, nextPartToWrite, partCount)
 				}
 
 				delete(parts, nextPartToWrite)
