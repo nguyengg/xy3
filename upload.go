@@ -46,26 +46,30 @@ type MultipartUploader struct {
 
 	// PreUploadPart is called before a [s3.ClientUploadPart] attempt.
 	//
-	// The data slice should not be modified lest it impacts the actual data uploaded to S3. This hook will only be
-	// called from the main goroutine that calls Upload. It can be used to hash the file as there is a guaranteed
-	// ordering (ascending part number) to these calls.
+	// The data slice should not be modified nor retained lest it impacts the actual data uploaded to S3. This hook will
+	// only be called from the main goroutine that calls Upload. It can be used to hash the file as there is a
+	// guaranteed ordering (ascending part number) to these calls.
 	PreUploadPart func(partNumber int32, data []byte)
 
 	// PostUploadPart is called after every successful [s3.Client.UploadPart].
 	//
-	// By default, `log.Printf` will be used to print messages in format `uploaded part %d/%d`. This hook will only be
-	// called from the main goroutine that calls Upload. There is no ordering to the parts being completed.
+	// By default, `log.Printf` will be used to print messages in format `uploaded %d/%d parts`. This hook will only be
+	// called from the main goroutine that calls Upload. Unlike PreUploadPart, there is no guarantee to the ordering of
+	// the parts being completed.
 	PostUploadPart func(part s3types.CompletedPart, partCount int32)
 
 	client *s3.Client
 }
 
 func newMultipartUploader(client *s3.Client, optFns ...func(*MultipartUploader)) (*MultipartUploader, error) {
+	var partUploadCount int32
+
 	u := &MultipartUploader{
 		PartSize:    MinPartSize,
 		Concurrency: DefaultConcurrency,
 		PostUploadPart: func(part s3types.CompletedPart, partCount int32) {
-			log.Printf("uploaded part %d/%d", aws.ToInt32(part.PartNumber), partCount)
+			partUploadCount++
+			log.Printf("uploaded %d/%d parts", partUploadCount, partCount)
 		},
 		client: client,
 	}
@@ -135,10 +139,8 @@ func (u MultipartUploader) upload(ctx context.Context, name string, input *s3.Cr
 				RequestPayer:        input.RequestPayer,
 			}); mErr.AbortErr == nil {
 				mErr.Abort = AbortSuccess
-				log.Printf("abort success: %v", mErr)
 			} else {
 				mErr.Abort = AbortFailure
-				log.Printf("abort error: %v", mErr)
 			}
 		}
 
@@ -169,12 +171,14 @@ func (u MultipartUploader) upload(ctx context.Context, name string, input *s3.Cr
 		r.N = partSize
 		n, err = buf.ReadFrom(r)
 		if err != nil {
+			close(inputs)
 			return nil, wrapErr(err)
 		}
 
 		if remain -= n; n != partSize {
 			// the last part might be truncated but never 0.
 			if remain != 0 {
+				close(inputs)
 				return nil, wrapErr(fmt.Errorf("read only %d/%d bytes", n, partSize))
 			}
 		}
@@ -201,6 +205,7 @@ func (u MultipartUploader) upload(ctx context.Context, name string, input *s3.Cr
 					u.PostUploadPart(result.part, partCount)
 				}
 			case <-ctx.Done():
+				close(inputs)
 				return nil, wrapErr(ctx.Err())
 			}
 		}
@@ -280,15 +285,15 @@ func (u MultipartUploader) validate(name string) (f *os.File, size, partSize int
 	return
 }
 
-type worker struct {
+type uploadWorker struct {
 	client    *s3.Client
 	input     *s3.UploadPartInput
 	partCount int32
 	bufPool   *sync.Pool
 }
 
-func (u MultipartUploader) newWorker(input *s3.CreateMultipartUploadInput, uploadId string, partCount int32, bufPool *sync.Pool) *worker {
-	return &worker{
+func (u MultipartUploader) newWorker(input *s3.CreateMultipartUploadInput, uploadId string, partCount int32, bufPool *sync.Pool) *uploadWorker {
+	return &uploadWorker{
 		client: u.client,
 		input: &s3.UploadPartInput{
 			Bucket:               input.Bucket,
@@ -306,7 +311,7 @@ func (u MultipartUploader) newWorker(input *s3.CreateMultipartUploadInput, uploa
 	}
 }
 
-func (w *worker) do(ctx context.Context, inputs <-chan uploadInput, outputs chan<- uploadOutput) {
+func (w *uploadWorker) do(ctx context.Context, inputs <-chan uploadInput, outputs chan<- uploadOutput) {
 	var (
 		part uploadInput
 		ok   bool
