@@ -54,8 +54,8 @@ func main() {
 	client := s3.NewFromConfig(cfg)
 
 	if _, err = xy3.Upload(ctx, client, "path/to/file.zip", &s3.CreateMultipartUploadInput{
-		Bucket:              aws.String("my-bucket"),
-		Key:                 aws.String("my-key"),
+		Bucket: aws.String("my-bucket"),
+		Key:    aws.String("my-key"),
 	}); err != nil {
 		log.Panicf("upload error: %v", err)
 	}
@@ -74,7 +74,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/nguyengg/xy3"
+	"github.com/nguyengg/xy3/managerlogging"
 	"log"
 	"os"
 	"os/signal"
@@ -92,13 +92,20 @@ func main() {
 	client := s3.NewFromConfig(cfg)
 
 	// use a logger for all UploadPart.
-	uploader := manager.NewUploader(client, xy3.LogSuccessfulUploadPart(log.Default()))
+	uploader := manager.NewUploader(client, managerlogging.LogSuccessfulUploadPart(log.Default()))
 
 	// or specify them on a specific upload call.
 	_, _ = uploader.Upload(ctx, &s3.PutObjectInput{
 		Bucket: aws.String("my-bucket"),
 		Key:    aws.String("my-key"),
 		Body:   bytes.NewReader([]byte("hello, world!")),
-	}, xy3.LogSuccessfulUploadPartWithExpectedPartCount(log.Default(), 100))
+	}, managerlogging.LogSuccessfulUploadPartWithExpectedPartCount(log.Default(), 100))
+
+	// same for download.
+	downloader := manager.NewDownloader(client, managerlogging.LogSuccessfulDownloadPart(log.Default()))
+	_, _ = downloader.Download(ctx, nil, &s3.GetObjectInput{
+		Bucket: aws.String("my-bucket"),
+		Key:    aws.String("my-key"),
+	}, managerlogging.LogSuccessfulDownloadPartWithExpectedPartCount(log.Default(), 100))
 }
 ```

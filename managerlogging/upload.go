@@ -1,4 +1,4 @@
-package xy3
+package managerlogging
 
 import (
 	"context"
@@ -32,7 +32,7 @@ type LoggingUploadAPIClient struct {
 
 // WrapUploadAPIClient wraps the specified manager.UploadAPIClient as a LoggingUploadAPIClient.
 func WrapUploadAPIClient(client manager.UploadAPIClient, optFns ...func(*LoggingUploadAPIClient)) *LoggingUploadAPIClient {
-	w := &LoggingUploadAPIClient{}
+	w := &LoggingUploadAPIClient{UploadAPIClient: client}
 	for _, fn := range optFns {
 		fn(w)
 	}
