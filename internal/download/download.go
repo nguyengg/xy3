@@ -8,6 +8,7 @@ import (
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/cksum"
 	"github.com/nguyengg/xy3/internal/manifest"
+	"github.com/schollz/progressbar/v3"
 	"io"
 	"os"
 	"path/filepath"
@@ -61,10 +62,12 @@ func (c *Command) download(ctx context.Context, name string) error {
 			input.ExpectedBucketOwner = man.ExpectedBucketOwner
 		}
 
-		bar := internal.DefaultBytes(man.Size, "downloading")
-
+		var bar *progressbar.ProgressBar
 		var completedPartCount int
-		downloader.PostGetPart = func(data []byte, partNumber, partCount int) {
+		downloader.PostGetPart = func(data []byte, size int64, partNumber, partCount int) {
+			if bar == nil {
+				bar = internal.DefaultBytes(size, "downloading")
+			}
 			if completedPartCount++; completedPartCount == partCount {
 				_ = bar.Close()
 			} else {

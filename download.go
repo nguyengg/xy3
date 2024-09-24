@@ -29,8 +29,9 @@ type Downloader struct {
 	// starting at 1, ending at partCount inclusive) to these callbacks, though it would be preferable to wrap the
 	// io.Writer passed into Download as an io.MultiWriter instead.
 	//
-	// Implementations must not retain the data slice.
-	PostGetPart func(data []byte, partNumber, partCount int)
+	// Implementations must not retain the data slice. Size is the file's Content-Length determined from the S3
+	// HeadObject request.
+	PostGetPart func(data []byte, size int64, partNumber, partCount int)
 
 	// ModifyHeadObjectInput provides ways to customise the initial S3 HeadObject call to retrieve the size.
 	//
@@ -63,7 +64,7 @@ func newDownloader(client DownloadAPIClient, optFns ...func(*Downloader)) (*Down
 	d := &Downloader{
 		PartSize:    MinPartSize,
 		Concurrency: DefaultConcurrency,
-		PostGetPart: func(data []byte, partNumber, partCount int) {
+		PostGetPart: func(_ []byte, _ int64, partNumber, partCount int) {
 			log.Printf("downloaded %d/%d parts", partNumber, partCount)
 		},
 		client: client,
@@ -145,7 +146,7 @@ partLoop:
 						return fmt.Errorf("write part %d/%d to file error: %w", nextPartToWrite, partCount, err)
 					}
 					if d.PostGetPart != nil {
-						d.PostGetPart(part.Data, nextPartToWrite, partCount)
+						d.PostGetPart(part.Data, size, nextPartToWrite, partCount)
 					}
 
 					delete(parts, nextPartToWrite)
@@ -179,7 +180,7 @@ partLoop:
 					return fmt.Errorf("write part %d/%d to file error: %w", nextPartToWrite, partCount, err)
 				}
 				if d.PostGetPart != nil {
-					d.PostGetPart(part.Data, nextPartToWrite, partCount)
+					d.PostGetPart(part.Data, size, nextPartToWrite, partCount)
 				}
 
 				delete(parts, nextPartToWrite)
