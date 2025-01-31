@@ -8,6 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/dustin/go-humanize"
+	"golang.org/x/time/rate"
 	"io"
 	"log"
 	"math"
@@ -37,6 +38,11 @@ type MultipartUploader struct {
 	//
 	// Defaults to DefaultConcurrency. Cannot be non-positive.
 	Concurrency int
+
+	// MaxBytesInSecond is used to rate limit the amount of bytes that are uploaded in one second.
+	//
+	// The zero-value indicates no limit. Negative values are ignored.
+	MaxBytesInSecond int
 
 	// DisableAbortOnFailure controls whether upload failure will result in an attempt to call
 	// [s3.Client.AbortMultipartUpload].
@@ -155,8 +161,14 @@ func (u MultipartUploader) upload(ctx context.Context, name string, input *s3.Cr
 	}
 	inputs := make(chan uploadInput, u.Concurrency)
 	outputs := make(chan uploadOutput, u.Concurrency)
+	var limiter *rate.Limiter
+	if u.MaxBytesInSecond <= 0 {
+		limiter = rate.NewLimiter(rate.Inf, 0)
+	} else {
+		limiter = rate.NewLimiter(rate.Limit(u.MaxBytesInSecond), u.MaxBytesInSecond)
+	}
 	for range u.Concurrency {
-		go u.newWorker(input, uploadId, partCount, bufPool).do(ctx, inputs, outputs)
+		go u.newWorker(input, uploadId, partCount, bufPool, limiter).do(ctx, inputs, outputs)
 	}
 
 	// main goroutine is responsible for:
@@ -290,9 +302,10 @@ type uploadWorker struct {
 	input     *s3.UploadPartInput
 	partCount int32
 	bufPool   *sync.Pool
+	limiter   *rate.Limiter
 }
 
-func (u MultipartUploader) newWorker(input *s3.CreateMultipartUploadInput, uploadId string, partCount int32, bufPool *sync.Pool) *uploadWorker {
+func (u MultipartUploader) newWorker(input *s3.CreateMultipartUploadInput, uploadId string, partCount int32, bufPool *sync.Pool, limiter *rate.Limiter) *uploadWorker {
 	return &uploadWorker{
 		client: u.client,
 		input: &s3.UploadPartInput{
@@ -308,6 +321,7 @@ func (u MultipartUploader) newWorker(input *s3.CreateMultipartUploadInput, uploa
 		},
 		partCount: partCount,
 		bufPool:   bufPool,
+		limiter:   limiter,
 	}
 }
 
@@ -328,8 +342,17 @@ func (w *uploadWorker) do(ctx context.Context, inputs <-chan uploadInput, output
 		}
 
 		w.input.PartNumber = aws.Int32(part.partNumber)
+
 		// for retry to work, Body needs to implement io.Seeker so we wrap the bytes.Buffer here.
-		w.input.Body = bytes.NewReader(part.buf.Bytes())
+		// here is also where rate limiting happens.
+		data := part.buf.Bytes()
+		if err := w.limiter.WaitN(ctx, len(data)); err != nil {
+			outputs <- uploadOutput{
+				err: fmt.Errorf("wait to upload part %d error: %w", part.partNumber, err),
+			}
+			return
+		}
+		w.input.Body = bytes.NewReader(data)
 
 		output, err := w.client.UploadPart(ctx, w.input)
 		w.bufPool.Put(part.buf)

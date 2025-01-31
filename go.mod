@@ -12,6 +12,7 @@ require (
 	github.com/mholt/archiver/v4 v4.0.0-alpha.8
 	github.com/schollz/progressbar/v3 v3.14.4
 	github.com/ulikunitz/xz v0.5.12
+	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4
 )
 
 require (
