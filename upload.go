@@ -165,7 +165,7 @@ func (u MultipartUploader) upload(ctx context.Context, name string, input *s3.Cr
 	if u.MaxBytesInSecond <= 0 {
 		limiter = rate.NewLimiter(rate.Inf, 0)
 	} else {
-		limiter = rate.NewLimiter(rate.Limit(u.MaxBytesInSecond), u.MaxBytesInSecond)
+		limiter = rate.NewLimiter(rate.Limit(u.MaxBytesInSecond), int(u.PartSize))
 	}
 	for range u.Concurrency {
 		go u.newWorker(input, uploadId, partCount, bufPool, limiter).do(ctx, inputs, outputs)
