@@ -2,8 +2,9 @@ package xy3
 
 import (
 	"context"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"io"
+
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 // Upload uploads the named file to S3 using multipart upload with progress report.

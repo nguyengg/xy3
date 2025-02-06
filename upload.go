@@ -4,17 +4,18 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/dustin/go-humanize"
-	"golang.org/x/time/rate"
 	"io"
 	"log"
 	"math"
 	"os"
 	"slices"
 	"sync"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/dustin/go-humanize"
+	"golang.org/x/time/rate"
 )
 
 // Amazon S3 multipart upload limits
@@ -63,6 +64,34 @@ type MultipartUploader struct {
 	// called from the main goroutine that calls Upload. Unlike PreUploadPart, there is no guarantee to the ordering of
 	// the parts being completed.
 	PostUploadPart func(part s3types.CompletedPart, partCount int32)
+
+	// ChecksumCRC32 is the CRC32 checksum.
+	//
+	// Starting with s3 v1.73.0 (https://github.com/aws/aws-sdk-go-v2/discussions/2960) S3 starts using CRC32 as the
+	// default checksum algorithm in multipart upload. As a result, you must pass one of the checksum values here,
+	// or disable the feature as described in https://github.com/nguyengg/xy3/issues/1.
+	//
+	// In a future revision, `xy3` can be configured to compute the checksum for you, but it is not today.
+	ChecksumCRC32 *string
+	// ChecksumCRC32C is the CRC32C checksum.
+	//
+	// See ChecksumCRC32 for more information.
+	// ChecksumCRC32C is the CRC32C checksum.
+	//
+	// See ChecksumCRC32 for more information.
+	ChecksumCRC32C *string
+	// ChecksumCRC64NVME is the CRC64-NVME checksum.
+	//
+	// See ChecksumCRC32 for more information.
+	ChecksumCRC64NVME *string
+	// ChecksumSHA1 is the SHA-1 checksum.
+	//
+	// See ChecksumCRC32 for more information.
+	ChecksumSHA1 *string
+	// ChecksumSHA256 is the SHA-256 checksum.
+	//
+	// See ChecksumCRC32 for more information.
+	ChecksumSHA256 *string
 
 	client UploadAPIClient
 }
@@ -258,6 +287,7 @@ func (u MultipartUploader) upload(ctx context.Context, name string, input *s3.Cr
 		ExpectedBucketOwner:  input.ExpectedBucketOwner,
 		MultipartUpload:      &s3types.CompletedMultipartUpload{Parts: parts},
 		RequestPayer:         input.RequestPayer,
+		ChecksumType:         input.ChecksumType,
 		SSECustomerAlgorithm: input.SSECustomerAlgorithm,
 		SSECustomerKey:       input.SSECustomerKey,
 		SSECustomerKeyMD5:    input.SSECustomerKeyMD5,
