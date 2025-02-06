@@ -4,18 +4,17 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/dustin/go-humanize"
+	"golang.org/x/time/rate"
 	"io"
 	"log"
 	"math"
 	"os"
 	"slices"
 	"sync"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/dustin/go-humanize"
-	"golang.org/x/time/rate"
 )
 
 // Amazon S3 multipart upload limits
@@ -64,9 +63,6 @@ type MultipartUploader struct {
 	// called from the main goroutine that calls Upload. Unlike PreUploadPart, there is no guarantee to the ordering of
 	// the parts being completed.
 	PostUploadPart func(part s3types.CompletedPart, partCount int32)
-
-	// Verbose if true will log debug information using log.Printf.
-	Verbose bool
 
 	client UploadAPIClient
 }
@@ -121,18 +117,11 @@ func (u MultipartUploader) upload(ctx context.Context, name string, input *s3.Cr
 	})
 	defer cf()
 
-	if u.Verbose {
-		log.Printf("uploading %s in %d parts, each part of size %s", humanize.IBytes(uint64(size)), partCount, humanize.IBytes(uint64(partSize)))
-	}
-
 	var uploadId string
 	if output, err := u.client.CreateMultipartUpload(ctx, input); err != nil {
 		return nil, err
 	} else {
 		uploadId = aws.ToString(output.UploadId)
-		if u.Verbose {
-			log.Printf("multiplart upload Id is %s", uploadId)
-		}
 	}
 
 	// wrapErr is responsible for attempting to call abort.
@@ -249,11 +238,6 @@ func (u MultipartUploader) upload(ctx context.Context, name string, input *s3.Cr
 
 			parts = append(parts, result.part)
 			n++
-
-			if u.Verbose {
-				log.Printf("done uploading part %d: %#v", n, result.part)
-			}
-
 			if u.PostUploadPart != nil {
 				u.PostUploadPart(result.part, partCount)
 			}
@@ -278,11 +262,6 @@ func (u MultipartUploader) upload(ctx context.Context, name string, input *s3.Cr
 		SSECustomerKey:       input.SSECustomerKey,
 		SSECustomerKeyMD5:    input.SSECustomerKeyMD5,
 	})
-
-	if u.Verbose {
-		log.Printf("done completing multipart upload Id %s", uploadId)
-	}
-
 	return output, wrapErr(err)
 }
 
