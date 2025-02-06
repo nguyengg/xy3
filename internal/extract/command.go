@@ -5,9 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/jessevdk/go-flags"
-	"github.com/mholt/archiver/v4"
-	"github.com/nguyengg/xy3/internal"
 	"io/fs"
 	"log"
 	"os"
@@ -15,6 +12,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/jessevdk/go-flags"
+	"github.com/mholt/archives"
+	"github.com/nguyengg/xy3/internal"
 )
 
 type Command struct {
@@ -84,7 +85,7 @@ func (c *Command) extract(ctx context.Context, name string) (string, error) {
 		return (&ZipExtractor{name, in, c.logger}).Extract(ctx)
 	}
 
-	in, err := archiver.FileSystem(ctx, name)
+	in, err := archives.FileSystem(ctx, name, nil)
 	if err != nil {
 		return "", err
 	}

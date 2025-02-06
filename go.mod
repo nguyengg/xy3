@@ -9,7 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.75.4
 	github.com/dustin/go-humanize v1.0.1
 	github.com/jessevdk/go-flags v1.6.1
-	github.com/mholt/archiver/v4 v4.0.0-alpha.9
+	github.com/mholt/archives v0.1.0
 	github.com/schollz/progressbar/v3 v3.18.0
 	github.com/ulikunitz/xz v0.5.12
 	golang.org/x/time v0.10.0
@@ -37,7 +37,6 @@ require (
 	github.com/bodgit/sevenzip v1.6.0 // indirect
 	github.com/bodgit/windows v1.0.1 // indirect
 	github.com/dsnet/compress v0.0.2-0.20230904184137-39efe44ab707 // indirect
-	github.com/golang/snappy v0.0.4 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
