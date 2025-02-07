@@ -7,6 +7,16 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
+// Amazon S3 multipart upload limits
+// https://docs.aws.amazon.com/AmazonS3/latest/userguide/qfacts.html
+const (
+	MaxFileSize        = int64(5_497_558_138_880)
+	MaxPartCount       = 10_000
+	MinPartSize        = int64(5_242_880)
+	MaxPartSize        = int64(5_368_709_120)
+	DefaultConcurrency = 3
+)
+
 // Upload uploads the named file to S3 using multipart upload with progress report.
 //
 // Upload can only upload named files on the local filesystem with fixed size. If you need to upload in-memory content\
@@ -27,7 +37,7 @@ func Upload(ctx context.Context, client UploadAPIClient, name string, input *s3.
 	return u.upload(ctx, name, input)
 }
 
-// UploadAPIClient declares a subset of S3 methods that is required by Upload.
+// UploadAPIClient abstracts a subset of S3 methods that is used by Upload.
 type UploadAPIClient interface {
 	UploadPart(context.Context, *s3.UploadPartInput, ...func(*s3.Options)) (*s3.UploadPartOutput, error)
 	CreateMultipartUpload(context.Context, *s3.CreateMultipartUploadInput, ...func(*s3.Options)) (*s3.CreateMultipartUploadOutput, error)
@@ -35,8 +45,8 @@ type UploadAPIClient interface {
 	AbortMultipartUpload(context.Context, *s3.AbortMultipartUploadInput, ...func(*s3.Options)) (*s3.AbortMultipartUploadOutput, error)
 }
 
-// Download downloads the S3 object specified by bucket and key and writes to the given io.Writer.
-func Download(ctx context.Context, client DownloadAPIClient, bucket, key string, w io.Writer, optFns ...func(*Downloader)) error {
+// Download downloads the S3 object specified by the given bucket and key and writes to the given io.Writer.
+func Download(ctx context.Context, client DownloadAPIClient, bucket, key string, w io.Writer, optFns ...func(*DownloadOptions)) error {
 	d, err := newDownloader(client, optFns...)
 	if err != nil {
 		return err
@@ -45,7 +55,10 @@ func Download(ctx context.Context, client DownloadAPIClient, bucket, key string,
 	return d.download(ctx, bucket, key, w)
 }
 
-// DownloadAPIClient declares a subset of S3 methods that is required by Download.
+// DownloadAPIClient abstracts a subset of S3 methods that is required by Download.
+//
+// HeadObject is used to determine the total length of the file so that the number of parts is known beforehand, which
+// makes progress report a lot more accurate.
 type DownloadAPIClient interface {
 	HeadObject(context.Context, *s3.HeadObjectInput, ...func(*s3.Options)) (*s3.HeadObjectOutput, error)
 	GetObject(context.Context, *s3.GetObjectInput, ...func(*s3.Options)) (*s3.GetObjectOutput, error)

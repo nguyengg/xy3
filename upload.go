@@ -23,17 +23,7 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// Amazon S3 multipart upload limits
-// https://docs.aws.amazon.com/AmazonS3/latest/userguide/qfacts.html
-const (
-	MaxFileSize        = int64(5_497_558_138_880)
-	MaxPartCount       = 10_000
-	MinPartSize        = int64(5_242_880)
-	MaxPartSize        = int64(5_368_709_120)
-	DefaultConcurrency = 3
-)
-
-// UploadOptions customises how Upload happens.
+// UploadOptions customises various aspects of an Upload operation.
 type UploadOptions struct {
 	// PartSize is the size of each part.
 	//
@@ -42,13 +32,13 @@ type UploadOptions struct {
 
 	// Concurrency is the number of goroutines responsible for uploading the parts in parallel.
 	//
-	// Defaults to DefaultConcurrency.
+	// Defaults to DefaultConcurrency. Must be a positive integer.
 	Concurrency int
 
 	// MaxBytesInSecond is used to rate limit the amount of bytes that are uploaded in one second.
 	//
-	// The zero-value indicates no limit. Negative values are ignored.
-	MaxBytesInSecond int
+	// The zero-value indicates no limit. Must be positive integer.
+	MaxBytesInSecond int64
 
 	// DisableAbortOnFailure controls whether upload failure will result in an attempt to call
 	// [s3.Client.AbortMultipartUpload].
@@ -96,8 +86,9 @@ func newMultipartUploader(client UploadAPIClient, optFns ...func(options *Upload
 	var partUploadCount int32
 
 	opts := UploadOptions{
-		PartSize:    MinPartSize,
-		Concurrency: DefaultConcurrency,
+		PartSize:         MinPartSize,
+		Concurrency:      DefaultConcurrency,
+		MaxBytesInSecond: 0,
 		PostUploadPart: func(part s3types.CompletedPart, partCount int32) {
 			partUploadCount++
 			log.Printf("uploaded %d/%d parts", partUploadCount, partCount)
@@ -116,11 +107,6 @@ func newMultipartUploader(client UploadAPIClient, optFns ...func(options *Upload
 			},
 		},
 	}
-	if u.MaxBytesInSecond <= 0 {
-		u.limiter = rate.NewLimiter(rate.Inf, 0)
-	} else {
-		u.limiter = rate.NewLimiter(rate.Limit(u.MaxBytesInSecond), int(u.PartSize))
-	}
 
 	if u.PartSize < MinPartSize {
 		return nil, fmt.Errorf("partSize (%d) cannot be less than %d", u.PartSize, MinPartSize)
@@ -129,7 +115,14 @@ func newMultipartUploader(client UploadAPIClient, optFns ...func(options *Upload
 		return nil, fmt.Errorf("partSize (%d) cannot be greater than %d", u.PartSize, MaxPartSize)
 	}
 	if u.Concurrency <= 0 {
-		return nil, fmt.Errorf("concurrency (%d) must be greater than 0", opts.Concurrency)
+		return nil, fmt.Errorf("concurrency (%d) must be positive", opts.Concurrency)
+	}
+	if u.MaxBytesInSecond < 0 {
+		return nil, fmt.Errorf("maxBytesInSecond (%d) cannot be negative", u.MaxBytesInSecond)
+	} else if u.MaxBytesInSecond == 0 {
+		u.limiter = rate.NewLimiter(rate.Inf, 0)
+	} else {
+		u.limiter = rate.NewLimiter(rate.Limit(u.MaxBytesInSecond), int(u.PartSize))
 	}
 
 	return u, nil
@@ -360,6 +353,7 @@ func (u *uploader) poll(ctx context.Context, inputs <-chan uploadInput, outputs 
 
 		output, err := u.client.UploadPart(ctx, part.input)
 		u.bufPool.Put(part.buf)
+
 		if err != nil {
 			outputs <- uploadOutput{
 				err: fmt.Errorf("upload part %d error: %w", aws.ToInt32(part.input.PartNumber), err),

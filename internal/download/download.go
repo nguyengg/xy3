@@ -3,16 +3,17 @@ package download
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/cksum"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/schollz/progressbar/v3"
-	"io"
-	"os"
-	"path/filepath"
-	"strings"
 )
 
 func (c *Command) download(ctx context.Context, name string) error {
@@ -53,18 +54,18 @@ func (c *Command) download(ctx context.Context, name string) error {
 		w = io.MultiWriter(file, h)
 	}
 
-	if err = xy3.Download(ctx, c.client, man.Bucket, man.Key, w, func(downloader *xy3.Downloader) {
-		downloader.Concurrency = c.MaxConcurrency
-		downloader.ModifyHeadObjectInput = func(input *s3.HeadObjectInput) {
+	if err = xy3.Download(ctx, c.client, man.Bucket, man.Key, w, func(options *xy3.DownloadOptions) {
+		options.Concurrency = c.MaxConcurrency
+		options.ModifyHeadObjectInput = func(input *s3.HeadObjectInput) {
 			input.ExpectedBucketOwner = man.ExpectedBucketOwner
 		}
-		downloader.ModifyGetObjectInput = func(input *s3.GetObjectInput) {
+		options.ModifyGetObjectInput = func(input *s3.GetObjectInput) {
 			input.ExpectedBucketOwner = man.ExpectedBucketOwner
 		}
 
 		var bar *progressbar.ProgressBar
 		var completedPartCount int
-		downloader.PostGetPart = func(data []byte, size int64, partNumber, partCount int) {
+		options.PostGetPart = func(data []byte, size int64, partNumber, partCount int) {
 			if bar == nil {
 				bar = internal.DefaultBytes(size, "downloading")
 			}

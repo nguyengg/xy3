@@ -4,14 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/jessevdk/go-flags"
-	"github.com/nguyengg/xy3/internal"
 	"log"
 	"os"
 	"os/signal"
 	"strings"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/jessevdk/go-flags"
+	"github.com/nguyengg/xy3/internal"
 )
 
 type Command struct {
@@ -41,7 +43,13 @@ func (c *Command) Execute(args []string) error {
 		return fmt.Errorf("load default config error:%w", err)
 	}
 
-	c.client = s3.NewFromConfig(cfg)
+	c.client = s3.NewFromConfig(cfg, func(options *s3.Options) {
+		// without this, getting a bunch of WARN message below:
+		// WARN Response has no supported checksum. Not validating response payload.
+		//
+		// https://github.com/aws/aws-sdk-go-v2/issues/1606 mentions it but isn't helpful.
+		options.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
+	})
 
 	success := 0
 	n := len(c.Args.Files)
