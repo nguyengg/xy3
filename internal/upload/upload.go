@@ -5,6 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"strconv"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -14,8 +17,6 @@ import (
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/cksum"
 	"github.com/nguyengg/xy3/internal/manifest"
-	"os"
-	"strconv"
 )
 
 type uploadInput struct {
@@ -56,19 +57,19 @@ func (c *Command) upload(ctx context.Context, name string) error {
 		ContentType:         contentType,
 		Metadata:            map[string]string{"name": filename},
 		StorageClass:        s3types.StorageClassIntelligentTiering,
-	}, func(uploader *xy3.MultipartUploader) {
-		uploader.Concurrency = c.MaxConcurrency
+	}, func(options *xy3.UploadOptions) {
+		options.Concurrency = c.MaxConcurrency
 
 		bar := internal.DefaultBytes(size, "uploading")
 
 		var completedPartCount int32
 		parts := make(map[int32]int)
-		uploader.PreUploadPart = func(partNumber int32, data []byte) {
+		options.PreUploadPart = func(partNumber int32, data []byte) {
 			n, _ := hash.Write(data)
 			parts[partNumber] = n
 		}
 
-		uploader.PostUploadPart = func(part s3types.CompletedPart, partCount int32) {
+		options.PostUploadPart = func(part s3types.CompletedPart, partCount int32) {
 			if completedPartCount++; completedPartCount == partCount {
 				_ = bar.Close()
 			} else {

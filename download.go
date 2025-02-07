@@ -3,10 +3,11 @@ package xy3
 import (
 	"context"
 	"fmt"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"io"
 	"log"
 	"math"
+
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 // Downloader is used to download files from S3 using ranged get with progress report.

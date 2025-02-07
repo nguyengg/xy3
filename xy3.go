@@ -9,14 +9,16 @@ import (
 
 // Upload uploads the named file to S3 using multipart upload with progress report.
 //
-// Unlike manager.Uploader which receives an io.Reader which in turn can upload objects of unknown size (good for
-// streaming object on the fly), this method requires the object to be entirely contained in a file with known definite
-// size. If you would like to use manager.Uploader, check out WrapUploadAPIClient which provides progress logging by
-// decorating the manager.UploadAPIClient instance. manager.DownloadAPIClient
+// Upload can only upload named files on the local filesystem with fixed size. If you need to upload in-memory content\
+// or streaming content in general (i.e. io.Reader), use [s3manager Uploader] which is smart enough to use a single
+// PutObject if the content is small enough. Upload always uses multipart upload.
 //
-// Unlike manager.Uploader which knows to use a single S3 PutObject if the file is small enough, this method always uses
-// S3 Multipart Upload.
-func Upload(ctx context.Context, client UploadAPIClient, name string, input *s3.CreateMultipartUploadInput, optFns ...func(*MultipartUploader)) (*s3.CompleteMultipartUploadOutput, error) {
+// If you would like to use [s3manager Uploader] but want to add progress report, check out
+// managerlogging.WrapUploadAPIClient which provides progress logging by decorating the manager.UploadAPIClient
+// and manager.DownloadAPIClient instance.
+//
+// [s3manager Uploader]: https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/feature/s3/manager
+func Upload(ctx context.Context, client UploadAPIClient, name string, input *s3.CreateMultipartUploadInput, optFns ...func(*UploadOptions)) (*s3.CompleteMultipartUploadOutput, error) {
 	u, err := newMultipartUploader(client, optFns...)
 	if err != nil {
 		return nil, err
