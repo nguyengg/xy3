@@ -11,7 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/dustin/go-humanize"
 	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
@@ -25,7 +25,7 @@ type uploadInput struct {
 }
 
 type uploadOutput struct {
-	Part s3types.CompletedPart
+	Part types.CompletedPart
 	Err  error
 }
 
@@ -56,7 +56,7 @@ func (c *Command) upload(ctx context.Context, name string) error {
 		ExpectedBucketOwner: c.ExpectedBucketOwner,
 		ContentType:         contentType,
 		Metadata:            map[string]string{"name": filename},
-		StorageClass:        s3types.StorageClassIntelligentTiering,
+		StorageClass:        types.StorageClassIntelligentTiering,
 	}, func(options *xy3.UploadOptions) {
 		options.Concurrency = c.MaxConcurrency
 
@@ -69,7 +69,7 @@ func (c *Command) upload(ctx context.Context, name string) error {
 			parts[partNumber] = n
 		}
 
-		options.PostUploadPart = func(part s3types.CompletedPart, partCount int32) {
+		options.PostUploadPart = func(part types.CompletedPart, partCount int32) {
 			if completedPartCount++; completedPartCount == partCount {
 				_ = bar.Close()
 			} else {
@@ -156,7 +156,7 @@ func (c *Command) do(ctx context.Context, input s3.UploadPartInput, partCount in
 			}
 
 			outputs <- uploadOutput{
-				Part: s3types.CompletedPart{
+				Part: types.CompletedPart{
 					ETag:       uploadPartOutput.ETag,
 					PartNumber: aws.Int32(part.PartNumber),
 				},

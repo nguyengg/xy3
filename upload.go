@@ -18,7 +18,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/dustin/go-humanize"
 	"golang.org/x/time/rate"
 )
@@ -58,7 +58,7 @@ type UploadOptions struct {
 	// By default, `log.Printf` will be used to print messages in format `uploaded %d/%d parts`. This hook will only
 	// be called from the main goroutine that calls Upload. Unlike PreUploadPart, there is no guarantee to the
 	// ordering of the parts being completed.
-	PostUploadPart func(part s3types.CompletedPart, partCount int32)
+	PostUploadPart func(part types.CompletedPart, partCount int32)
 }
 
 type uploader struct {
@@ -78,7 +78,7 @@ type uploadInput struct {
 }
 
 type uploadOutput struct {
-	part s3types.CompletedPart
+	part types.CompletedPart
 	err  error
 }
 
@@ -89,7 +89,7 @@ func newMultipartUploader(client UploadAPIClient, optFns ...func(options *Upload
 		PartSize:         MinPartSize,
 		Concurrency:      DefaultConcurrency,
 		MaxBytesInSecond: 0,
-		PostUploadPart: func(part s3types.CompletedPart, partCount int32) {
+		PostUploadPart: func(part types.CompletedPart, partCount int32) {
 			partUploadCount++
 			log.Printf("uploaded %d/%d parts", partUploadCount, partCount)
 		},
@@ -185,7 +185,7 @@ func (u *uploader) upload(ctx context.Context, name string, input *s3.CreateMult
 	//	1. divvy up the file into parts.
 	//	2. send each part to the inputs channel.
 	//	3. simultaneously and afterward read from outputs channel to report progress.
-	parts := make([]s3types.CompletedPart, 0, partCount)
+	parts := make([]types.CompletedPart, 0, partCount)
 	r := &io.LimitedReader{R: f}
 	for partNumber, n, remain := int32(1), int64(0), size; partNumber <= partCount; partNumber++ {
 		buf := u.bufPool.Get().(*bytes.Buffer)
@@ -268,7 +268,7 @@ func (u *uploader) upload(ctx context.Context, name string, input *s3.CreateMult
 	}
 
 	// need to sort the parts because the sorting operation is too complex for S3 to poll.
-	slices.SortFunc(parts, func(a, b s3types.CompletedPart) int {
+	slices.SortFunc(parts, func(a, b types.CompletedPart) int {
 		return int(*a.PartNumber - *b.PartNumber)
 	})
 
@@ -277,7 +277,7 @@ func (u *uploader) upload(ctx context.Context, name string, input *s3.CreateMult
 		Key:                  input.Key,
 		UploadId:             u.createMultipartUploadOutput.UploadId,
 		ExpectedBucketOwner:  input.ExpectedBucketOwner,
-		MultipartUpload:      &s3types.CompletedMultipartUpload{Parts: parts},
+		MultipartUpload:      &types.CompletedMultipartUpload{Parts: parts},
 		RequestPayer:         input.RequestPayer,
 		ChecksumType:         input.ChecksumType,
 		MpuObjectSize:        aws.Int64(size),
@@ -363,7 +363,7 @@ func (u *uploader) poll(ctx context.Context, inputs <-chan uploadInput, outputs 
 
 		select {
 		case outputs <- uploadOutput{
-			part: s3types.CompletedPart{
+			part: types.CompletedPart{
 				ChecksumCRC32:     output.ChecksumCRC32,
 				ChecksumCRC32C:    output.ChecksumCRC32C,
 				ChecksumCRC64NVME: output.ChecksumCRC64NVME,
@@ -386,7 +386,7 @@ type hasher struct {
 
 func hashFrom(input *s3.CreateMultipartUploadInput) hasher {
 	switch checksumType := input.ChecksumType; input.ChecksumAlgorithm {
-	case s3types.ChecksumAlgorithmCrc32:
+	case types.ChecksumAlgorithmCrc32:
 		fo := crc32.NewIEEE()
 		co := crc32.NewIEEE()
 		return hasher{
@@ -397,12 +397,12 @@ func hashFrom(input *s3.CreateMultipartUploadInput) hasher {
 				input.ChecksumCRC32 = aws.String(base64.StdEncoding.EncodeToString(co.Sum(nil)))
 			},
 			func(input *s3.CompleteMultipartUploadInput) {
-				if checksumType == s3types.ChecksumTypeFullObject {
+				if checksumType == types.ChecksumTypeFullObject {
 					input.ChecksumCRC32 = aws.String(base64.StdEncoding.EncodeToString(fo.Sum(nil)))
 				}
 			},
 		}
-	case s3types.ChecksumAlgorithmCrc32c:
+	case types.ChecksumAlgorithmCrc32c:
 		fo := crc32.New(crc32.MakeTable(crc32.Castagnoli))
 		co := crc32.New(crc32.MakeTable(crc32.Castagnoli))
 		return hasher{
@@ -413,12 +413,12 @@ func hashFrom(input *s3.CreateMultipartUploadInput) hasher {
 				input.ChecksumCRC32C = aws.String(base64.StdEncoding.EncodeToString(co.Sum(nil)))
 			},
 			func(input *s3.CompleteMultipartUploadInput) {
-				if checksumType == s3types.ChecksumTypeFullObject {
+				if checksumType == types.ChecksumTypeFullObject {
 					input.ChecksumCRC32C = aws.String(base64.StdEncoding.EncodeToString(fo.Sum(nil)))
 				}
 			},
 		}
-	case s3types.ChecksumAlgorithmCrc64nvme:
+	case types.ChecksumAlgorithmCrc64nvme:
 		fo := crc64.New(crc64.MakeTable(0xAD93D23594C93659))
 		return hasher{
 			func(data []byte, input *s3.UploadPartInput) {
@@ -432,7 +432,7 @@ func hashFrom(input *s3.CreateMultipartUploadInput) hasher {
 				input.ChecksumCRC64NVME = aws.String(base64.StdEncoding.EncodeToString(fo.Sum(nil)))
 			},
 		}
-	case s3types.ChecksumAlgorithmSha1:
+	case types.ChecksumAlgorithmSha1:
 		co := sha1.New()
 		return hasher{
 			func(data []byte, input *s3.UploadPartInput) {
@@ -444,7 +444,7 @@ func hashFrom(input *s3.CreateMultipartUploadInput) hasher {
 				// sha1 does not support full object.
 			},
 		}
-	case s3types.ChecksumAlgorithmSha256:
+	case types.ChecksumAlgorithmSha256:
 		co := sha256.New()
 		return hasher{
 			func(data []byte, input *s3.UploadPartInput) {
@@ -459,8 +459,8 @@ func hashFrom(input *s3.CreateMultipartUploadInput) hasher {
 	default:
 		// right now if nothing is specified default to crc32 full-object.
 		// otherwise, it will fail, see https://github.com/nguyengg/xy3/issues/1.
-		input.ChecksumAlgorithm = s3types.ChecksumAlgorithmCrc32
-		input.ChecksumType = s3types.ChecksumTypeFullObject
+		input.ChecksumAlgorithm = types.ChecksumAlgorithmCrc32
+		input.ChecksumType = types.ChecksumTypeFullObject
 
 		fo := crc32.NewIEEE()
 		co := crc32.NewIEEE()

@@ -2,10 +2,11 @@ package managerlogging
 
 import (
 	"context"
-	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"log"
 	"sync/atomic"
+
+	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 // LoggingUploadAPIClient provides pre- and post- hooks on the methods that manager.Uploader may call.

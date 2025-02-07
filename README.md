@@ -13,6 +13,8 @@ are the XYplorer's file associations that I use:
 
 ## CLI
 
+`xy3` exists as a CLI that I use with XYplorer on a daily basis.
+
 ```shell
 # Uploading a file will generate a local .s3 (JSON) file that stores metadata about how to retrieve the file.
 # For example, this command will create doc.txt.s3 and log.zip.s3.
@@ -26,41 +28,97 @@ xy3 down doc.txt.s3 log.zip.s3
 xy3 remove doc.txt.s3 log.zip.s3
 ```
 
-## Go Package
+## Go Module
+
+`xy3` can also be used as a Go module. I have a few programs that actually depend on `xy3` for the ability to upload to
+and download from S3 with progress bar. Here's an example:
 
 ```go
 package main
 
 import (
 	"context"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/nguyengg/xy3"
 	"log"
 	"os"
 	"os/signal"
+	"runtime"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/nguyengg/xy3"
+	"github.com/nguyengg/xy3/internal"
+	"github.com/schollz/progressbar/v3"
 )
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer stop()
 
-	cfg, err := config.LoadDefaultConfig(ctx)
-	if err != nil {
-		log.Panicf("create SDK default config error: %v", err)
-	}
-
+	cfg, _ := config.LoadDefaultConfig(ctx)
 	client := s3.NewFromConfig(cfg)
 
-	if _, err = xy3.Upload(ctx, client, "path/to/file.zip", &s3.CreateMultipartUploadInput{
+	// Upload only accepts name to files on the local filesystem.
+	file := "path/to/file"
+	stat, _ := os.Stat(file)
+	_, _ = xy3.Upload(ctx, client, file, &s3.CreateMultipartUploadInput{
 		Bucket: aws.String("my-bucket"),
-		Key:    aws.String("my-key"),
-	}); err != nil {
-		log.Panicf("upload error: %v", err)
-	}
+		Key:    aws.String("my-file"),
+	}, func(options *xy3.UploadOptions) {
+		// I can change the concurrency (default to 3 goroutines) or put a throttle on the upload.
+		options.Concurrency = runtime.NumCPU()
+		options.MaxBytesInSecond = 5242880 // 5MiB
+
+		// this example uses a progress bar to show upload progress.
+		bar := progressbar.DefaultBytes(stat.Size(), "uploading")
+
+		// PreUploadPart is used to keep track of the size of each part (which should be identical).
+		var completedPartCount int32
+		parts := make(map[int32]int)
+		options.PreUploadPart = func(partNumber int32, data []byte) {
+			parts[partNumber] = len(data)
+		}
+
+		// PostUploadPart increases the progress bar by the completed size.
+		options.PostUploadPart = func(part types.CompletedPart, partCount int32) {
+			if completedPartCount++; completedPartCount == partCount {
+				_ = bar.Close()
+			} else {
+				_ = bar.Add64(int64(parts[aws.ToInt32(part.PartNumber)]))
+			}
+		}
+	})
+
+	// Download must be given an io.Writer.
+	f, _ := os.CreateTemp("", "*")
+	defer f.Close()
+
+	_ = xy3.Download(ctx, client, "my-bucket", "my-file", f, func(options *xy3.DownloadOptions) {
+		// similar to upload, I can change the concurrency (default to 3 goroutines) or put a limit.
+		options.Concurrency = runtime.NumCPU()
+		options.MaxBytesInSecond = 5242880 // 5MiB
+
+		// the size parameter is actually the total file size to be downloaded, which makes it easy to
+		// update the progress bar.
+		var bar *progressbar.ProgressBar
+		var completedPartCount int
+		options.PostGetPart = func(data []byte, size int64, partNumber, partCount int) {
+			if bar == nil {
+				bar = internal.DefaultBytes(size, "downloading")
+			}
+			if completedPartCount++; completedPartCount == partCount {
+				_ = bar.Close()
+			} else {
+				_ = bar.Add64(int64(len(data)))
+			}
+		}
+	})
 }
+
 ```
+
+## S3 Manager
 
 If you want to use [github.com/aws/aws-sdk-go-v2/feature/s3/manager](https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/feature/s3/manager)
 that comes with the SDK and adds logging:
@@ -70,42 +128,46 @@ package main
 import (
 	"bytes"
 	"context"
+	"log"
+	"os"
+	"os/signal"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/nguyengg/xy3/managerlogging"
-	"log"
-	"os"
-	"os/signal"
 )
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer stop()
 
-	cfg, err := config.LoadDefaultConfig(ctx)
-	if err != nil {
-		log.Panicf("create SDK default config error: %v", err)
-	}
-
+	cfg, _ := config.LoadDefaultConfig(ctx)
 	client := s3.NewFromConfig(cfg)
 
-	// use a logger for all UploadPart.
+	// use a logger for all UploadPart. the log messages will be in this format: `uploaded %d parts so far`.
 	uploader := manager.NewUploader(client, managerlogging.LogSuccessfulUploadPart(log.Default()))
 
-	// or specify them on a specific upload call.
+	// or specify them on a specific upload call. because the expected number of parts is known, the log message
+	// will be in this format: `uploaded %d/%d parts so far`.
+	//
+	// note that is it preferable to use the logging wrappers on a per Upload/Download operation like this.
+	// it's because each wrapper maintains a running tally that will be wrong if the same LoggingUploadAPIClient is
+	// reused for subsequent Uploads/Downloads. I could cache the UploadId or the Bucket/Key but that is complexity
+	// not worth adding from the current usage pattern.
 	_, _ = uploader.Upload(ctx, &s3.PutObjectInput{
 		Bucket: aws.String("my-bucket"),
 		Key:    aws.String("my-key"),
 		Body:   bytes.NewReader([]byte("hello, world!")),
 	}, managerlogging.LogSuccessfulUploadPartWithExpectedPartCount(log.Default(), 100))
 
-	// same for download.
+	// same for download, both types of logging wrappers exist.
 	downloader := manager.NewDownloader(client, managerlogging.LogSuccessfulDownloadPart(log.Default()))
 	_, _ = downloader.Download(ctx, nil, &s3.GetObjectInput{
 		Bucket: aws.String("my-bucket"),
 		Key:    aws.String("my-key"),
 	}, managerlogging.LogSuccessfulDownloadPartWithExpectedPartCount(log.Default(), 100))
 }
+
 ```
