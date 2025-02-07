@@ -15,8 +15,8 @@ import (
 	"github.com/dustin/go-humanize"
 	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
-	"github.com/nguyengg/xy3/internal/cksum"
 	"github.com/nguyengg/xy3/internal/manifest"
+	"github.com/nguyengg/xy3/namedhash"
 )
 
 type uploadInput struct {
@@ -46,7 +46,7 @@ func (c *Command) upload(ctx context.Context, name string) error {
 		Size:                size,
 	}
 
-	hash := cksum.NewHasher()
+	hash := namedhash.NamedHash{}
 
 	c.logger.Printf(`uploading %s to "s3://%s/%s"`, humanize.Bytes(uint64(size)), c.Bucket, key)
 
@@ -84,7 +84,7 @@ func (c *Command) upload(ctx context.Context, name string) error {
 
 	// now generate the local .s3 file that contains the S3 URI. if writing to file fails, prints the JSON content to
 	// standard output so that they can be saved manually later.
-	m.Checksum = hash.SumToChecksumString(nil)
+	m.Checksum = hash.SumToString(nil)
 	f, err := internal.OpenExclFile(stem, ext+".s3")
 	if err != nil {
 		return err

@@ -11,8 +11,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
-	"github.com/nguyengg/xy3/internal/cksum"
 	"github.com/nguyengg/xy3/internal/manifest"
+	"github.com/nguyengg/xy3/namedhash"
 	"github.com/schollz/progressbar/v3"
 )
 
@@ -29,7 +29,7 @@ func (c *Command) download(ctx context.Context, name string) error {
 	ext := filepath.Ext(basename)
 
 	// while downloading, also computes checksum to verify against the downloaded content.
-	h, err := cksum.NewFromChecksumString(man.Checksum)
+	h, err := namedhash.NewFromChecksumString(man.Checksum)
 	if err != nil {
 		return err
 	}
@@ -85,7 +85,7 @@ func (c *Command) download(ctx context.Context, name string) error {
 		return nil
 	}
 
-	if actual := h.SumToChecksumString(nil); man.Checksum != actual {
+	if actual := h.SumToString(nil); man.Checksum != actual {
 		c.logger.Printf("done downloading; checksum does not match: expect %s, got %s", man.Checksum, actual)
 	} else {
 		c.logger.Printf("done downloading; checksum matches")
