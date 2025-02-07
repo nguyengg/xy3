@@ -11,43 +11,73 @@ import (
 	"path/filepath"
 )
 
+const (
+	// DefaultBufferSize is the default value for [Zipper.BufferSize], which is 32 KiB.
+	DefaultBufferSize = 32 * 1024
+)
+
 // Zipper is used to recursively compress (with zip) a directory or file with progress report and cancellable context.
+//
+// The zero value is ready for use.
 type Zipper struct {
 	// ProgressReporter controls how progress is reported.
+	//
+	// By default, DefaultProgressReporter is used, which logs `added path/to/file to archive` after each file has
+	// been successfully added to the archive.
 	ProgressReporter ProgressReporter
 
-	// NewWriter allows customization of the zip.Writer being used.
+	// BufferSize is the length of the buffer being used for copying/adding files to the archive.
 	//
-	// Default to BestCompressionZipWriter.
-	NewWriter func(w io.Writer) *zip.Writer
+	// BufferSize indirectly controls how frequently ProgressReporter is called; after each copy is done,
+	// ProgressReporter is called once.
+	//
+	// Default to DefaultBufferSize.
+	BufferSize int
+
+	// NewZipWriterFn allows customization of the zip.Writer being used.
+	//
+	// Default to a [zip.Writer] that uses [flate.DefaultCompression] for balance.
+	NewZipWriterFn func(w io.Writer) *zip.Writer
 }
 
-// New creates a new Zipper with default settings.
-//
-// By default, log.Printf will be used to provide progress update only on each file being added to the archive.
-func New() *Zipper {
-	return &Zipper{
+// New returns a new Zipper with customisation options.
+func New(optFns ...func(*Zipper)) *Zipper {
+	z := &Zipper{
 		ProgressReporter: DefaultProgressReporter,
-		NewWriter:        BestCompressionZipWriter,
+		BufferSize:       DefaultBufferSize,
+		NewZipWriterFn:   zip.NewWriter,
+	}
+	for _, fn := range optFns {
+		fn(z)
+	}
+
+	return z
+}
+
+// NoCompressionZipWriter uses a [zip.Writer] that registers [flate.NoCompression] as its compressor.
+func NoCompressionZipWriter() func(*Zipper) {
+	return func(z *Zipper) {
+		z.NewZipWriterFn = func(w io.Writer) *zip.Writer {
+			zw := zip.NewWriter(w)
+			zw.RegisterCompressor(zip.Deflate, func(w io.Writer) (io.WriteCloser, error) {
+				return flate.NewWriter(w, flate.NoCompression)
+			})
+			return zw
+		}
 	}
 }
 
-// NoCompressionZipWriter returns a zip.Writer that registers flate.NoCompression as its compressor.
-func NoCompressionZipWriter(w io.Writer) *zip.Writer {
-	zw := zip.NewWriter(w)
-	zw.RegisterCompressor(zip.Deflate, func(w io.Writer) (io.WriteCloser, error) {
-		return flate.NewWriter(w, flate.NoCompression)
-	})
-	return zw
-}
-
-// BestCompressionZipWriter returns a zip.Writer that registers flate.BestCompression as its compressor.
-func BestCompressionZipWriter(w io.Writer) *zip.Writer {
-	zw := zip.NewWriter(w)
-	zw.RegisterCompressor(zip.Deflate, func(w io.Writer) (io.WriteCloser, error) {
-		return flate.NewWriter(w, flate.BestCompression)
-	})
-	return zw
+// BestCompressionZipWriter uses a [zip.Writer] that registers [flate.BestCompression] as its compressor.
+func BestCompressionZipWriter() func(*Zipper) {
+	return func(z *Zipper) {
+		z.NewZipWriterFn = func(w io.Writer) *zip.Writer {
+			zw := zip.NewWriter(w)
+			zw.RegisterCompressor(zip.Deflate, func(w io.Writer) (io.WriteCloser, error) {
+				return flate.NewWriter(w, flate.NoCompression)
+			})
+			return zw
+		}
+	}
 }
 
 // CompressFile compresses a single file to the archive opened as io.Writer.
@@ -57,7 +87,12 @@ func (z Zipper) CompressFile(ctx context.Context, name string, dst io.Writer) er
 		return err
 	}
 
-	zw := z.NewWriter(dst)
+	var zw *zip.Writer
+	if z.NewZipWriterFn != nil {
+		zw = z.NewZipWriterFn(dst)
+	} else {
+		zw = zip.NewWriter(dst)
+	}
 	defer zw.Close()
 
 	p := filepath.Base(name)
@@ -86,7 +121,7 @@ func (z Zipper) CompressFile(ctx context.Context, name string, dst io.Writer) er
 //	path/b.txt
 //	another/path/c.txt
 func (z Zipper) CompressDir(ctx context.Context, root string, dst io.Writer, junkRoot bool) error {
-	zw := z.NewWriter(dst)
+	zw := z.NewZipWriterFn(dst)
 	defer zw.Close()
 
 	base := filepath.Base(root)

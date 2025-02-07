@@ -9,7 +9,6 @@ import (
 	"os/signal"
 	"strings"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jessevdk/go-flags"
@@ -49,10 +48,7 @@ func (c *Command) Execute(args []string) error {
 		return fmt.Errorf("load default config error:%w", err)
 	}
 
-	c.client = s3.NewFromConfig(cfg, func(options *s3.Options) {
-		// https://github.com/nguyengg/xy3/issues/1
-		options.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
-	})
+	c.client = s3.NewFromConfig(cfg)
 
 	success := 0
 	n := len(c.Args.Files)

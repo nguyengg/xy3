@@ -2,19 +2,20 @@ package zipper
 
 import (
 	"context"
-	"github.com/nguyengg/xy3/internal"
-	"github.com/schollz/progressbar/v3"
 	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
+
+	"github.com/nguyengg/xy3/internal"
+	"github.com/schollz/progressbar/v3"
 )
 
 // ProgressReporter is called to provide update on compressing individual files.
 //
 //   - src: path of the file being added to the archive
 //   - dst: relative path of the file in the archive
-//   - written: number of bytes of the file that has been read and written to archive so far
+//   - written: number of bytes of the file specified by src that has been read and written to archive so far
 //   - done: is true only when the file has been read and written in its entirety
 //
 // The method will be called at least once for every file being compressed. If the file is small enough to fit into one
@@ -22,6 +23,8 @@ import (
 type ProgressReporter func(src, dst string, written int64, done bool)
 
 // DefaultProgressReporter is the default report that only reports upon a file being successfully added to archive.
+//
+// Specifically, after file `path/to/a` is added, [log.Printf] will print `added path/to/a to archive`.
 func DefaultProgressReporter(src, dst string, written int64, done bool) {
 	if done {
 		log.Printf(`added "%s" to archive`, dst)

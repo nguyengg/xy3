@@ -4,13 +4,14 @@ import (
 	"archive/tar"
 	"context"
 	"fmt"
-	"github.com/nguyengg/xy3/internal"
-	"github.com/nguyengg/xy3/internal/zipper"
-	"github.com/ulikunitz/xz"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/nguyengg/xy3/internal"
+	"github.com/nguyengg/xy3/zipper"
+	"github.com/ulikunitz/xz"
 )
 
 type compressor struct {
