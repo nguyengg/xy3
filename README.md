@@ -124,6 +124,11 @@ func main() {
 
 ```
 
+## Zip compress and extract
+
+You can use `github.com/nguyengg/xy3/zipper` directly to ZIP-compress directories and extract them. See 
+[zipper](zipper/README.md) for more information.
+
 ## S3 Manager
 
 If you want to use [github.com/aws/aws-sdk-go-v2/feature/s3/manager](https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/feature/s3/manager)

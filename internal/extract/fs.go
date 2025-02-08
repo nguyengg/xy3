@@ -2,11 +2,12 @@ package extract
 
 import (
 	"context"
-	"github.com/nguyengg/xy3/internal"
 	"io"
 	"io/fs"
 	"log"
 	"strings"
+
+	"github.com/nguyengg/xy3/internal"
 )
 
 // FSExtractor uses archiver.FileSystem to perform extraction so it can work on a lot more types of archives.
@@ -56,7 +57,7 @@ func (x *FSExtractor) Extract(ctx context.Context) (string, error) {
 		}
 		defer w.Close()
 
-		if err = internal.CopyWithContext(ctx, io.MultiWriter(w, bar), f); err != nil {
+		if err = internal.CopyBufferWithContext(ctx, io.MultiWriter(w, bar), f, nil); err != nil {
 			return err
 		}
 

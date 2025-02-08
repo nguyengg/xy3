@@ -2,6 +2,7 @@ package upload
 
 import (
 	"archive/tar"
+	"compress/flate"
 	"context"
 	"fmt"
 	"io"
@@ -24,13 +25,15 @@ var (
 	Zip = compressor{
 		ContentType: "application/zip",
 		Ext:         ".zip",
-		Compress: func(ctx context.Context, dst io.Writer, root string) (err error) {
-			z := zipper.New()
-			z.ProgressReporter, err = zipper.NewProgressBarReporter(ctx, root, nil)
-			if err == nil {
-				err = z.CompressDir(ctx, root, dst, false)
+		Compress: func(ctx context.Context, dst io.Writer, root string) error {
+			if pr, err := zipper.NewProgressBarReporter(ctx, root, nil); err == nil {
+				return zipper.CompressDir(ctx, root, dst, func(options *zipper.CompressDirOptions) {
+					options.NewWriter = zipper.NewWriterWithDeflateLevel(flate.BestCompression)
+					options.ProgressReporter = pr
+				})
+			} else {
+				return err
 			}
-			return
 		},
 	}
 	XZ = compressor{
@@ -74,7 +77,7 @@ var (
 					Size: fi.Size(),
 					Mode: 0600,
 				}); err == nil {
-					err = internal.CopyWithContext(ctx, io.MultiWriter(tw, bar), src)
+					err = internal.CopyBufferWithContext(ctx, io.MultiWriter(tw, bar), src, nil)
 				}
 
 				return err

@@ -3,10 +3,11 @@ package extract
 import (
 	"archive/zip"
 	"context"
-	"github.com/nguyengg/xy3/internal"
 	"io"
 	"log"
 	"strings"
+
+	"github.com/nguyengg/xy3/internal"
 )
 
 // ZipExtractor can only extract ZIP files.
@@ -48,7 +49,7 @@ func (x *ZipExtractor) Extract(ctx context.Context) (string, error) {
 			return output, err
 		}
 
-		err = internal.CopyWithContext(ctx, io.MultiWriter(w, bar), r)
+		err = internal.CopyBufferWithContext(ctx, io.MultiWriter(w, bar), r, nil)
 		_, _ = w.Close(), r.Close()
 		if err != nil {
 			return output, err

@@ -6,9 +6,11 @@ import (
 	"io"
 )
 
-// CopyWithContext is a custom implementation of io.Copy that is cancellable.
-func CopyWithContext(ctx context.Context, dst io.Writer, src io.Reader) (err error) {
-	buf := make([]byte, 32*1024)
+// CopyBufferWithContext is a custom implementation of io.CopyBuffer that is cancellable.
+func CopyBufferWithContext(ctx context.Context, dst io.Writer, src io.Reader, buf []byte) (err error) {
+	if buf == nil {
+		buf = make([]byte, 32*1024)
+	}
 
 	var nr, nw int
 	var read int64
