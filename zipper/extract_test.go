@@ -192,7 +192,7 @@ func TestExtract(t *testing.T) {
 			assert.Equalf(t, expectedBaseDir, filepath.Base(actualDir), "Extract(_, %s, %s) did not return expected base dir; got %v, expected %v", tt.testdata, tmpDir, actualDir, expectedBaseDir)
 
 			tt.expected = cleanAndSortRepl(tt.expected, tmpDir)
-			actual := lsAndSort(actualDir)
+			actual := lsAndSort(actualDir, false)
 			assert.Equalf(t, tt.expected, actual, "Extract(_, %s, %s) did not produce expected directory structure: got %v, want %v", tt.testdata, tmpDir, actualDir, tt.expected)
 		})
 	}
@@ -214,8 +214,8 @@ func TestExtract_WriteDir(t *testing.T) {
 			name:            "write_dir.zip",
 			testdata:        "testdata/write_dir.zip",
 			expectedBaseDir: "write_dir",
-			// our code doesn't bother verifying directory so this is what shows up.
 			expected: []string{
+				"write_dir/empty",
 				"write_dir/a.txt",
 			},
 		},
@@ -226,6 +226,7 @@ func TestExtract_WriteDir(t *testing.T) {
 			// * will be replaced with tmpDir, showing that the given dir was used as output dir.
 			expectedBaseDir: "*",
 			expected: []string{
+				"*/empty",
 				"*/a.txt",
 			},
 		},
@@ -235,6 +236,8 @@ func TestExtract_WriteDir(t *testing.T) {
 			noUnwrapRoot:    true,
 			expectedBaseDir: "write_dir",
 			expected: []string{
+				"write_dir/test",
+				"write_dir/test/empty",
 				"write_dir/test/a.txt",
 			},
 		},
@@ -245,6 +248,8 @@ func TestExtract_WriteDir(t *testing.T) {
 			noUnwrapRoot:      true,
 			expectedBaseDir:   "*",
 			expected: []string{
+				"*/test",
+				"*/test/empty",
 				"*/test/a.txt",
 			},
 		},
@@ -256,6 +261,7 @@ func TestExtract_WriteDir(t *testing.T) {
 			testdata:        "testdata/write_dir_unwrap_root.zip",
 			expectedBaseDir: "write_dir_unwrap_root",
 			expected: []string{
+				"write_dir_unwrap_root/empty",
 				"write_dir_unwrap_root/a.txt",
 			},
 		},
@@ -266,6 +272,7 @@ func TestExtract_WriteDir(t *testing.T) {
 			// * will be replaced with tmpDir, showing that the given dir was used as output dir.
 			expectedBaseDir: "*",
 			expected: []string{
+				"*/empty",
 				"*/a.txt",
 			},
 		},
@@ -275,6 +282,7 @@ func TestExtract_WriteDir(t *testing.T) {
 			noUnwrapRoot:    true,
 			expectedBaseDir: "write_dir_unwrap_root",
 			expected: []string{
+				"write_dir_unwrap_root/empty",
 				"write_dir_unwrap_root/a.txt",
 			},
 		},
@@ -286,6 +294,7 @@ func TestExtract_WriteDir(t *testing.T) {
 			expectedBaseDir:   "*",
 			expected: []string{
 				// because write_dir_unwrap_root.zip didn't have a root dir, it is identical to noUnwrapRoot=false
+				"*/empty",
 				"*/a.txt",
 			},
 		},
@@ -307,7 +316,7 @@ func TestExtract_WriteDir(t *testing.T) {
 			assert.Equalf(t, expectedBaseDir, filepath.Base(actualDir), "Extract(_, %s, %s) did not return expected base dir; got %v, expected %v", tt.testdata, tmpDir, actualDir, expectedBaseDir)
 
 			tt.expected = cleanAndSortRepl(tt.expected, tmpDir)
-			actual := lsAndSort(actualDir)
+			actual := lsAndSort(actualDir, true)
 			assert.Equalf(t, tt.expected, actual, "Extract(_, %s, %s) did not produce expected directory structure: got %v, want %v", tt.testdata, tmpDir, actualDir, tt.expected)
 		})
 	}
@@ -328,14 +337,14 @@ func cleanAndSortRepl(paths []string, tmpDir string) []string {
 	return paths
 }
 
-func lsAndSort(dir string) []string {
+func lsAndSort(dir string, includeDir bool) []string {
 	names := make([]string, 0)
 	if err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
+		if err != nil || path == dir {
 			return err
 		}
 
-		if d.Type().IsRegular() {
+		if d.Type().IsRegular() || (includeDir && d.IsDir()) {
 			names = append(names, rel(dir, path))
 		}
 

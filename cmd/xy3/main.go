@@ -2,15 +2,16 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"os"
+	"os/exec"
+	"runtime"
+
 	"github.com/jessevdk/go-flags"
 	"github.com/nguyengg/xy3/internal/download"
 	"github.com/nguyengg/xy3/internal/extract"
 	"github.com/nguyengg/xy3/internal/remove"
 	"github.com/nguyengg/xy3/internal/upload"
-	"log"
-	"os"
-	"os/exec"
-	"runtime"
 )
 
 var opts struct {
