@@ -14,7 +14,7 @@ import (
 //
 // The context is checked for done status after every write. As a result, having too small a buffer may introduce too
 // much overhead, while having a very large buffer may cause context cancellation to have a delayed effect.
-func CopyBufferWithContext(ctx context.Context, dst io.Writer, src io.Reader, buf []byte) (err error) {
+func CopyBufferWithContext(ctx context.Context, dst io.Writer, src io.Reader, buf []byte) (written int64, err error) {
 	if buf == nil {
 		buf = make([]byte, 32*1024)
 	}
@@ -27,26 +27,27 @@ func CopyBufferWithContext(ctx context.Context, dst io.Writer, src io.Reader, bu
 		if nr > 0 {
 			switch nw, err = dst.Write(buf[0:nr]); {
 			case err != nil:
-				return err
+				return written, err
 			case nr < nw:
-				return io.ErrShortWrite
+				return written, io.ErrShortWrite
 			case nr != nw:
-				return fmt.Errorf("invalid write: expected to write %d bytes, wrote %d bytes instead", nr, nw)
+				return written, fmt.Errorf("invalid write: expected to write %d bytes, wrote %d bytes instead", nr, nw)
 			}
 
 			select {
 			case <-ctx.Done():
-				return ctx.Err()
+				return written, ctx.Err()
 			default:
 				read += int64(nr)
+				written += int64(nw)
 			}
 		}
 
 		if err == io.EOF {
-			return nil
+			return written, nil
 		}
 		if err != nil {
-			return err
+			return written, err
 		}
 	}
 }

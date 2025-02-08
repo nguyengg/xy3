@@ -91,11 +91,12 @@ func CompressFile(ctx context.Context, name string, dst io.Writer, optFns ...fun
 	buf := make([]byte, opts.BufferSize)
 	pr := opts.ProgressReporter
 	if pr == nil {
-		return xy3.CopyBufferWithContext(ctx, f, src, buf)
+		_, err = xy3.CopyBufferWithContext(ctx, f, src, buf)
+		return err
 	}
 
 	w := pr.createWriter(name, fi.Name())
-	err = xy3.CopyBufferWithContext(ctx, io.MultiWriter(f, w), src, buf)
+	_, err = xy3.CopyBufferWithContext(ctx, io.MultiWriter(f, w), src, buf)
 	if err == nil {
 		w.done()
 	}

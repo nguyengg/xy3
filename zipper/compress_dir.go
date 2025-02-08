@@ -172,11 +172,12 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 			}
 
 			if pr == nil {
-				return xy3.CopyBufferWithContext(ctx, f, src, buf)
+				_, err = xy3.CopyBufferWithContext(ctx, f, src, buf)
+				return err
 			}
 
 			w := pr.createWriter(rel(dir, src.Name()), path)
-			err = xy3.CopyBufferWithContext(ctx, io.MultiWriter(f, w), src, buf)
+			_, err = xy3.CopyBufferWithContext(ctx, io.MultiWriter(f, w), src, buf)
 			if err == nil {
 				w.done()
 			}

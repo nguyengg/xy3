@@ -199,10 +199,10 @@ func Extract(ctx context.Context, src, dir string, optFns ...func(*ExtractOption
 		}
 
 		if pr == nil {
-			err = xy3.CopyBufferWithContext(ctx, dst, src, buf)
+			_, err = xy3.CopyBufferWithContext(ctx, dst, src, buf)
 		} else {
 			w := pr.createWriter(f.Name, rel(dir, dst.Name()))
-			err = xy3.CopyBufferWithContext(ctx, io.MultiWriter(dst, w), src, buf)
+			_, err = xy3.CopyBufferWithContext(ctx, io.MultiWriter(dst, w), src, buf)
 			if err == nil {
 				w.done()
 			}

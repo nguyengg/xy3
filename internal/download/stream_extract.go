@@ -41,18 +41,66 @@ func init() {
 	binary.LittleEndian.PutUint32(sigEOCD, 0x06054b50)
 }
 
-// findEOCD attempts to do a number of ranged GET to parse the central directory of the zip file.
+// parseZipHeaders attempts to do a number of ranged GET to parse the central directory for all file headers.
 //
-// See https://en.wikipedia.org/wiki/ZIP_(file_format)#End_of_central_directory_record_(EOCD).
-//
-// The presence of this directory is pretty strong indication that this is a ZIP file.
-func (c *Command) findEOCD(ctx context.Context, man manifest.Manifest) (bool, string, error) {
+// Returns four values:
+//  1. boolean value indicate whether this is most likely a ZIP file or not.
+//  2. string value indicate the common root of all files, can be used to unwrap the root. if empty, there is no common
+//     root that can be unwrapped.
+//  3. expected number of files to uncompress.
+//  4. total expected uncompressed size of the file.
+//  5. error from parsing the header.
+func (c *Command) parseZipHeaders(ctx context.Context, man manifest.Manifest) (bool, string, int, int64, error) {
+	// first, HeadObject to give the complete length.
+	var compressedSize uint64
+	if headObjectOutput, err := c.client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket:              &man.Bucket,
+		Key:                 &man.Key,
+		ExpectedBucketOwner: man.ExpectedBucketOwner,
+	}); err != nil {
+		return false, "", 0, 0, err
+	} else if compressedSize = uint64(aws.ToInt64(headObjectOutput.ContentLength)); compressedSize <= 10*1024*1024 {
+		// if the file is less than 10 MB then don't bother with streaming.
+		log.Printf("file is too small for streaming")
+		return false, "", 0, 0, nil
+	}
+
+	// get the last part of partSize bytes. if the zip has so much comment that the signature doesn't show up in
+	// this blob, the file is not eligible for streaming mode.
+	partSize := uint64(1024)
+	offset := compressedSize - partSize
+	getObjectInput := &s3.GetObjectInput{
+		Bucket:              &man.Bucket,
+		Key:                 &man.Key,
+		ExpectedBucketOwner: man.ExpectedBucketOwner,
+		Range:               aws.String(fmt.Sprintf("bytes=%d-", offset)),
+	}
+	data, err := get(ctx, c.client, getObjectInput)
+	if err != nil {
+		return false, "", 0, 0, err
+	}
+
+	i := bytes.LastIndex(data, sigEOCD)
+	if i == -1 {
+		log.Printf("no end of central directory signature in last %d bytes", partSize)
+		return false, "", 0, 0, nil
+	}
+
+	// now get the entire central directory with all the file headers.
+	recordCount := int(binary.LittleEndian.Uint16(data[i+10 : i+12]))
+	partSize = uint64(binary.LittleEndian.Uint32(data[i+12 : i+16]))
+	offset = uint64(binary.LittleEndian.Uint32(data[i+16 : i+20]))
+	if partSize > 5*1024*1204 {
+		log.Printf("central directory's size (%s) is too large for streaming", humanize.IBytes(partSize))
+		return false, "", recordCount, 0, nil
+	}
+
 	bar := progressbar.NewOptions(
-		12,
-		progressbar.OptionSetDescription("inspecting zip file"),
+		recordCount,
+		progressbar.OptionSetDescription("checking central directory"),
 		progressbar.OptionSetWriter(os.Stderr),
-		progressbar.OptionShowBytes(true),
-		progressbar.OptionShowTotalBytes(true),
+		progressbar.OptionShowBytes(false),
+		progressbar.OptionShowTotalBytes(false),
 		progressbar.OptionSetWidth(10),
 		progressbar.OptionThrottle(65*time.Millisecond),
 		progressbar.OptionShowCount(),
@@ -64,81 +112,42 @@ func (c *Command) findEOCD(ctx context.Context, man manifest.Manifest) (bool, st
 		progressbar.OptionSetRenderBlankState(true))
 	defer bar.Close()
 
-	// first, HeadObject to give the complete length.
-	var size uint64
-	if headObjectOutput, err := c.client.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket:              &man.Bucket,
-		Key:                 &man.Key,
-		ExpectedBucketOwner: man.ExpectedBucketOwner,
-	}); err != nil {
-		return false, "", err
-	} else if size = uint64(aws.ToInt64(headObjectOutput.ContentLength)); size <= 10*1024*1024 {
-		// if the file is less than 10 MB then don't bother with streaming.
-		_ = bar.Close()
-		log.Printf("file is too small for streaming")
-		return false, "", nil
-	}
-	_ = bar.Add(1)
-
-	// get the last part of partSize bytes. if the zip has so much comment that the signature doesn't show up in
-	// this blob, the file is not eligible for streaming mode.
-	partSize := uint64(1024)
-	offset := size - partSize
-	getObjectInput := &s3.GetObjectInput{
-		Bucket:              &man.Bucket,
-		Key:                 &man.Key,
-		ExpectedBucketOwner: man.ExpectedBucketOwner,
-		Range:               aws.String(fmt.Sprintf("bytes=%d-", offset)),
-	}
-	data, err := get(ctx, c.client, getObjectInput)
-	if err != nil {
-		return false, "", err
-	}
-
-	i := bytes.LastIndex(data, sigEOCD)
-	if i == -1 {
-		log.Printf("no end of central directory signature in last %d bytes", partSize)
-		return false, "", nil
-	}
-
-	// now get the entire central directory with all the file headers.
-	partSize = uint64(binary.LittleEndian.Uint32(data[i+12 : i+16]))
-	offset = uint64(binary.LittleEndian.Uint32(data[i+16 : i+20]))
-	if partSize > 5*1024*1204 {
-		_ = bar.Close()
-		log.Printf("central directory's size (%s) is too large for streaming", humanize.IBytes(partSize))
-		return false, "", nil
-	}
-
 	getObjectInput.Range = aws.String(fmt.Sprintf("bytes=%d-%d", offset, offset+partSize-1))
 	if data, err = get(ctx, c.client, getObjectInput); err != nil {
-		return false, "", err
+		return false, "", recordCount, 0, err
 	}
 
 	// https://en.wikipedia.org/wiki/ZIP_(file_format)#Central_directory_file_header_(CDFH)
 	// this is a variant of zipper.findRoot that can work with file headers containing both / or \.
+	// we will go through all the headers to find the total uncompressed size.
+	var uncompressedSize int64
+	noRoot := false
 	root := ""
-	for len(data) > 0 {
+	for ; len(data) > 0; _ = bar.Add(1) {
+		uncompressedSize += int64(binary.LittleEndian.Uint32(data[24:28]))
 		n, m, k := nmk([6]byte(data[28:34]))
-		name := string(data[46 : 46+n])
-		paths := sep.Split(name, 2)
-		if len(paths) == 1 {
-			// this is a file at top level so there is no root for sure.
-			return true, "", nil
-		}
 
-		switch root {
-		case paths[0]:
-		case "":
-			root = paths[0]
-		default:
-			return true, "", nil
+		if !noRoot {
+			name := string(data[46 : 46+n])
+			paths := sep.Split(name, 2)
+			if len(paths) == 1 {
+				// this is a file at top level so there is no root for sure.
+				noRoot, root = true, ""
+			} else {
+				switch root {
+				case paths[0]:
+				case "":
+					root = paths[0]
+				default:
+					noRoot, root = true, ""
+				}
+			}
 		}
 
 		data = data[46+n+m+k:]
 	}
 
-	return true, root, nil
+	return true, root, recordCount, uncompressedSize, nil
 }
 
 func get(ctx context.Context, client *s3.Client, input *s3.GetObjectInput) ([]byte, error) {
@@ -162,7 +171,7 @@ func nmk(b [6]byte) (n int, m int, k int) {
 
 func (c *Command) streamAndExtract(ctx context.Context, man manifest.Manifest) (bool, error) {
 	// check first if we're eligible for stream and extract mode.
-	ok, root, err := c.findEOCD(ctx, man)
+	ok, root, recordCount, size, err := c.parseZipHeaders(ctx, man)
 	if !ok || err != nil {
 		return false, err
 	}
@@ -232,22 +241,15 @@ func (c *Command) streamAndExtract(ctx context.Context, man manifest.Manifest) (
 				input.ExpectedBucketOwner = v
 			}
 
-			var bar *progressbar.ProgressBar
-			var completedPartCount int
-			options.PostGetPart = func(data []byte, size int64, partNumber, partCount int) {
-				if bar == nil {
-					bar = internal.DefaultBytes(size, "stream and extract")
-				}
-				if completedPartCount++; completedPartCount == partCount {
-					_ = bar.Close()
-				} else {
-					_ = bar.Add64(int64(len(data)))
-				}
-			}
+			options.PostGetPart = nil
 		}); err != nil && !errors.Is(err, context.Canceled) {
 			cancel(fmt.Errorf("download error: %w", err))
 		}
 	}()
+
+	// for progress report, we'll use the uncompressed bytes.
+	bar := internal.DefaultBytes(size, fmt.Sprintf("extracting %d files", recordCount))
+	defer bar.Close()
 
 	var (
 		buf = make([]byte, 32*1024)
@@ -281,14 +283,12 @@ func (c *Command) streamAndExtract(ctx context.Context, man manifest.Manifest) (
 			break
 		}
 
-		err = xy3.CopyBufferWithContext(ctx, f, zr, buf)
+		_, err = xy3.CopyBufferWithContext(ctx, io.MultiWriter(f, bar), zr, buf)
 		_ = f.Close()
 		if err != nil {
 			err = fmt.Errorf(`write to file "%s" error: %w`, path, err)
 			break
 		}
-
-		// TODO how to report file writing progress?
 	}
 
 	if err != nil {
