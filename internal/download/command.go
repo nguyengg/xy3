@@ -16,9 +16,10 @@ import (
 )
 
 type Command struct {
-	StreamAndExtract bool `long:"stream-and-extract" description:"experimental: if the S3 file is a ZIP file (application/zip), this mode will attempt to decompress and extract the contents as they are downloaded"`
-	MaxConcurrency   int  `short:"P" long:"max-concurrency" description:"use up to max-concurrency number of goroutines at a time for range downloads." default:"5"`
-	Args             struct {
+	StreamAndExtract    bool    `long:"stream-and-extract" description:"experimental: if the S3 file is a ZIP file (application/zip), this mode will attempt to decompress and extract the contents as they are downloaded"`
+	ExpectedBucketOwner *string `long:"expected-bucket-owner" description:"optional ExpectedBucketOwner field to apply when the manifest does not have its own expectedBucketOwner"`
+	MaxConcurrency      int     `short:"P" long:"max-concurrency" description:"use up to max-concurrency number of goroutines at a time for range downloads." default:"5"`
+	Args                struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the local files each containing a single S3 URI" required:"yes"`
 	} `positional-args:"yes"`
 

@@ -68,10 +68,18 @@ func (c *Command) download(ctx context.Context, name string) error {
 	if err = xy3.Download(ctx, c.client, man.Bucket, man.Key, w, func(options *xy3.DownloadOptions) {
 		options.Concurrency = c.MaxConcurrency
 		options.ModifyHeadObjectInput = func(input *s3.HeadObjectInput) {
-			input.ExpectedBucketOwner = man.ExpectedBucketOwner
+			v := man.ExpectedBucketOwner
+			if v == nil {
+				v = c.ExpectedBucketOwner
+			}
+			input.ExpectedBucketOwner = v
 		}
 		options.ModifyGetObjectInput = func(input *s3.GetObjectInput) {
-			input.ExpectedBucketOwner = man.ExpectedBucketOwner
+			v := man.ExpectedBucketOwner
+			if v == nil {
+				v = c.ExpectedBucketOwner
+			}
+			input.ExpectedBucketOwner = v
 		}
 
 		var bar *progressbar.ProgressBar
