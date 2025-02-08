@@ -4,6 +4,7 @@
 `xy3` is born out of my need to create S3 backups while using [XYplorer](https://en.wikipedia.org/wiki/XYplorer). Here
 are the XYplorer's file associations that I use:
 ```
+|"Stream and extract from S3" s3>"xy3.exe" "download" --stream-and-extract
 |"Download from S3" s3>"xy3.exe" "download"
 |"Delete from S3" s3>"xy3.exe" "remove"
 |"Compress and upload to S3" \>"xy3.exe" "upload" -b "bucket-name" -k "<curfolder>/"
