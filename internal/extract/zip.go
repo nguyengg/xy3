@@ -25,7 +25,7 @@ func (x *ZipExtractor) Extract(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	stem, _ := internal.SplitStemAndExt(x.Name)
+	stem, _ := xy3.StemAndExt(x.Name)
 	output, pathFn, err := createOutputDir(topLevelDir, stem)
 	if err != nil {
 		return "", err

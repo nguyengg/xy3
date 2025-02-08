@@ -1,12 +1,10 @@
 package upload
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os"
-	"strconv"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
@@ -19,22 +17,12 @@ import (
 	"github.com/nguyengg/xy3/namedhash"
 )
 
-type uploadInput struct {
-	PartNumber int32
-	Data       []byte
-}
-
-type uploadOutput struct {
-	Part types.CompletedPart
-	Err  error
-}
-
 func (c *Command) upload(ctx context.Context, name string) error {
-	// preflight involves validation and possibly compressing a directory.
-	filename, size, contentType, err := c.preflight(ctx, name)
+	// prepare validates and possibly performs compression to file if name is a directory.
+	filename, size, contentType, err := c.prepare(ctx, name)
 
 	// find an unused S3 key that can be used for the CreateMultipartUpload call.
-	stem, ext := internal.SplitStemAndExt(filename)
+	stem, ext := xy3.StemAndExt(filename)
 	key, err := c.findUnusedS3Key(ctx, stem, ext)
 	if err != nil {
 		return err
@@ -46,7 +34,7 @@ func (c *Command) upload(ctx context.Context, name string) error {
 		Size:                size,
 	}
 
-	hash := namedhash.NamedHash{}
+	hash := namedhash.New()
 
 	c.logger.Printf(`uploading %s to "s3://%s/%s"`, humanize.Bytes(uint64(size)), c.Bucket, key)
 
@@ -56,7 +44,7 @@ func (c *Command) upload(ctx context.Context, name string) error {
 		ExpectedBucketOwner: c.ExpectedBucketOwner,
 		ContentType:         contentType,
 		Metadata:            map[string]string{"name": filename},
-		StorageClass:        types.StorageClassIntelligentTiering,
+		StorageClass:        types.StorageClass(c.StorageClass),
 	}, func(options *xy3.UploadOptions) {
 		options.Concurrency = c.MaxConcurrency
 
@@ -82,10 +70,10 @@ func (c *Command) upload(ctx context.Context, name string) error {
 
 	c.logger.Printf("done uploading")
 
-	// now generate the local .s3 file that contains the S3 URI. if writing to file fails, prints the JSON content to
-	// standard output so that they can be saved manually later.
+	// now generate the local .s3 file that contains the S3 URI. if writing to file fails, prints the JSON content
+	// to standard output so that they can be saved manually later.
 	m.Checksum = hash.SumToString(nil)
-	f, err := internal.OpenExclFile(stem, ext+".s3")
+	f, err := xy3.OpenExclFile(stem, ext+".s3")
 	if err != nil {
 		return err
 	}
@@ -126,43 +114,8 @@ func (c *Command) findUnusedS3Key(ctx context.Context, stem, ext string) (string
 			return "", fmt.Errorf("find unused S3 key error: %w", err)
 		}
 		i++
-		key = c.Prefix + stem + "-" + strconv.Itoa(i) + ext
+		key = fmt.Sprintf("%s%s-%d%s", c.Prefix, stem, i, ext)
 	}
 
 	return key, nil
-}
-
-// do is supposed to be run in a goroutine to poll from inputs channel and sends results to outputs channel.
-//
-// The method returns only upon inputs being closed, or if the upload of any part fails.
-func (c *Command) do(ctx context.Context, input s3.UploadPartInput, partCount int, inputs <-chan uploadInput, outputs chan<- uploadOutput) {
-	for {
-		select {
-		case part, ok := <-inputs:
-			if !ok {
-				return
-			}
-
-			input.PartNumber = aws.Int32(part.PartNumber)
-			input.Body = bytes.NewReader(part.Data)
-			uploadPartOutput, err := c.client.UploadPart(ctx, &input)
-			if err != nil {
-				if !errors.Is(err, context.Canceled) {
-					err = fmt.Errorf("upload part %d/%d error: %w", part.PartNumber, partCount, err)
-				}
-
-				outputs <- uploadOutput{Err: err}
-				return
-			}
-
-			outputs <- uploadOutput{
-				Part: types.CompletedPart{
-					ETag:       uploadPartOutput.ETag,
-					PartNumber: aws.Int32(part.PartNumber),
-				},
-			}
-		case <-ctx.Done():
-			return
-		}
-	}
 }

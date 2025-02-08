@@ -2,9 +2,10 @@ package internal
 
 import (
 	"fmt"
-	"github.com/schollz/progressbar/v3"
 	"os"
 	"time"
+
+	"github.com/schollz/progressbar/v3"
 )
 
 // DefaultBytes is equivalent to progressbar.DefaultBytes but with higher progressbar.OptionThrottle.

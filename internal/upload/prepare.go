@@ -8,12 +8,12 @@ import (
 	"os"
 )
 
-// preflight validates the file (specified by "name" argument) to be uploaded.
+// prepare validates the file (specified by "name" argument) to be uploaded.
 //
 // If the file is a directory, an archive will be created to recursively compress all files in the directory, and the
 // name of the archive is returned as the filename parameter. Otherwise, the returned filename parameter will be
 // identical to the name argument.
-func (c *Command) preflight(ctx context.Context, name string) (filename string, size int64, contentType *string, err error) {
+func (c *Command) prepare(ctx context.Context, name string) (filename string, size int64, contentType *string, err error) {
 	filename = name
 
 	// name can either be a file or a directory, so use stat to determine what to do.

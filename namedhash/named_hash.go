@@ -30,6 +30,15 @@ type NamedHash struct {
 	EncodeToString func([]byte) string
 }
 
+// New returns the default NamedHash.
+func New() *NamedHash {
+	return &NamedHash{
+		Hash:           sha256.New(),
+		Name:           "sha256",
+		EncodeToString: base64.StdEncoding.EncodeToString,
+	}
+}
+
 // NewFromChecksumString detects the prefix of the checksum string
 func NewFromChecksumString(v string) (*NamedHash, error) {
 	switch {

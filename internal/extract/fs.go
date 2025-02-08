@@ -30,7 +30,7 @@ func (x *FSExtractor) Extract(ctx context.Context) (string, error) {
 	case strings.HasSuffix(x.Name, ".tar.xz"):
 		stem = strings.TrimSuffix(x.Name, ".tar.xz")
 	default:
-		stem, _ = internal.SplitStemAndExt(x.Name)
+		stem, _ = xy3.StemAndExt(x.Name)
 	}
 
 	output, pathFn, err := createOutputDir(topLevelDir, stem)
