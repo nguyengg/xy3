@@ -7,6 +7,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
 )
 
@@ -49,7 +50,7 @@ func (x *ZipExtractor) Extract(ctx context.Context) (string, error) {
 			return output, err
 		}
 
-		err = internal.CopyBufferWithContext(ctx, io.MultiWriter(w, bar), r, nil)
+		err = xy3.CopyBufferWithContext(ctx, io.MultiWriter(w, bar), r, nil)
 		_, _ = w.Close(), r.Close()
 		if err != nil {
 			return output, err

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/zipper"
 	"github.com/ulikunitz/xz"
@@ -77,7 +78,7 @@ var (
 					Size: fi.Size(),
 					Mode: 0600,
 				}); err == nil {
-					err = internal.CopyBufferWithContext(ctx, io.MultiWriter(tw, bar), src, nil)
+					err = xy3.CopyBufferWithContext(ctx, io.MultiWriter(tw, bar), src, nil)
 				}
 
 				return err

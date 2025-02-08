@@ -7,6 +7,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
 )
 
@@ -57,7 +58,7 @@ func (x *FSExtractor) Extract(ctx context.Context) (string, error) {
 		}
 		defer w.Close()
 
-		if err = internal.CopyBufferWithContext(ctx, io.MultiWriter(w, bar), f, nil); err != nil {
+		if err = xy3.CopyBufferWithContext(ctx, io.MultiWriter(w, bar), f, nil); err != nil {
 			return err
 		}
 

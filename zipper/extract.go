@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nguyengg/xy3/internal"
+	"github.com/nguyengg/xy3"
 )
 
 // ExtractOptions is an opaque struct for customising Extract.
@@ -199,10 +199,10 @@ func Extract(ctx context.Context, src, dir string, optFns ...func(*ExtractOption
 		}
 
 		if pr == nil {
-			err = internal.CopyBufferWithContext(ctx, dst, src, buf)
+			err = xy3.CopyBufferWithContext(ctx, dst, src, buf)
 		} else {
 			w := pr.createWriter(f.Name, rel(dir, dst.Name()))
-			err = internal.CopyBufferWithContext(ctx, io.MultiWriter(dst, w), src, buf)
+			err = xy3.CopyBufferWithContext(ctx, io.MultiWriter(dst, w), src, buf)
 			if err == nil {
 				w.done()
 			}

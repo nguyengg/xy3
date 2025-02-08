@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/nguyengg/xy3/internal"
+	"github.com/nguyengg/xy3"
 )
 
 // CompressDirOptions customises CompressDir.
@@ -172,11 +172,11 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 			}
 
 			if pr == nil {
-				return internal.CopyBufferWithContext(ctx, f, src, buf)
+				return xy3.CopyBufferWithContext(ctx, f, src, buf)
 			}
 
 			w := pr.createWriter(rel(dir, src.Name()), path)
-			err = internal.CopyBufferWithContext(ctx, io.MultiWriter(f, w), src, buf)
+			err = xy3.CopyBufferWithContext(ctx, io.MultiWriter(f, w), src, buf)
 			if err == nil {
 				w.done()
 			}
