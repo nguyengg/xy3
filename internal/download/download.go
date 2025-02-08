@@ -28,6 +28,13 @@ func (c *Command) download(ctx context.Context, name string) error {
 	basename := filepath.Base(man.Key)
 	ext := filepath.Ext(basename)
 
+	// see if the file is eligible for auto-extract.
+	if c.StreamAndExtract {
+		if ok, err := c.streamAndExtract(ctx, man); ok || err != nil {
+			return err
+		}
+	}
+
 	// while downloading, also computes checksum to verify against the downloaded content.
 	h, err := namedhash.NewFromChecksumString(man.Checksum)
 	if err != nil {
@@ -36,7 +43,11 @@ func (c *Command) download(ctx context.Context, name string) error {
 
 	// attempt to create the local file that will store the downloaded artifact.
 	// if we fail to download the file complete, clean up by deleting the local file.
-	file, err = xy3.OpenExclFile(strings.TrimSuffix(basename, ext), ext)
+	file, err = xy3.OpenExclFile(".", strings.TrimSuffix(basename, ext), ext)
+	if err != nil {
+		return fmt.Errorf("create output file error: %w", err)
+	}
+
 	success := false
 	defer func(file *os.File) {
 		if name, _ = file.Name(), file.Close(); !success {

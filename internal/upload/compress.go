@@ -17,7 +17,7 @@ import (
 // All files in the archive include root's basename in its path, meaning the top-level file of the archive output is
 // the root directory itself.
 func (c *Command) compress(ctx context.Context, root string) (name string, contentType *string, err error) {
-	f, err := xy3.OpenExclFile(filepath.Base(root), ".zip")
+	f, err := xy3.OpenExclFile(".", filepath.Base(root), ".zip")
 	if err != nil {
 		err = fmt.Errorf("create archive error: %w", err)
 		return

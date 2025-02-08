@@ -73,7 +73,7 @@ func (c *Command) upload(ctx context.Context, name string) error {
 	// now generate the local .s3 file that contains the S3 URI. if writing to file fails, prints the JSON content
 	// to standard output so that they can be saved manually later.
 	m.Checksum = hash.SumToString(nil)
-	f, err := xy3.OpenExclFile(stem, ext+".s3")
+	f, err := xy3.OpenExclFile(".", stem, ext+".s3")
 	if err != nil {
 		return err
 	}
