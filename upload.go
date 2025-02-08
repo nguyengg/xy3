@@ -9,13 +9,14 @@ import (
 	"math"
 	"os"
 	"slices"
-	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/dustin/go-humanize"
 	"github.com/nguyengg/xy3/internal/hashs3"
+	"github.com/valyala/bytebufferpool"
+	_ "github.com/valyala/bytebufferpool"
 	"golang.org/x/time/rate"
 )
 
@@ -61,7 +62,6 @@ type uploader struct {
 	UploadOptions
 
 	client                      UploadAPIClient
-	bufPool                     *sync.Pool
 	limiter                     *rate.Limiter
 	lev                         hashs3.HashS3
 	createMultipartUploadInput  *s3.CreateMultipartUploadInput
@@ -70,7 +70,7 @@ type uploader struct {
 
 type uploadInput struct {
 	partNumber int32
-	buf        *bytes.Buffer
+	bb         *bytebufferpool.ByteBuffer
 }
 
 type uploadOutput struct {
@@ -114,11 +114,6 @@ func newMultipartUploader(client UploadAPIClient, optFns ...func(options *Upload
 	u := &uploader{
 		UploadOptions: opts,
 		client:        client,
-		bufPool: &sync.Pool{
-			New: func() any {
-				return new(bytes.Buffer)
-			},
-		},
 	}
 
 	if u.PartSize < MinPartSize {
@@ -253,22 +248,22 @@ ingBad:
 			return nil, wrapErr(err)
 		}
 
-		size += int64(n)
-
 		partNumber++
-		buf := u.bufPool.Get().(*bytes.Buffer)
-		buf.Reset()
-		buf.Write(data[:n])
+		size += int64(n)
+		part := data[:n]
+
+		bb := bytebufferpool.Get()
+		_, _ = bb.Write(part)
 
 		// call PreUploadPart here to provide ordering guarantee.
 		if u.PreUploadPart != nil {
-			u.PreUploadPart(partNumber, data[:n])
+			u.PreUploadPart(partNumber, part)
 		}
 
 	sendInputLoop:
 		for {
 			select {
-			case inputs <- uploadInput{partNumber, buf}:
+			case inputs <- uploadInput{partNumber, bb}:
 				break sendInputLoop
 			case result := <-outputs:
 				if result.err != nil {
@@ -354,7 +349,7 @@ func (u *uploader) poll(ctx context.Context, inputs <-chan uploadInput, outputs 
 		// we wrap bytes.Buffer in bytes.NewReader to get that for free.
 		// here is also where rate limiting happens.
 		partNumber := part.partNumber
-		data := part.buf.Bytes()
+		data := part.bb.B
 		uploadPartInput := &s3.UploadPartInput{
 			Bucket:               u.createMultipartUploadInput.Bucket,
 			Key:                  u.createMultipartUploadInput.Key,
@@ -376,7 +371,7 @@ func (u *uploader) poll(ctx context.Context, inputs <-chan uploadInput, outputs 
 		}
 
 		uploadPartOutput, err := u.client.UploadPart(ctx, u.lev.HashUploadPart(data, uploadPartInput))
-		u.bufPool.Put(part.buf)
+		bytebufferpool.Put(part.bb)
 
 		if err != nil {
 			outputs <- uploadOutput{

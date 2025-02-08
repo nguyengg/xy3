@@ -13,6 +13,7 @@ require (
 	github.com/krolaw/zipstream v0.0.0-20180621105154-0a2661891f94
 	github.com/schollz/progressbar/v3 v3.18.0
 	github.com/stretchr/testify v1.9.0
+	github.com/valyala/bytebufferpool v1.0.0
 	golang.org/x/time v0.10.0
 )
 

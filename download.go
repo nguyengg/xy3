@@ -1,15 +1,14 @@
 package xy3
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"log"
 	"math"
-	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/valyala/bytebufferpool"
 	"golang.org/x/time/rate"
 )
 
@@ -70,7 +69,6 @@ type downloader struct {
 	DownloadOptions
 
 	client  DownloadAPIClient
-	bufPool *sync.Pool
 	limiter *rate.Limiter
 }
 
@@ -81,7 +79,7 @@ type downloadInput struct {
 
 type downloadOutput struct {
 	partNumber int
-	buf        *bytes.Buffer
+	bb         *bytebufferpool.ByteBuffer
 	err        error
 }
 
@@ -101,11 +99,6 @@ func newDownloader(client DownloadAPIClient, optFns ...func(*DownloadOptions)) (
 	d := &downloader{
 		DownloadOptions: opts,
 		client:          client,
-		bufPool: &sync.Pool{
-			New: func() any {
-				return new(bytes.Buffer)
-			},
-		},
 	}
 
 	if d.PartSize <= 0 {
@@ -185,11 +178,12 @@ partLoop:
 
 				for part, ok := parts[nextPartToWrite]; ok; {
 					if d.PostGetPart != nil {
-						d.PostGetPart(part.buf.Bytes(), size, nextPartToWrite, partCount)
+						d.PostGetPart(part.bb.B, size, nextPartToWrite, partCount)
 					}
 
-					_, err = part.buf.WriteTo(w)
-					d.bufPool.Put(part.buf)
+					bb := part.bb
+					_, err = bb.WriteTo(w)
+					bytebufferpool.Put(bb)
 
 					if err != nil {
 						close(inputs)
@@ -223,12 +217,13 @@ partLoop:
 			downloadedPartCount++
 
 			for part, ok := parts[nextPartToWrite]; ok; {
+				bb := part.bb
 				if d.PostGetPart != nil {
-					d.PostGetPart(part.buf.Bytes(), size, nextPartToWrite, partCount)
+					d.PostGetPart(bb.B, size, nextPartToWrite, partCount)
 				}
 
-				_, err = part.buf.WriteTo(w)
-				d.bufPool.Put(part.buf)
+				_, err = bb.WriteTo(w)
+				bytebufferpool.Put(bb)
 
 				if err != nil {
 					return fmt.Errorf("write part %d/%d to file error: %w", nextPartToWrite, partCount, err)
@@ -282,9 +277,8 @@ func (d *downloader) poll(ctx context.Context, inputs <-chan downloadInput, outp
 				return
 			}
 
-			buf := d.bufPool.Get().(*bytes.Buffer)
-			buf.Reset()
-			_, err = buf.ReadFrom(getObjectOutput.Body)
+			bb := bytebufferpool.Get()
+			_, err = bb.ReadFrom(getObjectOutput.Body)
 			_ = getObjectOutput.Body.Close()
 			if err != nil {
 				outputs <- downloadOutput{
@@ -296,7 +290,7 @@ func (d *downloader) poll(ctx context.Context, inputs <-chan downloadInput, outp
 
 			outputs <- downloadOutput{
 				partNumber: part.partNumber,
-				buf:        buf,
+				bb:         bb,
 			}
 		case <-ctx.Done():
 			return
