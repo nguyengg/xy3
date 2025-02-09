@@ -10,15 +10,15 @@ import (
 	"io"
 	"time"
 
-	"github.com/nguyengg/xy3/s3reader"
+	"github.com/nguyengg/xy3/s3readseeker"
 )
 
 // ErrNoEOCDFound is returned by ExtractZipHeaders if no EOCD was found.
 var ErrNoEOCDFound = errors.New("end of central directory not found; most likely not a zip file")
 
 // ExtractZipHeaders reads from the given src to extract the zip.FileHeader.
-func ExtractZipHeaders(ctx context.Context, src io.ReadSeeker) (headers []zip.FileHeader, err error) {
-	recordCount, off, err := findCDFH(ctx, src)
+func ExtractZipHeaders(ctx context.Context, src io.ReadSeeker, size int64) (headers []zip.FileHeader, err error) {
+	recordCount, off, err := findCDFH(ctx, src, size)
 	if err != nil {
 		return nil, err
 	}
@@ -76,13 +76,13 @@ func ExtractZipHeaders(ctx context.Context, src io.ReadSeeker) (headers []zip.Fi
 }
 
 // ExtractZipHeadersFromS3 reads from S3 instead.
-func ExtractZipHeadersFromS3(ctx context.Context, client s3reader.ReadSeekerClient, bucket, key string, optFns ...func(*s3reader.Options)) ([]zip.FileHeader, error) {
-	s3object, err := s3reader.NewReaderSeeker(client, bucket, key, optFns...)
+func ExtractZipHeadersFromS3(ctx context.Context, client s3readseeker.ReadSeekerClient, bucket, key string, optFns ...func(*s3readseeker.Options)) ([]zip.FileHeader, error) {
+	s3object, err := s3readseeker.New(client, bucket, key, optFns...)
 	if err != nil {
 		return nil, fmt.Errorf("create S3 ReaderSeeker error: %w", err)
 	}
 
-	return ExtractZipHeaders(ctx, s3object)
+	return ExtractZipHeaders(ctx, s3object, s3object.Size())
 }
 
 // findCDFH reads from end of src to find the EOCD signature and then return:
@@ -91,15 +91,14 @@ func ExtractZipHeadersFromS3(ctx context.Context, client s3reader.ReadSeekerClie
 //
 // TODO add support for ZIP64.
 // See https://en.wikipedia.org/wiki/ZIP_(file_format)#End_of_central_directory_record_(EOCD).
-func findCDFH(ctx context.Context, src io.ReadSeeker) (recordCount int, cdOffset int64, err error) {
+func findCDFH(ctx context.Context, src io.ReadSeeker, size int64) (recordCount int, cdOffset int64, err error) {
 	var (
 		eocd = make([]byte, 1024)
-		off  = -int64(len(eocd))
+		off  = max(0, size-int64(len(eocd)))
 	)
 
-	_, err = src.Seek(off, io.SeekEnd)
-	if err != nil {
-		return 0, 0, fmt.Errorf("seek EOCD from end error: %w", err)
+	if off, err = src.Seek(off, io.SeekStart); err != nil {
+		return 0, 0, fmt.Errorf("seek EOCD error: %w", err)
 	}
 
 	for range 10 {
@@ -119,8 +118,13 @@ func findCDFH(ctx context.Context, src io.ReadSeeker) (recordCount int, cdOffset
 			return
 		}
 
-		if _, err = src.Seek(int64(-len(eocd)+4), io.SeekCurrent); err != nil {
-			return 0, 0, fmt.Errorf("seek EOCD from current error: %w", err)
+		if off == 0 {
+			break
+		}
+
+		off = max(0, off-int64(len(eocd)-4))
+		if off, err = src.Seek(off, io.SeekStart); err != nil {
+			return 0, 0, fmt.Errorf("seek EOCD error: %w", err)
 		}
 	}
 

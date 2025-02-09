@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,13 +18,13 @@ import (
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/nguyengg/xy3/namedhash"
-	"github.com/nguyengg/xy3/s3reader"
+	"github.com/nguyengg/xy3/s3readseeker"
 	"github.com/nguyengg/xy3/zipper"
 )
 
 func (c *Command) streamAndExtract(ctx context.Context, man manifest.Manifest) (bool, error) {
 	// check first if we're eligible for stream and extract mode.
-	headers, err := zipper.ExtractZipHeadersFromS3(ctx, c.client, man.Bucket, man.Key, func(options *s3reader.Options) {
+	headers, err := zipper.ExtractZipHeadersFromS3(ctx, c.client, man.Bucket, man.Key, func(options *s3readseeker.Options) {
 		options.ModifyGetObjectInput = func(input *s3.GetObjectInput) *s3.GetObjectInput {
 			input.ExpectedBucketOwner = man.ExpectedBucketOwner
 			return input
@@ -35,6 +36,7 @@ func (c *Command) streamAndExtract(ctx context.Context, man manifest.Manifest) (
 	})
 	if err != nil {
 		if errors.Is(err, zipper.ErrNoEOCDFound) {
+			log.Printf("did not find EOCD, will download file normally")
 			return false, nil
 		}
 
