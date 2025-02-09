@@ -19,7 +19,7 @@ type DownloadOptions struct {
 	// Defaults to MinPartSize. There is no technical limit to this number so be reasonable.
 	PartSize int64
 
-	// Concurrency is the number of goroutines responsible for uploading the parts in parallel.
+	// Concurrency is the number of goroutines responsible for downloading the parts in parallel.
 	//
 	// Defaults to DefaultConcurrency. Must be a positive integer.
 	Concurrency int
