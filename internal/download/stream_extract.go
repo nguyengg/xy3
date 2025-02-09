@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/krolaw/zipstream"
@@ -20,11 +21,12 @@ import (
 	"github.com/nguyengg/xy3/namedhash"
 	"github.com/nguyengg/xy3/s3readseeker"
 	"github.com/nguyengg/xy3/zipper"
+	"github.com/schollz/progressbar/v3"
 )
 
 func (c *Command) streamAndExtract(ctx context.Context, man manifest.Manifest) (bool, error) {
 	// check first if we're eligible for stream and extract mode.
-	headers, err := zipper.ExtractZipHeadersFromS3(ctx, c.client, man.Bucket, man.Key, func(options *s3readseeker.Options) {
+	headers, err := zipper.NewCDScannerFromS3(c.client, man.Bucket, man.Key, func(options *s3readseeker.Options) {
 		options.ModifyGetObjectInput = func(input *s3.GetObjectInput) *s3.GetObjectInput {
 			input.ExpectedBucketOwner = man.ExpectedBucketOwner
 			return input
@@ -43,16 +45,37 @@ func (c *Command) streamAndExtract(ctx context.Context, man manifest.Manifest) (
 		return false, err
 	}
 
-	var size int64
+	// while going through the headers to compute uncompressed size, we'll also calculate if there's a common root.
+	var uncompressedSize uint64
 	trimRoot := func(path string) string {
 		return path
 	}
-	{
-		names := make([]string, len(headers))
-		for i, fh := range headers {
-			names[i] = fh.Name
-			size += int64(fh.UncompressedSize64)
+	if names := make([]string, 0, headers.RecordCount()); true {
+		bar := progressbar.NewOptions(
+			headers.RecordCount(),
+			progressbar.OptionSetDescription(fmt.Sprintf("scanning %d headers", headers.RecordCount())),
+			progressbar.OptionSetWriter(os.Stderr),
+			progressbar.OptionShowBytes(true),
+			progressbar.OptionSetWidth(10),
+			progressbar.OptionThrottle(1*time.Second),
+			progressbar.OptionShowCount(),
+			progressbar.OptionOnCompletion(func() {
+				_, _ = fmt.Fprint(os.Stderr, "\n")
+			}),
+			progressbar.OptionSpinnerType(14),
+			progressbar.OptionFullWidth(),
+			progressbar.OptionSetRenderBlankState(true))
+
+		for fh := range headers.All() {
+			_ = bar.Add(1)
+			names = append(names, fh.Name)
+			uncompressedSize += fh.UncompressedSize64
 		}
+
+		if _, err = bar.Close(), headers.Err(); err != nil {
+			return true, err
+		}
+
 		if root, err := zipper.FindRoot(ctx, names); err != nil {
 			return true, err
 		} else if root != "" {
@@ -129,7 +152,7 @@ func (c *Command) streamAndExtract(ctx context.Context, man manifest.Manifest) (
 	}()
 
 	// for progress report, we'll use the uncompressed bytes.
-	bar := internal.DefaultBytes(size, fmt.Sprintf("extracting %d files", len(headers)))
+	bar := internal.DefaultBytes(int64(uncompressedSize), fmt.Sprintf("extracting %d files", headers.RecordCount()))
 	defer bar.Close()
 
 	var (

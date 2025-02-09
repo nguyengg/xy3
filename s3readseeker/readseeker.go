@@ -26,16 +26,18 @@ type ReadSeekerClient interface {
 	HeadObject(context.Context, *s3.HeadObjectInput, ...func(*s3.Options)) (*s3.HeadObjectOutput, error)
 }
 
+// DefaultBufferSize is the default value for Options.BufferSize.
+const DefaultBufferSize = 64 * 1024
+
 // Options customises New.
 type Options struct {
-	// DisableSeekClamping disables clamping feature when Seek is called.
+	// BufferSize is used to provide buffered read-ahead for every Read all.
 	//
-	// By default, the returned values of Seek will be clamped to `[0; Size()-1]` (both inclusive) to prevent an
-	// invalid read. Disabling this would open up this failure mode.
+	// By default, DefaultBufferSize is used so that consequential small Reads don't end up with several GetObject
+	// calls if one bigger GetObject call is more efficient.
 	//
-	// Note: Seek will never fail; it may end up leaving the ReadSeeker with an invalid read position that will
-	// cause the next Read to fail, unless another Seek correct the internal read offset.
-	DisableSeekClamping bool
+	// Pass zero or a negative value to disable this feature.
+	BufferSize int
 
 	// CtxFn returns a context.Context to be used with every GetObject or HeadObject call.
 	//
@@ -59,7 +61,8 @@ type Options struct {
 // The client will be used to determine a valid size for the file.
 func New(client ReadSeekerClient, bucket, key string, optFns ...func(*Options)) (ReadSeeker, error) {
 	opts := &Options{
-		CtxFn: context.Background,
+		BufferSize: DefaultBufferSize,
+		CtxFn:      context.Background,
 		ModifyGetObjectInput: func(input *s3.GetObjectInput) *s3.GetObjectInput {
 			return input
 		},
@@ -80,16 +83,15 @@ func New(client ReadSeekerClient, bucket, key string, optFns ...func(*Options)) 
 	}
 
 	return &readSeeker{
-		client: client,
-		bucket: bucket,
-		key:    key,
-		ctxFn:  opts.CtxFn,
-		goiFn:  opts.ModifyGetObjectInput,
-		size:   aws.ToInt64(headObjectOutput.ContentLength),
+		client:     client,
+		bucket:     bucket,
+		key:        key,
+		ctxFn:      opts.CtxFn,
+		goiFn:      opts.ModifyGetObjectInput,
+		size:       aws.ToInt64(headObjectOutput.ContentLength),
+		bufferSize: opts.BufferSize,
 	}, nil
 }
-
-const bufferSize = 64 * 1024
 
 // readSeeker implements io.Seeker on top of reader.
 type readSeeker struct {
@@ -99,6 +101,7 @@ type readSeeker struct {
 	goiFn       func(*s3.GetObjectInput) *s3.GetObjectInput
 	off, size   int64
 	buf         bytes.Buffer
+	bufferSize  int
 }
 
 func (r *readSeeker) Size() int64 {
@@ -120,7 +123,14 @@ func (r *readSeeker) Read(p []byte) (n int, err error) {
 
 	// if len(p) is less than bufferSize, we'll fill the buffer with the next batch then read from buffer again.
 	rangeStart := r.off + int64(r.buf.Len())
-	rangeEnd := r.off + max(int64(m), bufferSize) - 1
+	if rangeStart >= r.size {
+		// r.buf contains remaining bytes.
+		n, err = r.buf.Read(p)
+		r.off += int64(n)
+		return n, io.EOF
+	}
+
+	rangeEnd := min(r.size-1, r.off+int64(max(m, r.bufferSize)))
 	getObjectOutput, err := r.client.GetObject(r.ctxFn(), r.goiFn(&s3.GetObjectInput{
 		Bucket: aws.String(r.bucket),
 		Key:    aws.String(r.key),
