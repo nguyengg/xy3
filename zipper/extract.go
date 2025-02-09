@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -155,7 +156,7 @@ func Extract(ctx context.Context, src, dir string, optFns ...func(*ExtractOption
 		return path
 	}
 	if !opts.NoUnwrapRoot {
-		if root, err := findRoot(ctx, zipReader.File); err != nil {
+		if root, err := FindRoot(ctx, NamesFromFile(zipReader.File)); err != nil {
 			return "", err
 		} else {
 			root = root + "/"
@@ -217,20 +218,22 @@ func Extract(ctx context.Context, src, dir string, optFns ...func(*ExtractOption
 	return dir, nil
 }
 
-// findRoot returns the common root of the given files by definition of Extract.
+var sep = regexp.MustCompile(`[\\/]`)
+
+// FindRoot returns the common root of the given files by definition of Extract.
 //
 // The error return value comes from [context.Context.Err] if the context was cancelled.
-func findRoot(ctx context.Context, files []*zip.File) (root string, err error) {
+func FindRoot(ctx context.Context, names []string) (root string, err error) {
 	// this is not longest common prefix btw.
 	// perhaps if I can use longest common prefix, I can expand common root.
-	for _, f := range files {
+	for _, name := range names {
 		select {
 		case <-ctx.Done():
 			return "", ctx.Err()
 		default:
 		}
 
-		paths := strings.SplitN(f.Name, "/", 2)
+		paths := sep.Split(name, 2)
 		if len(paths) == 1 {
 			// this is a file at top level so there is no root for sure.
 			return "", nil
@@ -246,6 +249,26 @@ func findRoot(ctx context.Context, files []*zip.File) (root string, err error) {
 	}
 
 	return
+}
+
+// NamesFromFile extracts the names from zip.File to be passed into FindRoot.
+func NamesFromFile(file []*zip.File) []string {
+	names := make([]string, len(file))
+	for i, f := range file {
+		names[i] = f.Name
+	}
+
+	return names
+}
+
+// NamesFromFileHeaders extracts the names from zip.FileHeader to be passed into FindRoot.
+func NamesFromFileHeaders(fileHeaders []zip.FileHeader) []string {
+	names := make([]string, len(fileHeaders))
+	for i, f := range fileHeaders {
+		names[i] = f.Name
+	}
+
+	return names
 }
 
 // createExclFile creates a new exclusive file for writing and ensures all parent directories to the file exist.

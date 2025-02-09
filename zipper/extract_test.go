@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func Test_findRoot(t *testing.T) {
+func TestFindRoot(t *testing.T) {
 	tests := []struct {
 		name     string
 		args     []string
@@ -46,6 +46,15 @@ func Test_findRoot(t *testing.T) {
 			},
 			wantRoot: "test",
 		},
+		{
+			name: "window paths",
+			args: []string{
+				"test\\a.txt",
+				"test\\path\\b.txt",
+				"test\\another\\path\\c.txt",
+			},
+			wantRoot: "test",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -54,9 +63,9 @@ func Test_findRoot(t *testing.T) {
 				files[i] = &zip.File{FileHeader: zip.FileHeader{Name: name}}
 			}
 
-			gotRoot, err := findRoot(context.Background(), files)
-			assert.NoErrorf(t, err, "findRoot(_, %v) error = %v", tt.args, err)
-			assert.Equalf(t, tt.wantRoot, gotRoot, "findRoot(_, %v) got = %v, want = %v", tt.args, gotRoot, tt.wantRoot)
+			gotRoot, err := FindRoot(context.Background(), NamesFromFile(files))
+			assert.NoErrorf(t, err, "FindRoot(_, %v) error = %v", tt.args, err)
+			assert.Equalf(t, tt.wantRoot, gotRoot, "FindRoot(_, %v) got = %v, want = %v", tt.args, gotRoot, tt.wantRoot)
 		})
 	}
 }
