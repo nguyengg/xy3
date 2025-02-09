@@ -159,7 +159,7 @@ func (r *readSeeker) ReadAt(p []byte, off int64) (n int, err error) {
 	getObjectOutput, err := r.client.GetObject(r.ctxFn(), r.goiFn(&s3.GetObjectInput{
 		Bucket: aws.String(r.bucket),
 		Key:    aws.String(r.key),
-		Range:  aws.String(fmt.Sprintf("bytes=%d-%d", off, off+(m-1))),
+		Range:  aws.String(fmt.Sprintf("bytes=%d-%d", off, min(r.size-1, off+(m-1)))),
 	}))
 	if err != nil {
 		return 0, err
