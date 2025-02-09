@@ -121,8 +121,7 @@ func (c *Command) parseZipHeaders(ctx context.Context, man manifest.Manifest) (b
 	// this is a variant of zipper.findRoot that can work with file headers containing both / or \.
 	// we will go through all the headers to find the total uncompressed size.
 	var uncompressedSize int64
-	noRoot := false
-	root := ""
+	noRoot, root := false, ""
 	for ; len(data) > 0; _ = bar.Add(1) {
 		uncompressedSize += int64(binary.LittleEndian.Uint32(data[24:28]))
 		n, m, k := nmk([6]byte(data[28:34]))
@@ -169,7 +168,7 @@ func nmk(b [6]byte) (n int, m int, k int) {
 	return int(b[0]) | int(b[1])<<8, int(b[2]) | int(b[3])<<8, int(b[4]) | int(b[5])<<8
 }
 
-func (c *Command) streamAndExtract(ctx context.Context, man manifest.Manifest) (bool, error) {
+func (c *Command) tryStreamZip(ctx context.Context, man manifest.Manifest) (bool, error) {
 	// check first if we're eligible for stream and extract mode.
 	ok, root, recordCount, size, err := c.parseZipHeaders(ctx, man)
 	if !ok || err != nil {

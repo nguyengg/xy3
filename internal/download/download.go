@@ -30,8 +30,14 @@ func (c *Command) download(ctx context.Context, name string) error {
 
 	// see if the file is eligible for auto-extract.
 	if c.StreamAndExtract {
-		if ok, err := c.streamAndExtract(ctx, man); ok || err != nil {
-			return err
+		if strings.HasSuffix(man.Key, ".zip") {
+			if ok, err := c.tryStreamZip(ctx, man); ok || err != nil {
+				return err
+			}
+		} else if strings.HasSuffix(man.Key, ".7z") {
+			if ok, err := c.tryStream7z(ctx, man); ok || err != nil {
+				return err
+			}
 		}
 	}
 
