@@ -16,6 +16,24 @@ import (
 	"github.com/valyala/bytebufferpool"
 )
 
+// CDFileHeader extends zip.FileHeader with additional information from the central directory.
+type CDFileHeader struct {
+	zip.FileHeader
+
+	// DiskNumber is the disk number where file starts.
+	//
+	// Since floppy disks aren't a thing anymore, this field is most likely unused.
+	DiskNumber uint16
+
+	// Offset is the relative offset of local file header.
+	//
+	// This is the number of bytes between the start of the first disk on which the file occurs, and the start of
+	// the local file header.
+	//
+	// See https://en.wikipedia.org/wiki/ZIP_(file_format)#Central_directory_file_header_(CDFH).
+	Offset uint64
+}
+
 // CDScanner provides methods to scan a zip file's central directory for information.
 //
 // CDScanner is not safe for use across multiple goroutine.
@@ -29,11 +47,11 @@ type CDScanner interface {
 	// The boolean return value is false if there is no more file header to go over, or if there was an error.
 	//
 	// Don't mix Next and All as they use the same underlying io.ReadSeeker src.
-	Next() (bool, zip.FileHeader)
+	Next() (bool, CDFileHeader)
 	// All returns the remaining file headers as an iterator.
 	//
 	// Don't mix Next and All as they use the same underlying io.ReadSeeker src.
-	All() iter.Seq[zip.FileHeader]
+	All() iter.Seq[CDFileHeader]
 }
 
 // ErrNoEOCDFound is returned by NewCDScanner if no EOCD was found.
@@ -108,7 +126,7 @@ func (s *cdScanner) Err() error {
 	return s.err
 }
 
-func (s *cdScanner) Next() (ok bool, fh zip.FileHeader) {
+func (s *cdScanner) Next() (ok bool, fh CDFileHeader) {
 	bb := bytebufferpool.Get()
 	defer bytebufferpool.Put(bb)
 
@@ -143,8 +161,8 @@ func (s *cdScanner) Next() (ok bool, fh zip.FileHeader) {
 	return true, toFileHeader(bb.B)
 }
 
-func (s *cdScanner) All() iter.Seq[zip.FileHeader] {
-	return func(yield func(zip.FileHeader) bool) {
+func (s *cdScanner) All() iter.Seq[CDFileHeader] {
+	return func(yield func(CDFileHeader) bool) {
 		bb := bytebufferpool.Get()
 		defer bytebufferpool.Put(bb)
 
@@ -190,18 +208,22 @@ func (s *cdScanner) All() iter.Seq[zip.FileHeader] {
 // toFileHeader method panics if the data does not contain a full file header record.
 //
 // https://en.wikipedia.org/wiki/ZIP_(file_format)#Central_directory_file_header_(CDFH)
-func toFileHeader(data []byte) (fh zip.FileHeader) {
-	fh = zip.FileHeader{
-		CreatorVersion:     binary.LittleEndian.Uint16(data[4:6]),
-		ReaderVersion:      binary.LittleEndian.Uint16(data[6:8]),
-		Flags:              binary.LittleEndian.Uint16(data[8:10]),
-		Method:             binary.LittleEndian.Uint16(data[10:12]),
-		Modified:           time.Time{},
-		ModifiedTime:       binary.LittleEndian.Uint16(data[12:14]),
-		ModifiedDate:       binary.LittleEndian.Uint16(data[14:16]),
-		CRC32:              binary.LittleEndian.Uint32(data[16:20]),
-		CompressedSize64:   uint64(binary.LittleEndian.Uint32(data[20:24])),
-		UncompressedSize64: uint64(binary.LittleEndian.Uint32(data[24:28])),
+func toFileHeader(data []byte) (fh CDFileHeader) {
+	fh = CDFileHeader{
+		FileHeader: zip.FileHeader{
+			CreatorVersion:     binary.LittleEndian.Uint16(data[4:6]),
+			ReaderVersion:      binary.LittleEndian.Uint16(data[6:8]),
+			Flags:              binary.LittleEndian.Uint16(data[8:10]),
+			Method:             binary.LittleEndian.Uint16(data[10:12]),
+			Modified:           time.Time{},
+			ModifiedTime:       binary.LittleEndian.Uint16(data[12:14]),
+			ModifiedDate:       binary.LittleEndian.Uint16(data[14:16]),
+			CRC32:              binary.LittleEndian.Uint32(data[16:20]),
+			CompressedSize64:   uint64(binary.LittleEndian.Uint32(data[20:24])),
+			UncompressedSize64: uint64(binary.LittleEndian.Uint32(data[24:28])),
+		},
+		DiskNumber: binary.LittleEndian.Uint16(data[34:46]),
+		Offset:     uint64(binary.LittleEndian.Uint32(data[42:46])),
 	}
 	fh.Modified = msDosTimeToTime(fh.ModifiedDate, fh.ModifiedTime)
 
