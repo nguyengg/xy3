@@ -2,6 +2,7 @@ package download
 
 import (
 	"archive/zip"
+	"compress/flate"
 	"context"
 	"errors"
 	"fmt"
@@ -15,18 +16,17 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/krolaw/zipstream"
+	"github.com/nguyengg/go-s3readseeker"
 	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/manifest"
-	"github.com/nguyengg/xy3/namedhash"
 	"github.com/nguyengg/xy3/zipper"
 	"github.com/schollz/progressbar/v3"
 )
 
 func (c *Command) streamAndExtract(ctx context.Context, man manifest.Manifest) (bool, error) {
 	// check first if we're eligible for stream and extract mode.
-	headers, err := zipper.NewCDScannerFromS3(ctx, c.client, &s3.GetObjectInput{
+	cd, err := zipper.NewCDScannerFromS3(ctx, c.client, &s3.GetObjectInput{
 		Bucket:              aws.String(man.Bucket),
 		Key:                 aws.String(man.Key),
 		ExpectedBucketOwner: man.ExpectedBucketOwner,
@@ -40,34 +40,25 @@ func (c *Command) streamAndExtract(ctx context.Context, man manifest.Manifest) (
 		return false, err
 	}
 
-	// while going through the headers to compute uncompressed size, we'll also calculate if there's a common root.
+	// while going through the cd to compute uncompressed size, we'll also calculate if there's a common root.
+	// we'll use the headers slice later to do parallel download and extract so save them.
 	var uncompressedSize uint64
+	headers := make([]zipper.CDFileHeader, 0)
 	trimRoot := func(path string) string {
 		return path
 	}
-	if names := make([]string, 0, headers.RecordCount()); true {
-		bar := progressbar.NewOptions(
-			headers.RecordCount(),
-			progressbar.OptionSetDescription(fmt.Sprintf("scanning %d headers", headers.RecordCount())),
-			progressbar.OptionSetWriter(os.Stderr),
-			progressbar.OptionShowBytes(true),
-			progressbar.OptionSetWidth(10),
-			progressbar.OptionThrottle(1*time.Second),
-			progressbar.OptionShowCount(),
-			progressbar.OptionOnCompletion(func() {
-				_, _ = fmt.Fprint(os.Stderr, "\n")
-			}),
-			progressbar.OptionSpinnerType(14),
-			progressbar.OptionFullWidth(),
-			progressbar.OptionSetRenderBlankState(true))
 
-		for fh := range headers.All() {
+	if names := make([]string, 0, cd.RecordCount()); true {
+		bar := parseHeadersProgressBar(cd.RecordCount())
+
+		for fh := range cd.All() {
 			_ = bar.Add(1)
+			headers = append(headers, fh)
 			names = append(names, fh.Name)
 			uncompressedSize += fh.UncompressedSize64
 		}
 
-		if _, err = bar.Close(), headers.Err(); err != nil {
+		if _, err = bar.Close(), cd.Err(); err != nil {
 			return true, err
 		}
 
@@ -78,12 +69,6 @@ func (c *Command) streamAndExtract(ctx context.Context, man manifest.Manifest) (
 				return strings.TrimLeft(strings.TrimPrefix(path, root), `\/`)
 			}
 		}
-	}
-
-	// while downloading, also computes checksum to verify against the downloaded content.
-	h, err := namedhash.NewFromChecksumString(man.Checksum)
-	if err != nil {
-		return true, err
 	}
 
 	// attempt to create the local directory that will store the extracted files.
@@ -106,99 +91,112 @@ func (c *Command) streamAndExtract(ctx context.Context, man manifest.Manifest) (
 
 	c.logger.Printf(`extracting from "s3://%s/%s" to "%s"`, man.Bucket, man.Key, dir)
 
-	// we'll use a pipe here.
-	// one goroutine will be responsible for downloading to PipeWriter.
-	// the main goroutine then reads from PipeReader to extract files using krolaw/zipstream. if there is error with
-	// reading/extracting the files, cancel the child context so that all goroutines can gracefully stop.
-	//
-	// why don't we use s3reader.ReadSeeker here? turns out zipstream.NewReader would only download the small
-	// parts sequentially, while xy3.Download can download the parts in parallel.
-	ctx, cancel := context.WithCancelCause(ctx)
-	pr, pw := io.Pipe()
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
-		defer pw.Close()
-
-		if err := xy3.Download(ctx, c.client, man.Bucket, man.Key, io.MultiWriter(pw, h), func(options *xy3.DownloadOptions) {
-			options.Concurrency = c.MaxConcurrency
-			options.ModifyHeadObjectInput = func(input *s3.HeadObjectInput) {
-				v := man.ExpectedBucketOwner
-				if v == nil {
-					v = c.ExpectedBucketOwner
-				}
-				input.ExpectedBucketOwner = v
-			}
-			options.ModifyGetObjectInput = func(input *s3.GetObjectInput) {
-				v := man.ExpectedBucketOwner
-				if v == nil {
-					v = c.ExpectedBucketOwner
-				}
-				input.ExpectedBucketOwner = v
-			}
-
-			options.PostGetPart = nil
-		}); err != nil && !errors.Is(err, context.Canceled) {
-			cancel(fmt.Errorf("download error: %w", err))
-		}
-	}()
-
 	// for progress report, we'll use the uncompressed bytes.
-	bar := internal.DefaultBytes(int64(uncompressedSize), fmt.Sprintf("extracting %d files", headers.RecordCount()))
+	bar := internal.DefaultBytes(int64(uncompressedSize), fmt.Sprintf("extracting %d files", cd.RecordCount()))
 	defer bar.Close()
 
-	var (
-		buf = make([]byte, 32*1024)
-		fh  *zip.FileHeader
-		f   *os.File
-	)
-	for zr := zipstream.NewReader(pr); err == nil; {
-		fh, err = zr.Next()
-		if err == io.EOF {
-			err = nil
-			break
-		} else if err != nil {
-			err = fmt.Errorf("stream zip error: %w", err)
-			break
-		}
-
-		name := fh.Name
-		path := filepath.Join(dir, trimRoot(name))
-
-		fi := fh.FileInfo()
-		if fi.IsDir() {
-			err = os.MkdirAll(path, fi.Mode())
-			continue
-		}
-
-		if err = os.MkdirAll(filepath.Dir(path), 0755); err == nil {
-			f, err = os.OpenFile(path, os.O_WRONLY|os.O_CREATE, fi.Mode())
-		}
-		if err != nil {
-			err = fmt.Errorf(`create file "%s" error: %w`, path, err)
-			break
-		}
-
-		_, err = xy3.CopyBufferWithContext(ctx, io.MultiWriter(f, bar), zr, buf)
-		_ = f.Close()
-		if err != nil {
-			err = fmt.Errorf(`write to file "%s" error: %w`, path, err)
-			break
-		}
-	}
-
+	// use a goroutine pool sharing this ReaderAt.
+	var r io.ReaderAt
+	r, err = s3readseeker.New(ctx, c.client, &s3.GetObjectInput{
+		Bucket:              aws.String(man.Bucket),
+		Key:                 aws.String(man.Key),
+		ExpectedBucketOwner: man.ExpectedBucketOwner,
+	})
 	if err != nil {
-		if !errors.Is(err, context.Canceled) {
-			cancel(err)
-		}
-
 		return true, err
 	}
 
+	var wg sync.WaitGroup
+	wg.Add(c.MaxConcurrency)
+	ch := make(chan zipper.CDFileHeader, c.MaxConcurrency)
+	closeCh := sync.OnceFunc(func() {
+		close(ch)
+	})
+	defer closeCh()
+
+	ctx, cancel := context.WithCancelCause(ctx)
+	for range c.MaxConcurrency {
+		go func() {
+			defer wg.Done()
+
+			var (
+				f *os.File
+			)
+
+			for fh := range ch {
+				size := int64(fh.CompressedSize64)
+				if size == 0 {
+					continue
+				}
+
+				offset := int64(fh.Offset)
+				var decompressor = io.NopCloser
+				if fh.Method == zip.Deflate {
+					decompressor = flate.NewReader
+				}
+
+				// https://en.wikipedia.org/wiki/ZIP_(file_format)#Local_file_header
+				data := make([]byte, 30)
+				if _, err = r.ReadAt(data, offset); err != nil {
+					cancel(err)
+					break
+				}
+
+				n := int(data[26]) | int(data[27])<<8
+				m := int(data[28]) | int(data[29])<<8
+
+				name := fh.Name
+				path := filepath.Join(dir, trimRoot(name))
+
+				if err = os.MkdirAll(filepath.Dir(path), 0755); err == nil {
+					f, err = os.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0755)
+				}
+				if err != nil {
+					cancel(fmt.Errorf("create local file error: %w", err))
+					break
+				}
+
+				_, err = xy3.CopyBufferWithContext(
+					ctx,
+					io.MultiWriter(f, bar),
+					decompressor(io.NewSectionReader(r, offset+int64(30+n+m), size)),
+					nil)
+				_ = f.Close()
+				if err != nil {
+					cancel(fmt.Errorf("write to file error: %w", err))
+					break
+				}
+			}
+		}()
+	}
+
+	for _, fh := range headers {
+		select {
+		case ch <- fh:
+		case <-ctx.Done():
+			return true, ctx.Err()
+		}
+	}
+
+	closeCh()
 	wg.Wait()
 	success = true
-	return true, nil
+	return true, ctx.Err()
+}
+
+func parseHeadersProgressBar(n int) *progressbar.ProgressBar {
+	return progressbar.NewOptions(
+		n,
+		progressbar.OptionSetDescription(fmt.Sprintf("scanning %d headers", n)),
+		progressbar.OptionSetWriter(os.Stderr),
+		progressbar.OptionShowBytes(true),
+		progressbar.OptionSetWidth(10),
+		progressbar.OptionThrottle(1*time.Second),
+		progressbar.OptionShowCount(),
+		progressbar.OptionOnCompletion(func() {
+			_, _ = fmt.Fprint(os.Stderr, "\n")
+		}),
+		progressbar.OptionSpinnerType(14),
+		progressbar.OptionFullWidth(),
+		progressbar.OptionSetRenderBlankState(true))
 }

@@ -10,7 +10,6 @@ require (
 	github.com/dustin/go-humanize v1.0.1
 	github.com/google/uuid v1.6.0
 	github.com/jessevdk/go-flags v1.6.1
-	github.com/krolaw/zipstream v0.0.0-20180621105154-0a2661891f94
 	github.com/nguyengg/go-s3readseeker v0.1.2
 	github.com/schollz/progressbar/v3 v3.18.0
 	github.com/stretchr/testify v1.9.0
