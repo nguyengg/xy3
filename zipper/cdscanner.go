@@ -3,6 +3,7 @@ package zipper
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -10,7 +11,8 @@ import (
 	"iter"
 	"time"
 
-	"github.com/nguyengg/xy3/s3readseeker"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/nguyengg/go-s3readseeker"
 	"github.com/valyala/bytebufferpool"
 )
 
@@ -81,8 +83,8 @@ func NewCDScanner(src io.ReadSeeker, size int64) (CDScanner, error) {
 }
 
 // NewCDScannerFromS3 reads from S3 instead.
-func NewCDScannerFromS3(client s3readseeker.ReadSeekerClient, bucket, key string, optFns ...func(*s3readseeker.Options)) (CDScanner, error) {
-	s3object, err := s3readseeker.New(client, bucket, key, optFns...)
+func NewCDScannerFromS3(ctx context.Context, client s3readseeker.ReadSeekerClient, input *s3.GetObjectInput, optFns ...func(options *s3readseeker.ReadSeekerOptions)) (CDScanner, error) {
+	s3object, err := s3readseeker.New(ctx, client, input, optFns...)
 	if err != nil {
 		return nil, err
 	}

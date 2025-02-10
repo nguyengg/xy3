@@ -26,8 +26,8 @@ github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.12.13 h1:SYVGSFQH
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.12.13/go.mod h1:kizuDaLX37bG5WZaoxGPQR/LNFXpxp0vsUnqfkWXfNE=
 github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.18.13 h1:OBsrtam3rk8NfBEq7OLOMm5HtQ9Yyw32X4UQMya/wjw=
 github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.18.13/go.mod h1:3U4gFA5pmoCOja7aq4nSaIAGbaOHv2Yl2ug018cmC+Q=
-github.com/aws/aws-sdk-go-v2/service/s3 v1.75.4 h1:DJYjOvNgC30JAcDCRmtQHoYK4trc7XetDXRTEAReGKA=
-github.com/aws/aws-sdk-go-v2/service/s3 v1.75.4/go.mod h1:KuLNrwYJFaC2AVZ+CVVc12k9NyqwgWsoNNHjwqF6QNk=
+github.com/aws/aws-sdk-go-v2/service/s3 v1.76.0 h1:ehvUZNVrGA1Usa6yYo8A8pUqrigRelWXSbcCqYpRLeI=
+github.com/aws/aws-sdk-go-v2/service/s3 v1.76.0/go.mod h1:KuLNrwYJFaC2AVZ+CVVc12k9NyqwgWsoNNHjwqF6QNk=
 github.com/aws/aws-sdk-go-v2/service/sso v1.24.15 h1:/eE3DogBjYlvlbhd2ssWyeuovWunHLxfgw3s/OJa4GQ=
 github.com/aws/aws-sdk-go-v2/service/sso v1.24.15/go.mod h1:2PCJYpi7EKeA5SkStAmZlF6fi0uUABuhtF8ILHjGc3Y=
 github.com/aws/aws-sdk-go-v2/service/ssooidc v1.28.14 h1:M/zwXiL2iXUrHputuXgmO94TVNmcenPHxgLXLutodKE=
@@ -57,6 +57,8 @@ github.com/mattn/go-runewidth v0.0.16 h1:E5ScNMtiwvlvB5paMFdw9p4kSQzbXFikJ5SQO6T
 github.com/mattn/go-runewidth v0.0.16/go.mod h1:Jdepj2loyihRzMpdS35Xk/zdY8IAYHsh153qUoGf23w=
 github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db h1:62I3jR2EmQ4l5rM/4FEfDWcRD+abF5XlKShorW5LRoQ=
 github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db/go.mod h1:l0dey0ia/Uv7NcFFVbCLtqEBQbrT4OCwCSKTEv6enCw=
+github.com/nguyengg/go-s3readseeker v0.1.0 h1:4PJ5kdqr16+KNXKaWaA8BlEw/B4xVmHhDvvGEqAxx6M=
+github.com/nguyengg/go-s3readseeker v0.1.0/go.mod h1:zbQ/Ej3PVzXutAb02nldyXu3+OcPKpaJI/29MRX1BQY=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/rivo/uniseg v0.4.7 h1:WUdvkW8uEhrYfLC4ZzdpI2ztxP1I582+49Oc5Mq64VQ=

@@ -1,16 +1,17 @@
 module github.com/nguyengg/xy3
 
-go 1.23.5
+go 1.23.6
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.36.1
 	github.com/aws/aws-sdk-go-v2/config v1.29.6
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.17.59
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.75.4
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.76.0
 	github.com/dustin/go-humanize v1.0.1
 	github.com/google/uuid v1.6.0
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/krolaw/zipstream v0.0.0-20180621105154-0a2661891f94
+	github.com/nguyengg/go-s3readseeker v0.1.0
 	github.com/schollz/progressbar/v3 v3.18.0
 	github.com/stretchr/testify v1.9.0
 	github.com/valyala/bytebufferpool v1.0.0

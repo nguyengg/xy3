@@ -13,28 +13,23 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/krolaw/zipstream"
 	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/nguyengg/xy3/namedhash"
-	"github.com/nguyengg/xy3/s3readseeker"
 	"github.com/nguyengg/xy3/zipper"
 	"github.com/schollz/progressbar/v3"
 )
 
 func (c *Command) streamAndExtract(ctx context.Context, man manifest.Manifest) (bool, error) {
 	// check first if we're eligible for stream and extract mode.
-	headers, err := zipper.NewCDScannerFromS3(c.client, man.Bucket, man.Key, func(options *s3readseeker.Options) {
-		options.ModifyGetObjectInput = func(input *s3.GetObjectInput) *s3.GetObjectInput {
-			input.ExpectedBucketOwner = man.ExpectedBucketOwner
-			return input
-		}
-		options.ModifyHeadObjectInput = func(input *s3.HeadObjectInput) *s3.HeadObjectInput {
-			input.ExpectedBucketOwner = man.ExpectedBucketOwner
-			return input
-		}
+	headers, err := zipper.NewCDScannerFromS3(ctx, c.client, &s3.GetObjectInput{
+		Bucket:              aws.String(man.Bucket),
+		Key:                 aws.String(man.Key),
+		ExpectedBucketOwner: man.ExpectedBucketOwner,
 	})
 	if err != nil {
 		if errors.Is(err, zipper.ErrNoEOCDFound) {
