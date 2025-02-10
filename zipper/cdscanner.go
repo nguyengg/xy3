@@ -101,7 +101,7 @@ func NewCDScanner(src io.ReadSeeker, size int64) (CDScanner, error) {
 }
 
 // NewCDScannerFromS3 reads from S3 instead.
-func NewCDScannerFromS3(ctx context.Context, client s3readseeker.ReadSeekerClient, input *s3.GetObjectInput, optFns ...func(options *s3readseeker.ReadSeekerOptions)) (CDScanner, error) {
+func NewCDScannerFromS3(ctx context.Context, client s3readseeker.S3GetHeadClient, input *s3.GetObjectInput, optFns ...func(options *s3readseeker.S3ReaderOptions)) (CDScanner, error) {
 	s3object, err := s3readseeker.New(ctx, client, input, optFns...)
 	if err != nil {
 		return nil, err
