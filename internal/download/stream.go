@@ -146,7 +146,6 @@ func (c *Command) stream(ctx context.Context, man manifest.Manifest) (bool, erro
 	var (
 		buf = make([]byte, 32*1024)
 		fh  *zip.FileHeader
-		f   *os.File
 	)
 	for zr := zipstream.NewReader(pr); err == nil; {
 		fh, err = zr.Next()
@@ -167,18 +166,21 @@ func (c *Command) stream(ctx context.Context, man manifest.Manifest) (bool, erro
 			continue
 		}
 
-		if err = os.MkdirAll(filepath.Dir(path), 0755); err == nil {
-			f, err = os.OpenFile(path, os.O_WRONLY|os.O_CREATE, fi.Mode())
+		if err = os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			err = fmt.Errorf("create path to file error: %w", err)
+			break
 		}
+
+		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, fi.Mode())
 		if err != nil {
-			err = fmt.Errorf(`create file "%s" error: %w`, path, err)
+			err = fmt.Errorf("create file error: %w", err)
 			break
 		}
 
 		_, err = xy3.CopyBufferWithContext(ctx, io.MultiWriter(f, bar), zr, buf)
 		_ = f.Close()
 		if err != nil {
-			err = fmt.Errorf(`write to file "%s" error: %w`, path, err)
+			err = fmt.Errorf("write to file error: %w", err)
 			break
 		}
 	}

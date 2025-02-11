@@ -85,12 +85,15 @@ func (c *Command) streamV2(ctx context.Context, man manifest.Manifest) (bool, er
 		ex.Execute(func() {
 			defer wg.Done()
 
-			size := int64(fh.CompressedSize64)
-			if size == 0 {
+			name := fh.Name
+			path := filepath.Join(dir, trimRoot(name))
+
+			fi := fh.FileInfo()
+			if fi.IsDir() {
+				err = os.MkdirAll(path, fi.Mode())
 				return
 			}
 
-			offset := int64(fh.Offset)
 			var decompressor = io.NopCloser
 			if fh.Method == zip.Deflate {
 				decompressor = flate.NewReader
@@ -98,6 +101,7 @@ func (c *Command) streamV2(ctx context.Context, man manifest.Manifest) (bool, er
 
 			// https://en.wikipedia.org/wiki/ZIP_(file_format)#Local_file_header
 			data := make([]byte, 30)
+			offset := int64(fh.Offset)
 			if _, err = s3reader.ReadAt(data, offset); err != nil {
 				cancel(err)
 				return
@@ -105,26 +109,20 @@ func (c *Command) streamV2(ctx context.Context, man manifest.Manifest) (bool, er
 
 			n := int(data[26]) | int(data[27])<<8
 			m := int(data[28]) | int(data[29])<<8
-
-			name := fh.Name
-			path := filepath.Join(dir, trimRoot(name))
+			dst := decompressor(io.NewSectionReader(s3reader, offset+int64(30+n+m), int64(fh.CompressedSize64)))
 
 			if err = os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-				cancel(err)
+				cancel(fmt.Errorf("create path to file error: %w", err))
 				return
 			}
 
-			f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0755)
+			f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, fi.Mode())
 			if err != nil {
-				cancel(fmt.Errorf("create local file error: %w", err))
+				cancel(fmt.Errorf("create file error: %w", err))
 				return
 			}
 
-			_, err = xy3.CopyBufferWithContext(
-				ctx,
-				io.MultiWriter(f, bar),
-				decompressor(io.NewSectionReader(s3reader, offset+int64(30+n+m), size)),
-				nil)
+			_, err = xy3.CopyBufferWithContext(ctx, io.MultiWriter(f, bar), dst, nil)
 			_ = f.Close()
 			if err != nil {
 				cancel(fmt.Errorf("write to file error: %w", err))

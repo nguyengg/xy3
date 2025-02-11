@@ -67,16 +67,21 @@ func NewCDScanner(src io.ReadSeeker, size int64) (CDScanner, error) {
 		return nil, fmt.Errorf("seek EOCD error: %w", err)
 	}
 
-	recordCount := 0
 	for {
 		if _, err = src.Read(buf); err != nil {
 			return nil, fmt.Errorf("read EOCD error: %w", err)
 		}
 
 		if i := bytes.LastIndex(buf, sigEOCD); i != -1 {
-			recordCount = int(binary.LittleEndian.Uint16(buf[i+10 : i+12]))
-			offset = int64(binary.LittleEndian.Uint32(buf[i+16 : i+20]))
-			break
+			if i+20 > len(buf) {
+				return nil, fmt.Errorf("invalid EOCD")
+			}
+
+			cd := &cdScanner{src: src}
+			cd.recordCount = int(binary.LittleEndian.Uint16(buf[i+10 : i+12]))
+			cd.size = int(binary.LittleEndian.Uint16(buf[i+12 : i+14]))
+			cd.offset = int64(binary.LittleEndian.Uint32(buf[i+16 : i+20]))
+			return cd, nil
 		}
 
 		// we're already at start of file, there's no more bytes to read.
@@ -88,25 +93,23 @@ func NewCDScanner(src io.ReadSeeker, size int64) (CDScanner, error) {
 			return nil, fmt.Errorf("seek backwards for EOCD error: %w", err)
 		}
 	}
-
-	return &cdScanner{
-		src:         src,
-		offset:      offset,
-		recordCount: recordCount,
-		err:         nil,
-	}, nil
 }
 
 type cdScanner struct {
 	src         io.ReadSeeker
-	offset      int64
 	recordCount int
+	size        int
+	offset      int64
 	err         error
 	eof         bool
 }
 
 func (s *cdScanner) RecordCount() int {
 	return s.recordCount
+}
+
+func (s *cdScanner) Size() int {
+	return s.size
 }
 
 func (s *cdScanner) Err() error {
@@ -208,6 +211,7 @@ func toFileHeader(data []byte) (fh CDFileHeader) {
 			CRC32:              binary.LittleEndian.Uint32(data[16:20]),
 			CompressedSize64:   uint64(binary.LittleEndian.Uint32(data[20:24])),
 			UncompressedSize64: uint64(binary.LittleEndian.Uint32(data[24:28])),
+			ExternalAttrs:      binary.LittleEndian.Uint32(data[38:42]),
 		},
 		DiskNumber: binary.LittleEndian.Uint16(data[34:46]),
 		Offset:     uint64(binary.LittleEndian.Uint32(data[42:46])),
