@@ -23,7 +23,7 @@ import (
 
 func (c *Command) streamV2(ctx context.Context, man manifest.Manifest) (bool, error) {
 	// check for streaming eligibility by finding the ZIP headers.
-	headers, uncompressedSize, trimRoot, err := c.canStream(ctx, man)
+	headers, uncompressedSize, rootDir, err := c.canStream(ctx, man)
 	if err != nil {
 		if errors.Is(err, zipper.ErrNoEOCDFound) {
 			return false, nil
@@ -85,7 +85,7 @@ func (c *Command) streamV2(ctx context.Context, man manifest.Manifest) (bool, er
 
 			for fh := range inputs {
 				name := fh.Name
-				path := filepath.Join(dir, trimRoot(name))
+				path := rootDir.Join(dir, name)
 
 				fi := fh.FileInfo()
 				if fi.IsDir() {

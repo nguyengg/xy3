@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -23,48 +22,36 @@ import (
 	"github.com/schollz/progressbar/v3"
 )
 
-func (c *Command) canStream(ctx context.Context, man manifest.Manifest) (headers []zipper.CDFileHeader, uncompressedSize uint64, trimRoot func(string) string, err error) {
+func (c *Command) canStream(ctx context.Context, man manifest.Manifest) (headers []zipper.CDFileHeader, uncompressedSize uint64, rootDir internal.RootDir, err error) {
 	s3reader, err := s3readseeker.New(ctx, c.client, &s3.GetObjectInput{
 		Bucket:              aws.String(man.Bucket),
 		Key:                 aws.String(man.Key),
 		ExpectedBucketOwner: man.ExpectedBucketOwner,
 	})
 	if err != nil {
-		return nil, 0, nil, err
+		return nil, 0, "", err
 	}
 	defer s3reader.Close()
 
 	cd, err := zipper.NewCDScanner(s3reader, s3reader.Size())
 	if err != nil {
-		return nil, 0, nil, err
+		return nil, 0, "", err
 	}
 
 	// while going through the headers to compute uncompressed size, we'll also calculate if there's a common root.
 	n := cd.RecordCount()
 	bar := parseHeadersProgressBar(n)
-
-	names := make([]string, 0, n)
+	rootFinder := internal.NewZipRootDirFinder()
 	headers = make([]zipper.CDFileHeader, 0, n)
-	trimRoot = func(path string) string {
-		return path
-	}
 	for fh := range cd.All() {
 		_ = bar.Add(1)
+		rootDir, _ = rootFinder(fh.Name)
 		headers = append(headers, fh)
-		names = append(names, fh.Name)
 		uncompressedSize += fh.UncompressedSize64
 	}
 
 	if _, err = bar.Close(), cd.Err(); err != nil {
-		return headers, uncompressedSize, trimRoot, err
-	}
-
-	if root, err := zipper.FindRoot(ctx, names); err != nil {
-		return headers, uncompressedSize, trimRoot, err
-	} else if root != "" {
-		trimRoot = func(path string) string {
-			return strings.TrimLeft(strings.TrimPrefix(path, root), `\/`)
-		}
+		return headers, uncompressedSize, rootDir, err
 	}
 
 	return
@@ -72,7 +59,7 @@ func (c *Command) canStream(ctx context.Context, man manifest.Manifest) (headers
 
 func (c *Command) stream(ctx context.Context, man manifest.Manifest) (bool, error) {
 	// check for streaming eligibility by finding the ZIP headers.
-	headers, uncompressedSize, trimRoot, err := c.canStream(ctx, man)
+	headers, uncompressedSize, rootDir, err := c.canStream(ctx, man)
 	if err != nil {
 		if errors.Is(err, zipper.ErrNoEOCDFound) {
 			return false, nil
@@ -158,7 +145,7 @@ func (c *Command) stream(ctx context.Context, man manifest.Manifest) (bool, erro
 		}
 
 		name := fh.Name
-		path := filepath.Join(dir, trimRoot(name))
+		path := rootDir.Join(dir, name)
 
 		fi := fh.FileInfo()
 		if fi.IsDir() {

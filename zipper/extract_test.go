@@ -1,7 +1,6 @@
 package zipper
 
 import (
-	"archive/zip"
 	"context"
 	"io/fs"
 	"os"
@@ -12,63 +11,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 )
-
-func TestFindRoot(t *testing.T) {
-	tests := []struct {
-		name     string
-		args     []string
-		wantRoot string
-	}{
-		{
-			name: "simple root",
-			args: []string{
-				"test/a.txt",
-				"test/path/b.txt",
-				"test/another/path/c.txt",
-			},
-			wantRoot: "test",
-		},
-		{
-			name: "no root",
-			args: []string{
-				"a.txt",
-				"path/b.txt",
-				"another/path/c.txt",
-			},
-			wantRoot: "",
-		},
-		{
-			name: "long root",
-			args: []string{
-				"test/path/to/a.txt",
-				"test/path/to/a.txt",
-				"test/path/to/a.txt",
-			},
-			wantRoot: "test",
-		},
-		{
-			name: "window paths",
-			args: []string{
-				"test\\a.txt",
-				"test\\path\\b.txt",
-				"test\\another\\path\\c.txt",
-			},
-			wantRoot: "test",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			files := make([]*zip.File, len(tt.args))
-			for i, name := range tt.args {
-				files[i] = &zip.File{FileHeader: zip.FileHeader{Name: name}}
-			}
-
-			gotRoot, err := FindRoot(context.Background(), NamesFromFile(files))
-			assert.NoErrorf(t, err, "FindRoot(_, %v) error = %v", tt.args, err)
-			assert.Equalf(t, tt.wantRoot, gotRoot, "FindRoot(_, %v) got = %v, want = %v", tt.args, gotRoot, tt.wantRoot)
-		})
-	}
-}
 
 func TestExtract(t *testing.T) {
 	tests := []struct {

@@ -9,11 +9,11 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/nguyengg/xy3"
+	"github.com/nguyengg/xy3/internal"
 )
 
 // ExtractOptions is an opaque struct for customising Extract.
@@ -152,16 +152,12 @@ func Extract(ctx context.Context, src, dir string, optFns ...func(*ExtractOption
 	}
 
 	// determine whether the file's path in archive is trimmed (unwrapping its root).
-	trimRoot := func(path string) string {
-		return path
-	}
+	var rootDir internal.RootDir
 	if !opts.NoUnwrapRoot {
-		if root, err := FindRoot(ctx, NamesFromFile(zipReader.File)); err != nil {
-			return "", err
-		} else {
-			root = root + "/"
-			trimRoot = func(path string) string {
-				return strings.TrimPrefix(path, root)
+		ok, rootFinder := false, internal.NewZipRootDirFinder()
+		for _, f := range zipReader.File {
+			if rootDir, ok = rootFinder(f.Name); !ok {
+				break
 			}
 		}
 	}
@@ -177,14 +173,18 @@ func Extract(ctx context.Context, src, dir string, optFns ...func(*ExtractOption
 			break
 		}
 
-		if f.FileInfo().IsDir() {
-			if err = os.MkdirAll(filepath.Join(dir, trimRoot(f.Name)), f.Mode().Perm()); err != nil {
+		name := f.Name
+		path := rootDir.Join(dir, name)
+
+		fi := f.FileInfo()
+		if fi.IsDir() {
+			if err = os.MkdirAll(path, f.Mode().Perm()); err != nil {
 				return dir, err
 			}
 			continue
 		}
 
-		dst, err := createExclFile(filepath.Join(dir, trimRoot(f.Name)), f.Mode().Perm())
+		dst, err := createExclFile(path, f.Mode().Perm())
 		if err != nil {
 			if opts.NoOverwrite && os.IsExist(err) {
 				continue
@@ -202,7 +202,7 @@ func Extract(ctx context.Context, src, dir string, optFns ...func(*ExtractOption
 		if pr == nil {
 			_, err = xy3.CopyBufferWithContext(ctx, dst, src, buf)
 		} else {
-			w := pr.createWriter(f.Name, rel(dir, dst.Name()))
+			w := pr.createWriter(name, rel(dir, dst.Name()))
 			_, err = xy3.CopyBufferWithContext(ctx, io.MultiWriter(dst, w), src, buf)
 			if err == nil {
 				w.done()
@@ -216,59 +216,6 @@ func Extract(ctx context.Context, src, dir string, optFns ...func(*ExtractOption
 	}
 
 	return dir, nil
-}
-
-var sep = regexp.MustCompile(`[\\/]`)
-
-// FindRoot returns the common root of the given files by definition of Extract.
-//
-// The error return value comes from [context.Context.Err] if the context was cancelled.
-func FindRoot(ctx context.Context, names []string) (root string, err error) {
-	// this is not longest common prefix btw.
-	// perhaps if I can use longest common prefix, I can expand common root.
-	for _, name := range names {
-		select {
-		case <-ctx.Done():
-			return "", ctx.Err()
-		default:
-		}
-
-		paths := sep.Split(name, 2)
-		if len(paths) == 1 {
-			// this is a file at top level so there is no root for sure.
-			return "", nil
-		}
-
-		switch root {
-		case paths[0]:
-		case "":
-			root = paths[0]
-		default:
-			return "", nil
-		}
-	}
-
-	return
-}
-
-// NamesFromFile extracts the names from zip.File to be passed into FindRoot.
-func NamesFromFile(file []*zip.File) []string {
-	names := make([]string, len(file))
-	for i, f := range file {
-		names[i] = f.Name
-	}
-
-	return names
-}
-
-// NamesFromFileHeaders extracts the names from zip.FileHeader to be passed into FindRoot.
-func NamesFromFileHeaders(fileHeaders []zip.FileHeader) []string {
-	names := make([]string, len(fileHeaders))
-	for i, f := range fileHeaders {
-		names[i] = f.Name
-	}
-
-	return names
 }
 
 // createExclFile creates a new exclusive file for writing and ensures all parent directories to the file exist.
