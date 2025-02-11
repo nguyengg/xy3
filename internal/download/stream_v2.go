@@ -14,10 +14,10 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/nguyengg/go-s3readseeker"
 	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/manifest"
+	"github.com/nguyengg/xy3/s3reader"
 	"github.com/nguyengg/xy3/zipper"
 )
 
@@ -64,7 +64,7 @@ func (c *Command) streamV2(ctx context.Context, man manifest.Manifest) (bool, er
 	// gracefully and early.
 	ctx, cancel := context.WithCancelCause(ctx)
 
-	s3reader, err := s3readseeker.New(ctx, c.client, &s3.GetObjectInput{
+	r, err := s3reader.New(ctx, c.client, &s3.GetObjectInput{
 		Bucket:              aws.String(man.Bucket),
 		Key:                 aws.String(man.Key),
 		ExpectedBucketOwner: man.ExpectedBucketOwner,
@@ -72,7 +72,7 @@ func (c *Command) streamV2(ctx context.Context, man manifest.Manifest) (bool, er
 	if err != nil {
 		return true, err
 	}
-	defer s3reader.Close()
+	defer r.Close()
 
 	inputs := make(chan zipper.CDFileHeader, len(headers))
 
@@ -105,14 +105,14 @@ func (c *Command) streamV2(ctx context.Context, man manifest.Manifest) (bool, er
 				// https://en.wikipedia.org/wiki/ZIP_(file_format)#Local_file_header
 				data := make([]byte, 30)
 				offset := int64(fh.Offset)
-				if _, err = s3reader.ReadAt(data, offset); err != nil {
+				if _, err = r.ReadAt(data, offset); err != nil {
 					cancel(fmt.Errorf("read local file header error: %w", err))
 					return
 				}
 
 				n := int(data[26]) | int(data[27])<<8
 				m := int(data[28]) | int(data[29])<<8
-				dst := decompressor(io.NewSectionReader(s3reader, offset+int64(30+n+m), int64(fh.CompressedSize64)))
+				dst := decompressor(io.NewSectionReader(r, offset+int64(30+n+m), int64(fh.CompressedSize64)))
 
 				if err = os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 					cancel(fmt.Errorf("create path to file error: %w", err))

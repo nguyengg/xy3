@@ -13,17 +13,17 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/krolaw/zipstream"
-	"github.com/nguyengg/go-s3readseeker"
 	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/nguyengg/xy3/namedhash"
+	"github.com/nguyengg/xy3/s3reader"
 	"github.com/nguyengg/xy3/zipper"
 	"github.com/schollz/progressbar/v3"
 )
 
 func (c *Command) canStream(ctx context.Context, man manifest.Manifest) (headers []zipper.CDFileHeader, uncompressedSize uint64, rootDir internal.RootDir, err error) {
-	s3reader, err := s3readseeker.New(ctx, c.client, &s3.GetObjectInput{
+	r, err := s3reader.New(ctx, c.client, &s3.GetObjectInput{
 		Bucket:              aws.String(man.Bucket),
 		Key:                 aws.String(man.Key),
 		ExpectedBucketOwner: man.ExpectedBucketOwner,
@@ -31,9 +31,9 @@ func (c *Command) canStream(ctx context.Context, man manifest.Manifest) (headers
 	if err != nil {
 		return nil, 0, "", err
 	}
-	defer s3reader.Close()
+	defer r.Close()
 
-	cd, err := zipper.NewCDScanner(s3reader, s3reader.Size())
+	cd, err := zipper.NewCDScanner(r, r.Size())
 	if err != nil {
 		return nil, 0, "", err
 	}
