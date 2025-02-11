@@ -29,8 +29,12 @@ func (c *Command) download(ctx context.Context, name string) error {
 	ext := filepath.Ext(basename)
 
 	// see if the file is eligible for auto-extract.
-	if c.StreamAndExtract {
-		if ok, err := c.streamAndExtract(ctx, man); ok || err != nil {
+	if c.StreamAndExtractV2 {
+		if ok, err := c.streamV2(ctx, man); ok || err != nil {
+			return err
+		}
+	} else if c.StreamAndExtract {
+		if ok, err := c.stream(ctx, man); ok || err != nil {
 			return err
 		}
 	}
