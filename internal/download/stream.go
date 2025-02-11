@@ -162,7 +162,9 @@ func (c *Command) stream(ctx context.Context, man manifest.Manifest) (bool, erro
 
 		fi := fh.FileInfo()
 		if fi.IsDir() {
-			err = os.MkdirAll(path, fi.Mode())
+			if err = os.MkdirAll(path, fi.Mode()); err != nil {
+				err = fmt.Errorf("create dir error: %w", err)
+			}
 			continue
 		}
 

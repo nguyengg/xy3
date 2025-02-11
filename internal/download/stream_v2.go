@@ -17,7 +17,6 @@ import (
 	"github.com/nguyengg/go-s3readseeker"
 	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
-	"github.com/nguyengg/xy3/internal/executor"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/nguyengg/xy3/zipper"
 )
@@ -60,13 +59,10 @@ func (c *Command) streamV2(ctx context.Context, man manifest.Manifest) (bool, er
 	}(dir)
 
 	// the difference between this and V1 is that this (V2) may not end up downloading the entire file.
-	// instead, we'll spin up a number of goroutines matching the number of processors, each working on a file in
-	// the archive independently of each other.
-	// a shared cancellable-with-cause context is used so that if one goroutine fails, all others can fail
+	// instead, we'll spin up a number of goroutines, each working on a file in the archive independently of each
+	// other, using a shared cancellable-with-cause context so that if one goroutine fails, all others can fail
 	// gracefully and early.
 	ctx, cancel := context.WithCancelCause(ctx)
-	var wg sync.WaitGroup
-	wg.Add(len(headers))
 
 	s3reader, err := s3readseeker.New(ctx, c.client, &s3.GetObjectInput{
 		Bucket:              aws.String(man.Bucket),
@@ -78,58 +74,71 @@ func (c *Command) streamV2(ctx context.Context, man manifest.Manifest) (bool, er
 	}
 	defer s3reader.Close()
 
-	ex := executor.NewCallerRunOnRejectExecutor(runtime.NumCPU())
-	defer ex.Close()
+	inputs := make(chan zipper.CDFileHeader, len(headers))
 
-	for _, fh := range headers {
-		ex.Execute(func() {
+	var wg sync.WaitGroup
+	for range runtime.NumCPU() {
+		wg.Add(1)
+
+		go func() {
 			defer wg.Done()
 
-			name := fh.Name
-			path := filepath.Join(dir, trimRoot(name))
+			for fh := range inputs {
+				name := fh.Name
+				path := filepath.Join(dir, trimRoot(name))
 
-			fi := fh.FileInfo()
-			if fi.IsDir() {
-				err = os.MkdirAll(path, fi.Mode())
-				return
+				fi := fh.FileInfo()
+				if fi.IsDir() {
+					if err = os.MkdirAll(path, fi.Mode()); err != nil {
+						cancel(fmt.Errorf("create dir error: %w", err))
+						return
+					}
+
+					continue
+				}
+
+				var decompressor = io.NopCloser
+				if fh.Method == zip.Deflate {
+					decompressor = flate.NewReader
+				}
+
+				// https://en.wikipedia.org/wiki/ZIP_(file_format)#Local_file_header
+				data := make([]byte, 30)
+				offset := int64(fh.Offset)
+				if _, err = s3reader.ReadAt(data, offset); err != nil {
+					cancel(fmt.Errorf("read local file header error: %w", err))
+					return
+				}
+
+				n := int(data[26]) | int(data[27])<<8
+				m := int(data[28]) | int(data[29])<<8
+				dst := decompressor(io.NewSectionReader(s3reader, offset+int64(30+n+m), int64(fh.CompressedSize64)))
+
+				if err = os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+					cancel(fmt.Errorf("create path to file error: %w", err))
+					return
+				}
+
+				f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, fi.Mode())
+				if err != nil {
+					cancel(fmt.Errorf("create file error: %w", err))
+					return
+				}
+
+				_, err = xy3.CopyBufferWithContext(ctx, io.MultiWriter(f, bar), dst, nil)
+				_ = f.Close()
+				if err != nil {
+					cancel(fmt.Errorf("write to file error: %w", err))
+					return
+				}
 			}
-
-			var decompressor = io.NopCloser
-			if fh.Method == zip.Deflate {
-				decompressor = flate.NewReader
-			}
-
-			// https://en.wikipedia.org/wiki/ZIP_(file_format)#Local_file_header
-			data := make([]byte, 30)
-			offset := int64(fh.Offset)
-			if _, err = s3reader.ReadAt(data, offset); err != nil {
-				cancel(err)
-				return
-			}
-
-			n := int(data[26]) | int(data[27])<<8
-			m := int(data[28]) | int(data[29])<<8
-			dst := decompressor(io.NewSectionReader(s3reader, offset+int64(30+n+m), int64(fh.CompressedSize64)))
-
-			if err = os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-				cancel(fmt.Errorf("create path to file error: %w", err))
-				return
-			}
-
-			f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, fi.Mode())
-			if err != nil {
-				cancel(fmt.Errorf("create file error: %w", err))
-				return
-			}
-
-			_, err = xy3.CopyBufferWithContext(ctx, io.MultiWriter(f, bar), dst, nil)
-			_ = f.Close()
-			if err != nil {
-				cancel(fmt.Errorf("write to file error: %w", err))
-				return
-			}
-		})
+		}()
 	}
+
+	for _, fh := range headers {
+		inputs <- fh
+	}
+	close(inputs)
 
 	// wait in a separate goroutine so that we can catch context cancel.
 	done := make(chan struct{}, 1)
