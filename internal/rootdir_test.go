@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestFindRootDir(t *testing.T) {
+func TestFindZipRootDir(t *testing.T) {
 	tests := []struct {
 		name     string
 		args     []string
@@ -19,7 +19,7 @@ func TestFindRootDir(t *testing.T) {
 				"test/path/b.txt",
 				"test/another/path/c.txt",
 			},
-			wantRoot: "test/",
+			wantRoot: "test",
 		},
 		{
 			name: "no root",
@@ -37,7 +37,7 @@ func TestFindRootDir(t *testing.T) {
 				"test/path/to/a.txt",
 				"test/path/to/a.txt",
 			},
-			wantRoot: "test/",
+			wantRoot: "test",
 		},
 		{
 			name: "window paths",
@@ -46,7 +46,7 @@ func TestFindRootDir(t *testing.T) {
 				"test\\path\\b.txt",
 				"test\\another\\path\\c.txt",
 			},
-			wantRoot: "test/",
+			wantRoot: "test",
 		},
 	}
 	for _, tt := range tests {

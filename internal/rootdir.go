@@ -24,7 +24,7 @@ func (r RootDir) Join(base, path string) string {
 //	test/path/b.txt
 //	test/another/path/c.txt
 //
-// The common root directory of those files is `test/`. The returned value is empty if the given files have no common
+// The common root directory of those files is `test`. The returned value is empty if the given files have no common
 // root directory.
 func FindZipRootDir(names []string) (rootDir RootDir) {
 	fn := NewZipRootDirFinder()
@@ -69,6 +69,6 @@ func NewZipRootDirFinder() func(string) (rootDir RootDir, hasRoot bool) {
 			return "", false
 		}
 
-		return RootDir(root + "/"), true
+		return RootDir(root), true
 	}
 }

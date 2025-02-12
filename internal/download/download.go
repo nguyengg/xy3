@@ -8,12 +8,13 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/nguyengg/xy3/namedhash"
-	"github.com/schollz/progressbar/v3"
+	"github.com/nguyengg/xy3/s3reader"
 )
 
 func (c *Command) download(ctx context.Context, name string) error {
@@ -52,6 +53,8 @@ func (c *Command) download(ctx context.Context, name string) error {
 		return fmt.Errorf("create output file error: %w", err)
 	}
 
+	c.logger.Printf(`downloading to "%s"`, file.Name())
+
 	success := false
 	defer func(file *os.File) {
 		if name, _ = file.Name(), file.Close(); !success {
@@ -62,45 +65,31 @@ func (c *Command) download(ctx context.Context, name string) error {
 		}
 	}(file)
 
-	c.logger.Printf(`downloading from "s3://%s/%s" to "%s"`, man.Bucket, man.Key, file.Name())
+	r, err := s3reader.New(ctx, c.client, &s3.GetObjectInput{
+		Bucket:              aws.String(man.Bucket),
+		Key:                 aws.String(man.Key),
+		ExpectedBucketOwner: man.ExpectedBucketOwner,
+	}, func(options *s3reader.Options) {
+		options.Concurrency = c.MaxConcurrency
+	})
+	if err != nil {
+		return fmt.Errorf("create s3 reader error: %w", err)
+	}
+	defer r.Close()
 
-	var w io.Writer = file
+	bar := internal.DefaultBytes(r.Size(), "downloading")
+	defer bar.Close()
+
 	if h != nil {
-		w = io.MultiWriter(file, h)
+		_, err = r.WriteTo(io.MultiWriter(file, bar, h))
+	} else {
+		_, err = r.WriteTo(io.MultiWriter(file, bar))
 	}
 
-	if err = xy3.Download(ctx, c.client, man.Bucket, man.Key, w, func(options *xy3.DownloadOptions) {
-		options.Concurrency = c.MaxConcurrency
-		options.ModifyHeadObjectInput = func(input *s3.HeadObjectInput) {
-			v := man.ExpectedBucketOwner
-			if v == nil {
-				v = c.ExpectedBucketOwner
-			}
-			input.ExpectedBucketOwner = v
-		}
-		options.ModifyGetObjectInput = func(input *s3.GetObjectInput) {
-			v := man.ExpectedBucketOwner
-			if v == nil {
-				v = c.ExpectedBucketOwner
-			}
-			input.ExpectedBucketOwner = v
-		}
-
-		var bar *progressbar.ProgressBar
-		var completedPartCount int
-		options.PostGetPart = func(data []byte, size int64, partNumber, partCount int) {
-			if bar == nil {
-				bar = internal.DefaultBytes(size, "downloading")
-			}
-			if completedPartCount++; completedPartCount == partCount {
-				_ = bar.Close()
-			} else {
-				_ = bar.Add64(int64(len(data)))
-			}
-		}
-	}); err != nil {
+	if err != nil {
 		return err
 	}
+
 	success = true
 
 	if h == nil {

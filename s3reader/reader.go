@@ -32,7 +32,7 @@ const (
 	// S3's [Recommendation] is actually 8MB-16MB.
 	//
 	// [Recommendation]: https://docs.aws.amazon.com/whitepapers/latest/s3-optimizing-performance-best-practices/use-byte-range-fetches.html
-	DefaultPartSize = int64(3 * 1024 * 1024)
+	DefaultPartSize = int64(5 * 1024 * 1024)
 
 	// DefaultBufferSize is the default value for Options.BufferSize.
 	DefaultBufferSize = 1024 * 1024

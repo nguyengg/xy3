@@ -32,10 +32,6 @@ func (c *Command) streamV2(ctx context.Context, man manifest.Manifest) (bool, er
 		return false, err
 	}
 
-	// for progress report, we'll use the uncompressed bytes.
-	bar := internal.DefaultBytes(int64(uncompressedSize), fmt.Sprintf("extracting %d files", len(headers)))
-	defer bar.Close()
-
 	// attempt to create the local directory that will store the extracted files.
 	// if we fail to download the file complete, clean up by deleting the directory.
 	stem, _ := xy3.StemAndExt(man.Key)
@@ -43,7 +39,8 @@ func (c *Command) streamV2(ctx context.Context, man manifest.Manifest) (bool, er
 	if err != nil {
 		return true, fmt.Errorf("create output directory error: %w", err)
 	}
-	c.logger.Printf("extracting to %s", dir)
+
+	c.logger.Printf(`extracting to "%s"`, dir)
 
 	// TODO figure out how to compute checksum while downloading.
 	// it might be impossible due to this algorithm not streaming full file.
@@ -75,6 +72,8 @@ func (c *Command) streamV2(ctx context.Context, man manifest.Manifest) (bool, er
 	defer r.Close()
 
 	inputs := make(chan zipper.CDFileHeader, len(headers))
+	bar := internal.DefaultBytes(int64(uncompressedSize), fmt.Sprintf("extracting %d files", len(headers)))
+	defer bar.Close()
 
 	var wg sync.WaitGroup
 	for range runtime.NumCPU() {

@@ -69,8 +69,6 @@ func (c *Command) stream(ctx context.Context, man manifest.Manifest) (bool, erro
 	}
 
 	// for progress report, we'll use the uncompressed bytes.
-	bar := internal.DefaultBytes(int64(uncompressedSize), fmt.Sprintf("extracting %d files", len(headers)))
-	defer bar.Close()
 
 	// attempt to create the local directory that will store the extracted files.
 	// if we fail to download the file complete, clean up by deleting the directory.
@@ -79,7 +77,8 @@ func (c *Command) stream(ctx context.Context, man manifest.Manifest) (bool, erro
 	if err != nil {
 		return true, fmt.Errorf("create output directory error: %w", err)
 	}
-	c.logger.Printf("extracting to %s", dir)
+
+	c.logger.Printf(`extracting to "%s"`, dir)
 
 	// while downloading, also computes checksum to verify against the downloaded content.
 	h, err := namedhash.NewFromChecksumString(man.Checksum)
@@ -101,34 +100,36 @@ func (c *Command) stream(ctx context.Context, man manifest.Manifest) (bool, erro
 	// one goroutine will be responsible for downloading to PipeWriter.
 	// the main goroutine then reads from PipeReader to extract files using krolaw/zipstream. if there is error with
 	// reading/extracting the files, cancel the child context so that all goroutines can gracefully stop.
+	//
+	// why can't zipstream.NewReader reads directly from s3reader? it can, but it is significantly slower for some
+	// reasons. probably because zipstream.NewReader reads slowly, while using a pipe allows downloading to go as
+	// fast as the pipe can support. the current implementation hits ~7-8MB/s, while streaming directly from
+	// s3reader dips to ~3-4MB/s.
 	ctx, cancel := context.WithCancelCause(ctx)
 	pr, pw := io.Pipe()
 
 	go func() {
 		defer pw.Close()
 
-		if err := xy3.Download(ctx, c.client, man.Bucket, man.Key, io.MultiWriter(pw, h), func(options *xy3.DownloadOptions) {
+		r, err := s3reader.New(ctx, c.client, &s3.GetObjectInput{
+			Bucket:              aws.String(man.Bucket),
+			Key:                 aws.String(man.Key),
+			ExpectedBucketOwner: man.ExpectedBucketOwner,
+		}, func(options *s3reader.Options) {
 			options.Concurrency = c.MaxConcurrency
-			options.ModifyHeadObjectInput = func(input *s3.HeadObjectInput) {
-				v := man.ExpectedBucketOwner
-				if v == nil {
-					v = c.ExpectedBucketOwner
-				}
-				input.ExpectedBucketOwner = v
-			}
-			options.ModifyGetObjectInput = func(input *s3.GetObjectInput) {
-				v := man.ExpectedBucketOwner
-				if v == nil {
-					v = c.ExpectedBucketOwner
-				}
-				input.ExpectedBucketOwner = v
-			}
+		})
+		if err != nil {
+			cancel(fmt.Errorf("create s3 reader error: %w", err))
+		}
+		defer r.Close()
 
-			options.PostGetPart = nil
-		}); err != nil && !errors.Is(err, context.Canceled) {
-			cancel(fmt.Errorf("download error: %w", err))
+		if _, err = r.WriteTo(io.MultiWriter(pw, h)); err != nil {
+			cancel(err)
 		}
 	}()
+
+	bar := internal.DefaultBytes(int64(uncompressedSize), fmt.Sprintf("extracting %d files", len(headers)))
+	defer bar.Close()
 
 	var (
 		buf = make([]byte, 32*1024)
@@ -191,7 +192,7 @@ func parseHeadersProgressBar(n int) *progressbar.ProgressBar {
 		n,
 		progressbar.OptionSetDescription(fmt.Sprintf("scanning %d headers", n)),
 		progressbar.OptionSetWriter(os.Stderr),
-		progressbar.OptionShowBytes(true),
+		progressbar.OptionShowBytes(false),
 		progressbar.OptionSetWidth(10),
 		progressbar.OptionThrottle(1*time.Second),
 		progressbar.OptionShowCount(),
