@@ -14,8 +14,8 @@ import (
 	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/manifest"
-	"github.com/nguyengg/xy3/namedhash"
 	"github.com/nguyengg/xy3/s3writer"
+	"github.com/nguyengg/xy3/sri"
 )
 
 func (c *Command) upload(ctx context.Context, name string) error {
@@ -58,7 +58,7 @@ func (c *Command) upload(ctx context.Context, name string) error {
 	}
 
 	// while reading from f, also write to hash and progress bar.
-	hash, bar := namedhash.New(), internal.DefaultBytes(size, "uploading")
+	hash, bar := sri.NewSha256(), internal.DefaultBytes(size, "uploading")
 	if _, err = f.WriteTo(io.MultiWriter(w, hash, bar)); err != nil {
 		return fmt.Errorf("read from file error: %w", err)
 	}

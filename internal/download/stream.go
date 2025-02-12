@@ -16,8 +16,8 @@ import (
 	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/manifest"
-	"github.com/nguyengg/xy3/namedhash"
 	"github.com/nguyengg/xy3/s3reader"
+	"github.com/nguyengg/xy3/sri"
 	"github.com/nguyengg/xy3/zipper"
 	"github.com/schollz/progressbar/v3"
 )
@@ -68,7 +68,7 @@ func (c *Command) stream(ctx context.Context, man manifest.Manifest) (bool, erro
 		return false, err
 	}
 
-	// for progress report, we'll use the uncompressed bytes.
+	verifier, _ := sri.NewVerifier(man.Checksum)
 
 	// attempt to create the local directory that will store the extracted files.
 	// if we fail to download the file complete, clean up by deleting the directory.
@@ -79,12 +79,6 @@ func (c *Command) stream(ctx context.Context, man manifest.Manifest) (bool, erro
 	}
 
 	c.logger.Printf(`extracting to "%s"`, dir)
-
-	// while downloading, also computes checksum to verify against the downloaded content.
-	h, err := namedhash.NewFromChecksumString(man.Checksum)
-	if err != nil {
-		return true, err
-	}
 
 	success := false
 	defer func(name string) {
@@ -123,7 +117,7 @@ func (c *Command) stream(ctx context.Context, man manifest.Manifest) (bool, erro
 		}
 		defer r.Close()
 
-		if _, err = r.WriteTo(io.MultiWriter(pw, h)); err != nil {
+		if _, err = r.WriteTo(io.MultiWriter(pw, verifier)); err != nil {
 			cancel(err)
 		}
 	}()
@@ -184,6 +178,18 @@ func (c *Command) stream(ctx context.Context, man manifest.Manifest) (bool, erro
 	}
 
 	success = true
+
+	if verifier == nil {
+		c.logger.Printf("done downloading; no checksum to verify")
+		return true, nil
+	}
+
+	if verifier.SumAndVerify(nil) {
+		c.logger.Printf("done downloading; checksum does not match: expect %s, got %s", man.Checksum, verifier.SumToString(nil))
+	} else {
+		c.logger.Printf("done downloading; checksum matches")
+	}
+
 	return true, nil
 }
 

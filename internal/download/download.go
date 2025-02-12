@@ -13,8 +13,8 @@ import (
 	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/manifest"
-	"github.com/nguyengg/xy3/namedhash"
 	"github.com/nguyengg/xy3/s3reader"
+	"github.com/nguyengg/xy3/sri"
 )
 
 func (c *Command) download(ctx context.Context, name string) error {
@@ -28,6 +28,7 @@ func (c *Command) download(ctx context.Context, name string) error {
 	}
 	basename := filepath.Base(man.Key)
 	ext := filepath.Ext(basename)
+	verifier, _ := sri.NewVerifier(man.Checksum)
 
 	// see if the file is eligible for auto-extract.
 	if c.StreamAndExtractV2 {
@@ -38,12 +39,6 @@ func (c *Command) download(ctx context.Context, name string) error {
 		if ok, err := c.stream(ctx, man); ok || err != nil {
 			return err
 		}
-	}
-
-	// while downloading, also computes checksum to verify against the downloaded content.
-	h, err := namedhash.NewFromChecksumString(man.Checksum)
-	if err != nil {
-		return err
 	}
 
 	// attempt to create the local file that will store the downloaded artifact.
@@ -80,8 +75,8 @@ func (c *Command) download(ctx context.Context, name string) error {
 	bar := internal.DefaultBytes(r.Size(), "downloading")
 	defer bar.Close()
 
-	if h != nil {
-		_, err = r.WriteTo(io.MultiWriter(file, bar, h))
+	if verifier != nil {
+		_, err = r.WriteTo(io.MultiWriter(file, bar, verifier))
 	} else {
 		_, err = r.WriteTo(io.MultiWriter(file, bar))
 	}
@@ -92,13 +87,13 @@ func (c *Command) download(ctx context.Context, name string) error {
 
 	success = true
 
-	if h == nil {
+	if verifier == nil {
 		c.logger.Printf("done downloading; no checksum to verify")
 		return nil
 	}
 
-	if actual := h.SumToString(nil); man.Checksum != actual {
-		c.logger.Printf("done downloading; checksum does not match: expect %s, got %s", man.Checksum, actual)
+	if verifier.SumAndVerify(nil) {
+		c.logger.Printf("done downloading; checksum does not match: expect %s, got %s", man.Checksum, verifier.SumToString(nil))
 	} else {
 		c.logger.Printf("done downloading; checksum matches")
 	}
