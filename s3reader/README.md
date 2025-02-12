@@ -31,7 +31,7 @@ func main() {
 
 	client := s3.NewFromConfig(cfg)
 
-	// reader implements both io.ReadSeeker and io.ReaderAt so I can start streaming the
+	// s3reader.Reader implements both io.ReadSeeker and io.ReaderAt so I can start streaming the
 	// S3 object however I want.
 	reader, err := s3reader.New(ctx, client, &s3.GetObjectInput{
 		Bucket: aws.String("my-bucket"),
