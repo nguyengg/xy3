@@ -1,6 +1,6 @@
-# Implements io.ReadSeeker, io.ReaderAt, and io.WriterTo using S3 ranged GetObject
+# Implements io.Writer and io.ReaderFrom to upload to S3
 
-This module provides implementations of `io.ReadSeeker`, `io.ReaderAt`, and `io.WriterTo` for S3 downloading needs.
+This module provides implementations of `io.Writer` and `io.ReaderFrom` for S3 uploading needs.
 
 ```go
 package main
