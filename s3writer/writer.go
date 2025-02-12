@@ -109,6 +109,9 @@ type Options struct {
 
 	// DisableAbortOnError controls whether AbortMultipartUpload is automatically called on error.
 	DisableAbortOnError bool
+
+	// internal. must use opaque func(*Options) to customise these.
+	logger io.WriteCloser
 }
 
 // WriterClient abstracts the S3 APIs that are needed to implement Writer.
@@ -131,6 +134,9 @@ func New(ctx context.Context, client WriterClient, input *s3.PutObjectInput, opt
 		Concurrency:      DefaultConcurrency,
 		MaxBytesInSecond: 0,
 		PartSize:         MinPartSize,
+
+		// internal.
+		logger: noopLogger{io.Discard},
 	}
 	for _, fn := range optFns {
 		fn(opts)
@@ -161,16 +167,20 @@ func New(ctx context.Context, client WriterClient, input *s3.PutObjectInput, opt
 	hasher := hashs3.NewFromPutObject(&clonedInput)
 
 	return &writer{
+		// from options.
 		ctx:                 ctx,
 		client:              client,
 		input:               clonedInput,
 		concurrency:         opts.Concurrency,
 		partSize:            opts.PartSize,
 		disableAbortOnError: opts.DisableAbortOnError,
-		ex:                  executor.NewCallerRunsOnFullExecutor(opts.Concurrency - 1),
-		limiter:             limiter,
-		buf:                 buf,
-		hasher:              hasher,
+		logger:              opts.logger,
+
+		// internal.
+		ex:      executor.NewCallerRunsOnFullExecutor(opts.Concurrency - 1),
+		limiter: limiter,
+		buf:     buf,
+		hasher:  hasher,
 	}, nil
 }
 
@@ -183,8 +193,9 @@ type writer struct {
 	concurrency         int
 	partSize            int64
 	disableAbortOnError bool
+	logger              io.Writer
 
-	// internal state.
+	// internal.
 	ex            executor.ExecuteCloser
 	limiter       *rate.Limiter
 	buf           *bytes.Buffer
@@ -279,6 +290,7 @@ func (w *writer) write(src io.Reader, flush bool) (written int64, err error) {
 		bb := w.buf
 		w.buf = &bytes.Buffer{}
 		w.buf.Grow(int(w.partSize))
+		_, _ = w.logger.Write(bb.Bytes())
 		if _, err = w.hasher.Write(bb.Bytes()); err != nil {
 			return written, fmt.Errorf("compute checksum error: %w", err)
 		}
@@ -410,6 +422,7 @@ func (w *writer) uploadPart(ctx context.Context, partNumber int32, buf *bytes.Bu
 		return err
 	}
 
+	_, _ = w.logger.Write(buf.Bytes())
 	w.parts.Store(partNumber, types.CompletedPart{
 		ChecksumCRC32:     uploadPartOutput.ChecksumCRC32,
 		ChecksumCRC32C:    uploadPartOutput.ChecksumCRC32C,

@@ -153,6 +153,10 @@ type Options struct {
 	//
 	// Default to DefaultBufferSize. Must be a non-negative integer. Set to 0 to disable the feature.
 	BufferSize int64
+
+	// internal. must use opaque func(*Options) to customise these.
+	size   int64
+	logger io.WriteCloser
 }
 
 // New returns a Reader with the given GetObject input parameters.
@@ -199,6 +203,10 @@ func NewReaderWithSize(ctx context.Context, client GetObjectClient, input *s3.Ge
 		MaxBytesInSecond: 0,
 		PartSize:         DefaultPartSize,
 		BufferSize:       DefaultBufferSize,
+
+		// internal.
+		size:   size,
+		logger: noopLogger{io.Discard},
 	}
 	for _, fn := range optFns {
 		fn(opts)
@@ -227,6 +235,7 @@ func NewReaderWithSize(ctx context.Context, client GetObjectClient, input *s3.Ge
 	}
 
 	return &reader{
+		// from options.
 		ctx:         ctx,
 		client:      client,
 		input:       *input,
@@ -235,10 +244,13 @@ func NewReaderWithSize(ctx context.Context, client GetObjectClient, input *s3.Ge
 		bufferSize:  opts.BufferSize,
 		partSize:    opts.PartSize,
 		size:        size,
-		ex:          executor.NewCallerRunsOnFullExecutor(opts.Concurrency - 1),
-		limiter:     limiter,
-		buf:         &bytes.Buffer{},
-		off:         0,
+		logger:      opts.logger,
+
+		// internal.
+		ex:      executor.NewCallerRunsOnFullExecutor(opts.Concurrency - 1),
+		limiter: limiter,
+		buf:     &bytes.Buffer{},
+		off:     0,
 	}, nil
 }
 
@@ -250,8 +262,9 @@ type reader struct {
 	input                                 s3.GetObjectInput
 	concurrency                           int
 	threshold, bufferSize, partSize, size int64
+	logger                                io.WriteCloser
 
-	// internal state.
+	// internal.
 	ex      executor.ExecuteCloser
 	limiter *rate.Limiter
 	buf     *bytes.Buffer
@@ -374,7 +387,15 @@ func (r *reader) Size() int64 {
 }
 
 func (r *reader) Reopen() Reader {
+	// logger is only copied over if it implements cloneable.
+	// at the moment we don't allow customers to specify their own io.Writer logger so we're in control of this.
+	logger := r.logger
+	if c, ok := logger.(cloneable); ok {
+		logger = c.Clone()
+	}
+
 	return &reader{
+		// from options.
 		ctx:         r.ctx,
 		client:      r.client,
 		input:       r.input,
@@ -383,10 +404,13 @@ func (r *reader) Reopen() Reader {
 		bufferSize:  r.bufferSize,
 		partSize:    r.partSize,
 		size:        r.size,
-		ex:          executor.NewCallerRunsOnFullExecutor(r.concurrency - 1),
-		limiter:     r.limiter,
-		buf:         &bytes.Buffer{},
-		off:         0,
+		logger:      logger,
+
+		// internal.
+		ex:      executor.NewCallerRunsOnFullExecutor(r.concurrency - 1),
+		limiter: r.limiter,
+		buf:     &bytes.Buffer{},
+		off:     0,
 	}
 }
 
@@ -395,7 +419,7 @@ func (r *reader) Close() error {
 	case errors.Is(r.err, ErrClosed):
 		return r.err
 	default:
-		r.err = ErrClosed
+		_, r.err = r.logger.Close(), ErrClosed
 		return r.ex.Close()
 	}
 }
@@ -419,7 +443,7 @@ func (r *reader) read(dst io.Writer, rangeStart, rangeEnd int64) (int64, error) 
 	var wg sync.WaitGroup
 	wg.Add(partCount)
 
-	w := writer{dst: dst}
+	w := writer{dst: io.MultiWriter(dst, r.logger)}
 	defer w.close()
 
 	ctx, cancel := context.WithCancelCause(r.ctx)

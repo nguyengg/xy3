@@ -12,7 +12,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/nguyengg/xy3"
-	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/nguyengg/xy3/s3writer"
 	"github.com/nguyengg/xy3/sri"
@@ -52,17 +51,16 @@ func (c *Command) upload(ctx context.Context, name string) error {
 		StorageClass:        types.StorageClass(c.StorageClass),
 	}, func(options *s3writer.Options) {
 		options.Concurrency = c.MaxConcurrency
-	})
+	}, s3writer.WithProgressBar(size))
 	if err != nil {
 		return fmt.Errorf("create s3 writer error: %w", err)
 	}
 
-	// while reading from f, also write to hash and progress bar.
-	hash, bar := sri.NewSha256(), internal.DefaultBytes(size, "uploading")
-	if _, err = f.WriteTo(io.MultiWriter(w, hash, bar)); err != nil {
+	hash := sri.NewSha256()
+	if _, err = f.WriteTo(io.MultiWriter(w, hash)); err != nil {
 		return fmt.Errorf("read from file error: %w", err)
 	}
-	if _, err = bar.Close(), w.Close(); err != nil {
+	if err = w.Close(); err != nil {
 		return fmt.Errorf("upload to s3 error: %w", err)
 	}
 

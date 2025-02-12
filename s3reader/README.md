@@ -33,10 +33,12 @@ func main() {
 
 	// s3reader.Reader implements both io.ReadSeeker and io.ReaderAt so I can start streaming the
 	// S3 object however I want.
+	// if in interactive mode, s3reader.WithProgressBar will show a progress bar displaying progress.
+	// otherwise, use s3reader.WithProgressLogger instead.
 	reader, err := s3reader.New(ctx, client, &s3.GetObjectInput{
 		Bucket: aws.String("my-bucket"),
 		Key:    aws.String("my-key"),
-	})
+	}, s3reader.WithProgressBar())
 	if err != nil {
 		log.Fatal(err)
 	}

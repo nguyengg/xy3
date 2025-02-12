@@ -11,7 +11,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/nguyengg/xy3"
-	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/nguyengg/xy3/s3reader"
 	"github.com/nguyengg/xy3/sri"
@@ -66,19 +65,16 @@ func (c *Command) download(ctx context.Context, name string) error {
 		ExpectedBucketOwner: man.ExpectedBucketOwner,
 	}, func(options *s3reader.Options) {
 		options.Concurrency = c.MaxConcurrency
-	})
+	}, s3reader.WithProgressBar())
 	if err != nil {
 		return fmt.Errorf("create s3 reader error: %w", err)
 	}
 	defer r.Close()
 
-	bar := internal.DefaultBytes(r.Size(), "downloading")
-	defer bar.Close()
-
 	if verifier != nil {
-		_, err = r.WriteTo(io.MultiWriter(file, bar, verifier))
+		_, err = r.WriteTo(io.MultiWriter(file, verifier))
 	} else {
-		_, err = r.WriteTo(io.MultiWriter(file, bar))
+		_, err = r.WriteTo(file)
 	}
 
 	if err != nil {
