@@ -15,9 +15,9 @@ import (
 // compress creates a new archive and compresses all files recursively starting at root.
 //
 // All files in the archive include root's basename in its path, meaning the top-level file of the archive output is
-// the root directory itself.
-func (c *Command) compress(ctx context.Context, root string) (name string, contentType *string, err error) {
-	f, err := xy3.OpenExclFile(".", filepath.Base(root), ".zip")
+// the root directory itself. The returned file is open for reading unless there was an error.
+func (c *Command) compress(ctx context.Context, root string) (f *os.File, contentType *string, err error) {
+	f, err = xy3.OpenExclFile(".", filepath.Base(root), ".zip")
 	if err != nil {
 		err = fmt.Errorf("create archive error: %w", err)
 		return
@@ -31,10 +31,10 @@ func (c *Command) compress(ctx context.Context, root string) (name string, conte
 		})
 	}
 
-	if _ = f.Close(); err != nil {
-		_ = os.Remove(name)
-		return "", nil, err
+	if err != nil {
+		_, _ = f.Close(), os.Remove(f.Name())
+		return nil, nil, err
 	}
 
-	return f.Name(), aws.String("application/zip"), nil
+	return f, aws.String("application/zip"), nil
 }

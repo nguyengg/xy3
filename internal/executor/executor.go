@@ -1,27 +1,36 @@
 package executor
 
 import (
-	"io"
-	"sync"
+	"errors"
 )
 
 // Executor is inspired by Java Executor that abstracts submitting a task and executing it.
 type Executor interface {
 	// Execute executes the given command.
-	Execute(func())
+	//
+	// The return error comes from the executor's attempt to run the function, not from the function itself.
+	Execute(func()) error
 }
 
-// ExecuteCloser adds io.Closer to Executor
+// ExecuteCloser adds io.Closer to Executor.
 type ExecuteCloser interface {
 	Executor
-	io.Closer
+
+	// Close signals the goroutines in this executor to stop.
+	Close() error
 }
 
-// NewCallerRunOnRejectExecutor returns a new Executor that will execute the command on same goroutine as caller if the
-// pool is full.
-func NewCallerRunOnRejectExecutor(n int) ExecuteCloser {
+// ErrFullExecutor is returned by the executor created by NewAbortOnFullExecutor if there are no goroutines available
+// to run a task.
+var ErrFullExecutor = errors.New("pool has no idle goroutine")
+
+// NewAbortOnFullExecutor returns a new Executor that will return NewAbortOnFullExecutor if a new pool of n goroutines
+// has no idle worker to pick up a task.
+//
+// Passing n == 0 effectively an executor that always returns NewAbortOnFullExecutor. Panics if n < 0.
+func NewAbortOnFullExecutor(n int) ExecuteCloser {
 	if n == 0 {
-		return &callerRunExecutor{}
+		return &abortExecutor{}
 	}
 
 	inputs := make(chan func(), n)
@@ -43,40 +52,101 @@ func NewCallerRunOnRejectExecutor(n int) ExecuteCloser {
 		}()
 	}
 
-	return &callerRunOnRejectExecutor{inputs: inputs}
+	return &abortOnFullExecutor{inputs: inputs}
 }
 
-type callerRunOnRejectExecutor struct {
+type abortOnFullExecutor struct {
 	inputs chan func()
-
-	// mu guards closed.
-	mu     sync.Mutex
-	closed bool
 }
 
-func (ex *callerRunOnRejectExecutor) Execute(f func()) {
+func (ex *abortOnFullExecutor) Execute(f func()) error {
+	// TODO if there are concurrent calls to Close and Execute, sending to inputs may panic.
+	// see if this can be fixed.
+	select {
+	case ex.inputs <- f:
+	default:
+		return ErrFullExecutor
+	}
+
+	return nil
+}
+
+func (ex *abortOnFullExecutor) Close() error {
+	close(ex.inputs)
+	return nil
+}
+
+type abortExecutor struct {
+}
+
+func (ex abortExecutor) Execute(_ func()) error {
+	return ErrFullExecutor
+}
+
+func (ex abortExecutor) Close() error {
+	return nil
+}
+
+// NewCallerRunsOnFullExecutor returns a new Executor that will execute the command on same goroutine as caller if a
+// new pool of n goroutines is full.
+//
+// Passing n == 0 effectively returns an always-caller-run executor. Panics if n < 0.
+func NewCallerRunsOnFullExecutor(n int) ExecuteCloser {
+	if n == 0 {
+		return &callerRunsExecutor{}
+	}
+
+	inputs := make(chan func(), n)
+
+	for range n {
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					// if the channel is closed then exit here.
+					if _, ok := <-inputs; !ok {
+						return
+					}
+				}
+			}()
+
+			for f := range inputs {
+				f()
+			}
+		}()
+	}
+
+	return &callerRunsOnFullExecutor{inputs: inputs}
+}
+
+type callerRunsOnFullExecutor struct {
+	inputs chan func()
+}
+
+func (ex *callerRunsOnFullExecutor) Execute(f func()) error {
+	// TODO if there are concurrent calls to Close and Execute, sending to inputs may panic.
+	// see if this can be fixed.
 	select {
 	case ex.inputs <- f:
 	default:
 		f()
 	}
-}
-
-func (ex *callerRunOnRejectExecutor) Close() error {
-	ex.mu.Lock()
-	defer ex.mu.Unlock()
-	close(ex.inputs)
 
 	return nil
 }
 
-type callerRunExecutor struct {
+func (ex *callerRunsOnFullExecutor) Close() error {
+	close(ex.inputs)
+	return nil
 }
 
-func (ex callerRunExecutor) Execute(f func()) {
+type callerRunsExecutor struct {
+}
+
+func (ex callerRunsExecutor) Execute(f func()) error {
 	f()
+	return nil
 }
 
-func (ex callerRunExecutor) Close() error {
+func (ex callerRunsExecutor) Close() error {
 	return nil
 }

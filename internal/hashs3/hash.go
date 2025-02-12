@@ -75,6 +75,21 @@ func NewOrDefault(checksumAlgorithm types.ChecksumAlgorithm, checksumType types.
 	return h, checksumAlgorithm, checksumType
 }
 
+// NewFromPutObject is a variant of NewOrDefault that will modify the input parameters with default if necessary.
+func NewFromPutObject(input *s3.PutObjectInput) HashS3 {
+	h, alg, _ := NewOrDefault(input.ChecksumAlgorithm, types.ChecksumTypeFullObject)
+	input.ChecksumAlgorithm = alg
+	return h
+}
+
+// NewFromCreateMultipartUpload is a variant of NewOrDefault that will modify the input parameters with default if necessary.
+func NewFromCreateMultipartUpload(input *s3.CreateMultipartUploadInput) HashS3 {
+	h, alg, t := NewOrDefault(input.ChecksumAlgorithm, input.ChecksumType)
+	input.ChecksumAlgorithm = alg
+	input.ChecksumType = t
+	return h
+}
+
 type base struct {
 	hash.Hash
 	composite hash.Hash

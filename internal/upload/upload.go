@@ -4,24 +4,31 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/dustin/go-humanize"
 	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/nguyengg/xy3/namedhash"
+	"github.com/nguyengg/xy3/s3writer"
 )
 
 func (c *Command) upload(ctx context.Context, name string) error {
 	// prepare validates and possibly performs compression to file if name is a directory.
-	filename, size, contentType, err := c.prepare(ctx, name)
+	f, size, contentType, err := c.prepare(ctx, name)
+	if err != nil {
+		return err
+	}
+
+	defer f.Close()
 
 	// find an unused S3 key that can be used for the CreateMultipartUpload call.
+	filename := f.Name()
 	stem, ext := xy3.StemAndExt(filename)
 	key, err := c.findUnusedS3Key(ctx, stem, ext)
 	if err != nil {
@@ -34,38 +41,29 @@ func (c *Command) upload(ctx context.Context, name string) error {
 		Size:                size,
 	}
 
-	hash := namedhash.New()
+	c.logger.Printf(`uploading to "s3://%s/%s"`, c.Bucket, key)
 
-	c.logger.Printf(`uploading %s to "s3://%s/%s"`, humanize.Bytes(uint64(size)), c.Bucket, key)
-
-	if _, err = xy3.Upload(ctx, c.client, filename, &s3.CreateMultipartUploadInput{
+	w, err := s3writer.New(ctx, c.client, &s3.PutObjectInput{
 		Bucket:              aws.String(c.Bucket),
 		Key:                 aws.String(key),
 		ExpectedBucketOwner: c.ExpectedBucketOwner,
 		ContentType:         contentType,
 		Metadata:            map[string]string{"name": filename},
 		StorageClass:        types.StorageClass(c.StorageClass),
-	}, func(options *xy3.UploadOptions) {
+	}, func(options *s3writer.Options) {
 		options.Concurrency = c.MaxConcurrency
+	})
+	if err != nil {
+		return fmt.Errorf("create s3 writer error: %w", err)
+	}
 
-		bar := internal.DefaultBytes(size, "uploading")
-
-		var completedPartCount int32
-		parts := make(map[int32]int)
-		options.PreUploadPart = func(partNumber int32, data []byte) {
-			n, _ := hash.Write(data)
-			parts[partNumber] = n
-		}
-
-		options.PostUploadPart = func(part types.CompletedPart, partCount int32) {
-			if completedPartCount++; completedPartCount == partCount {
-				_ = bar.Close()
-			} else {
-				_ = bar.Add64(int64(parts[aws.ToInt32(part.PartNumber)]))
-			}
-		}
-	}); err != nil {
-		return err
+	// while reading from f, also write to hash and progress bar.
+	hash, bar := namedhash.New(), internal.DefaultBytes(size, "uploading")
+	if _, err = f.WriteTo(io.MultiWriter(w, hash, bar)); err != nil {
+		return fmt.Errorf("read from file error: %w", err)
+	}
+	if _, err = bar.Close(), w.Close(); err != nil {
+		return fmt.Errorf("upload to s3 error: %w", err)
 	}
 
 	c.logger.Printf("done uploading")
@@ -73,15 +71,15 @@ func (c *Command) upload(ctx context.Context, name string) error {
 	// now generate the local .s3 file that contains the S3 URI. if writing to file fails, prints the JSON content
 	// to standard output so that they can be saved manually later.
 	m.Checksum = hash.SumToString(nil)
-	f, err := xy3.OpenExclFile(".", stem, ext+".s3")
+	mf, err := xy3.OpenExclFile(".", stem, ext+".s3")
 	if err != nil {
 		return err
 	}
-	if err, _ = m.MarshalTo(f), f.Close(); err != nil {
+	if err, _ = m.MarshalTo(mf), mf.Close(); err != nil {
 		return err
 	}
 
-	c.logger.Printf(`wrote to manifest "%s"`, f.Name())
+	c.logger.Printf(`wrote to manifest "%s"`, mf.Name())
 
 	if c.Delete {
 		c.logger.Printf(`deleting file "%s"`, filename)

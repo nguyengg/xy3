@@ -16,23 +16,55 @@ import (
 	"golang.org/x/time/rate"
 )
 
+const (
+	// DefaultThreshold is the default value for GetOptions.Threshold.
+	//
+	// S3's [Recommendation] is actually 8MB-16MB.
+	//
+	// [Recommendation]: https://docs.aws.amazon.com/whitepapers/latest/s3-optimizing-performance-best-practices/use-byte-range-fetches.html
+	DefaultThreshold = int64(5 * 1024 * 1024)
+
+	// DefaultConcurrency is the default value for Options.Concurrency.
+	DefaultConcurrency = 3
+
+	// DefaultPartSize is the default value for Options.PartSize.
+	//
+	// S3's [Recommendation] is actually 8MB-16MB.
+	//
+	// [Recommendation]: https://docs.aws.amazon.com/whitepapers/latest/s3-optimizing-performance-best-practices/use-byte-range-fetches.html
+	DefaultPartSize = int64(3 * 1024 * 1024)
+
+	// DefaultBufferSize is the default value for Options.BufferSize.
+	DefaultBufferSize = 1024 * 1024
+)
+
+var (
+	// ErrSeekBeforeFirstByte is returned by Reader.Seek if the parameters would end up moving the internal read
+	// offset to a negative number.
+	ErrSeekBeforeFirstByte = errors.New("seek ends up before first byte")
+
+	// ErrSeekPastLastByte is returned by Reader.Seek if the parameters would end up moving the internal read
+	// offset past the offset of the last byte (Reader.Size-1).
+	ErrSeekPastLastByte = errors.New("seek ends up past of last byte")
+
+	// ErrClosed is returned by all Reader read methods after Close returns.
+	ErrClosed = errors.New("reader already closed")
+)
+
 // Reader uses ranged GetObject to implement io.ReadSeekCloser, io.ReaderAt, and io.WriterAt.
 //
 // Each Read, ReadAt, or WriteTo may be done with one GetObject or several smaller GetObject in parallel depending on
-// the Options passed to New. Methods from io.ReadSeeker (Read and Seek) and io.WriterAt (WriteTo) will
-// update the internal read offset and as a result should not be called concurrently.
-//
-// On the other hand, concurrent calls to ReadAt are safe as they do not advance the internal read offset.
-//
-// Close should be called to gracefully reclaim resources. After Close returns, subsequent reads will no longer use
-// parallel GetObject requests.
+// the Options passed to New. Methods from io.ReadSeeker (Read and Seek) and io.WriterAt (WriteTo) will update the
+// internal read offset and as a result should not be called concurrently. On the other hand, concurrent calls to ReadAt
+// are safe as they do not advance the internal read offset. Once Close returns, however, all subsequent reads will
+// return ErrClosed.
 type Reader interface {
 	// Read reads up to len(p) bytes into p and advances the internal read offset accordingly.
 	//
 	// Read should not be called concurrently as they share the same internal read offset and buffer. If len(p) is
 	// larger than Options.Threshold, Read will use parallel GetObject to retrieve the data with each part
 	// downloading up to Options.PartSize in bytes. Otherwise, Read will use the larger of len(p) or
-	// Options.BufferSize for the single GetObject call to provide buffered read.
+	// Options.BufferSize for one GetObject call to provide buffered read.
 	//
 	// See io.Reader for more information on the return values.
 	Read(p []byte) (int, error)
@@ -48,9 +80,6 @@ type Reader interface {
 	// Close does not always have to be called as garbage collection will be able to reclaim the goroutines
 	// eventually. If you end up creating a lot of Reader instances, however, it is sensible to Close them as soon
 	// as possible.
-	//
-	// After Close returns, subsequent reads technically still work despite no longer using parallel GetObject
-	// requests.
 	Close() error
 
 	// ReadAt reads a specific range of the S3 reader start at offset off and reads no more than len(p) bytes.
@@ -78,15 +107,6 @@ type Reader interface {
 	Reopen() Reader
 }
 
-var (
-	// ErrSeekBeforeFirstByte is returned by Reader.Seek if the parameters would end up moving the internal read
-	// offset to a negative number.
-	ErrSeekBeforeFirstByte = errors.New("seek ends up before first byte")
-	// ErrSeekPastLastByte is returned by Reader.Seek if the parameters would end up moving the internal read
-	// offset past the offset of the last byte (Reader.Size-1).
-	ErrSeekPastLastByte = errors.New("seek ends up past of last byte")
-)
-
 // GetObjectClient abstracts the S3 APIs that are needed to implement Reader.
 type GetObjectClient interface {
 	GetObject(context.Context, *s3.GetObjectInput, ...func(*s3.Options)) (*s3.GetObjectOutput, error)
@@ -98,26 +118,6 @@ type GetAndHeadObjectClient interface {
 	HeadObject(context.Context, *s3.HeadObjectInput, ...func(*s3.Options)) (*s3.HeadObjectOutput, error)
 }
 
-// DefaultThreshold is the default value for GetOptions.Threshold.
-//
-// S3's [Recommendation] is actually 8MB-16MB.
-//
-// [Recommendation]: https://docs.aws.amazon.com/whitepapers/latest/s3-optimizing-performance-best-practices/use-byte-range-fetches.html
-const DefaultThreshold = int64(5 * 1024 * 1024)
-
-// DefaultConcurrency is the default value for Options.Concurrency.
-const DefaultConcurrency = 3
-
-// DefaultPartSize is the default value for Options.PartSize.
-//
-// S3's [Recommendation] is actually 8MB-16MB.
-//
-// [Recommendation]: https://docs.aws.amazon.com/whitepapers/latest/s3-optimizing-performance-best-practices/use-byte-range-fetches.html
-const DefaultPartSize = int64(3 * 1024 * 1024)
-
-// DefaultBufferSize is the default value for Options.BufferSize.
-const DefaultBufferSize = 1024 * 1024
-
 // Options customises the returned Reader of New and NewReaderWithSize.
 type Options struct {
 	// Threshold indicates the minimum number of bytes needed for parallel GetObject.
@@ -127,7 +127,7 @@ type Options struct {
 	// Default to DefaultThreshold. Must be positive integer.
 	Threshold int64
 
-	// Concurrency controls the number of goroutines in the goroutine pool that supports parallel GetObject.
+	// Concurrency controls the number of goroutines in the pool that supports parallel GetObject.
 	//
 	// Default to DefaultConcurrency. Must be a positive integer. Set to 1 to disable the feature.
 	//
@@ -235,7 +235,7 @@ func NewReaderWithSize(ctx context.Context, client GetObjectClient, input *s3.Ge
 		bufferSize:  opts.BufferSize,
 		partSize:    opts.PartSize,
 		size:        size,
-		ex:          executor.NewCallerRunOnRejectExecutor(opts.Concurrency - 1),
+		ex:          executor.NewCallerRunsOnFullExecutor(opts.Concurrency - 1),
 		limiter:     limiter,
 		buf:         &bytes.Buffer{},
 		off:         0,
@@ -256,34 +256,14 @@ type reader struct {
 	limiter *rate.Limiter
 	buf     *bytes.Buffer
 	off     int64
-}
-
-func (r *reader) Size() int64 {
-	return r.size
-}
-
-func (r *reader) Reopen() Reader {
-	return &reader{
-		ctx:         r.ctx,
-		client:      r.client,
-		input:       r.input,
-		threshold:   r.threshold,
-		concurrency: r.concurrency,
-		bufferSize:  r.bufferSize,
-		partSize:    r.partSize,
-		size:        r.size,
-		ex:          executor.NewCallerRunOnRejectExecutor(r.concurrency - 1),
-		limiter:     r.limiter,
-		buf:         &bytes.Buffer{},
-		off:         0,
-	}
-}
-
-func (r *reader) Close() error {
-	return r.ex.Close()
+	err     error
 }
 
 func (r *reader) Read(p []byte) (n int, err error) {
+	if err = r.err; err != nil {
+		return
+	}
+
 	m := len(p)
 	if m == 0 {
 		return 0, nil
@@ -317,6 +297,10 @@ func (r *reader) Read(p []byte) (n int, err error) {
 }
 
 func (r *reader) Seek(offset int64, whence int) (int64, error) {
+	if err := r.err; err != nil {
+		return 0, err
+	}
+
 	switch whence {
 	case io.SeekStart:
 		r.off = offset
@@ -344,6 +328,10 @@ func (r *reader) Seek(offset int64, whence int) (int64, error) {
 }
 
 func (r *reader) ReadAt(p []byte, off int64) (int, error) {
+	if err := r.err; err != nil {
+		return 0, err
+	}
+
 	m := len(p)
 	if m == 0 {
 		return 0, nil
@@ -362,6 +350,10 @@ func (r *reader) ReadAt(p []byte, off int64) (int, error) {
 }
 
 func (r *reader) WriteTo(dst io.Writer) (int64, error) {
+	if err := r.err; err != nil {
+		return 0, err
+	}
+
 	// bytes.Buffer.WriteTo never returns EOF.
 	n, err := r.buf.WriteTo(dst)
 	if err != nil {
@@ -375,6 +367,37 @@ func (r *reader) WriteTo(dst io.Writer) (int64, error) {
 	n, err = r.read(dst, r.off, r.size-1)
 	r.off += n
 	return n, err
+}
+
+func (r *reader) Size() int64 {
+	return r.size
+}
+
+func (r *reader) Reopen() Reader {
+	return &reader{
+		ctx:         r.ctx,
+		client:      r.client,
+		input:       r.input,
+		threshold:   r.threshold,
+		concurrency: r.concurrency,
+		bufferSize:  r.bufferSize,
+		partSize:    r.partSize,
+		size:        r.size,
+		ex:          executor.NewCallerRunsOnFullExecutor(r.concurrency - 1),
+		limiter:     r.limiter,
+		buf:         &bytes.Buffer{},
+		off:         0,
+	}
+}
+
+func (r *reader) Close() error {
+	switch {
+	case errors.Is(r.err, ErrClosed):
+		return r.err
+	default:
+		r.err = ErrClosed
+		return r.ex.Close()
+	}
 }
 
 func (r *reader) read(dst io.Writer, rangeStart, rangeEnd int64) (int64, error) {
@@ -399,30 +422,37 @@ func (r *reader) read(dst io.Writer, rangeStart, rangeEnd int64) (int64, error) 
 	w := writer{dst: dst}
 	defer w.close()
 
+	ctx, cancel := context.WithCancelCause(r.ctx)
 	for partNumber, lastPart := 0, partCount-1; partNumber <= lastPart; partNumber++ {
-		// don't need to copy partNumber and startRange start with go1.22 (https://go.dev/blog/loopvar-preview)
-		r.ex.Execute(func() {
-			defer wg.Done()
+		select {
+		case <-ctx.Done():
+			return w.written, ctx.Err()
+		default:
+			// don't need to copy partNumber and startRange start with go1.22
+			// (https://go.dev/blog/loopvar-preview)
+			if err := r.ex.Execute(func() {
+				defer wg.Done()
 
-			startRange := int64(partNumber) * partSize
-			var input *s3.GetObjectInput
-			if partNumber == lastPart {
-				input = copyInput(r.input, startRange)
-			} else {
-				input = copyInput(r.input, startRange, startRange+partSize-1)
+				startRange := int64(partNumber) * partSize
+				var input *s3.GetObjectInput
+				if partNumber == lastPart {
+					input = copyInput(r.input, startRange)
+				} else {
+					input = copyInput(r.input, startRange, startRange+partSize-1)
+				}
+
+				output, err := r.client.GetObject(ctx, input)
+				if err == nil {
+					err = w.write(partNumber, output.Body)
+					_ = output.Body.Close()
+				}
+				if err != nil {
+					cancel(err)
+				}
+			}); err != nil {
+				cancel(err)
+				return w.written, err
 			}
-
-			if output, err := r.client.GetObject(r.ctx, input); err != nil {
-				w.setErr(err)
-			} else {
-				// w.write will set its own error.
-				w.write(partNumber, output.Body)
-				_ = output.Body.Close()
-			}
-		})
-
-		if err := w.getErr(); err != nil {
-			return w.written, err
 		}
 	}
 
@@ -434,8 +464,8 @@ func (r *reader) read(dst io.Writer, rangeStart, rangeEnd int64) (int64, error) 
 	}()
 
 	select {
-	case <-r.ctx.Done():
-		return w.written, r.ctx.Err()
+	case <-ctx.Done():
+		return w.written, ctx.Err()
 	case <-done:
 		return w.drain()
 	}
@@ -454,105 +484,4 @@ func copyInput(src s3.GetObjectInput, rangeBytes ...int64) *s3.GetObjectInput {
 	}
 
 	return &input
-}
-
-// writer only writes to dst if there are contiguous available parts.
-type writer struct {
-	// errMu guards access to err.
-	errMu sync.RWMutex
-	err   error
-
-	parts sync.Map
-
-	// mu guards access to the single writer of dst (leader election).
-	// any number of goroutines may be adding to parts, but only one goroutine can be writing to dst.
-	mu              sync.Mutex
-	dst             io.Writer
-	written         int64
-	nextPartToWrite int
-}
-
-func (w *writer) write(partNumber int, body io.Reader) {
-	bb := bytebufferpool.Get()
-	_, err := bb.ReadFrom(body)
-	if err != nil {
-		w.setErr(err)
-		return
-	}
-
-	if w.parts.Store(partNumber, bb); !w.mu.TryLock() {
-		return
-	}
-	defer w.mu.Unlock()
-
-	for {
-		v, ok := w.parts.LoadAndDelete(w.nextPartToWrite)
-		if !ok {
-			break
-		}
-
-		bb := v.(*bytebufferpool.ByteBuffer)
-		n, err := bb.WriteTo(w.dst)
-		bytebufferpool.Put(bb)
-		w.written += n
-
-		if err != nil {
-			w.setErr(err)
-			return
-		}
-
-		w.nextPartToWrite++
-	}
-}
-
-var errMissingPart = errors.New("missing part to write")
-
-// drain should only be called once all the parts have been downloaded, and only writing to dst remains.
-// if there is a gap in the parts, drain returns errMissingPart. otherwise, drain returns writer.err.
-func (w *writer) drain() (written int64, err error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	for {
-		v, ok := w.parts.LoadAndDelete(w.nextPartToWrite)
-		if !ok {
-			break
-		}
-
-		bb := v.(*bytebufferpool.ByteBuffer)
-		n, err := bb.WriteTo(w.dst)
-		bytebufferpool.Put(bb)
-		w.written += n
-
-		if err != nil {
-			return w.written, err
-		}
-
-		w.nextPartToWrite++
-	}
-
-	w.parts.Range(func(_, _ any) bool {
-		err = errMissingPart
-		return true
-	})
-
-	return w.written, err
-}
-
-func (w *writer) getErr() error {
-	w.errMu.Lock()
-	defer w.errMu.Unlock()
-
-	return w.err
-}
-
-func (w *writer) setErr(err error) {
-	w.errMu.Lock()
-	defer w.errMu.Unlock()
-
-	w.err = err
-}
-
-func (w *writer) close() {
-	w.parts.Clear()
 }

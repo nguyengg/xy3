@@ -12,8 +12,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jessevdk/go-flags"
-	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
+	"github.com/nguyengg/xy3/s3writer"
 )
 
 type Command struct {
@@ -63,12 +63,12 @@ func (c *Command) Execute(args []string) error {
 		// if an error happens due to context being cancelled (interrupt signal), manually log about whether the
 		// multipart upload was successfully aborted.
 		if errors.Is(err, context.Canceled) {
-			var mErr = xy3.MultipartUploadError{}
+			var mErr = s3writer.MultipartUploadError{}
 			if errors.As(err, &mErr) {
 				switch mErr.Abort {
-				case xy3.AbortSuccess:
+				case s3writer.AbortSuccess:
 					c.logger.Printf("upload was interrupted and its multipart upload was aborted successfully")
-				case xy3.AbortFailure:
+				case s3writer.AbortFailure:
 					c.logger.Printf("upload was interrupted and its multipart upload (upload Id %s) was not aborted successfully: %v", mErr.UploadID, mErr.AbortErr)
 				default:
 					c.logger.Printf("upload was interrupted without an attempt to abort its multipart upload (upload Id %s)", mErr.UploadID)
