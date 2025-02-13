@@ -245,36 +245,35 @@ func (w *writer) Close() (err error) {
 
 func (w *writer) write(src io.Reader, flush bool) (written int64, err error) {
 	ctx, cancel := context.WithCancelCause(w.ctx)
-	var wg sync.WaitGroup
+	defer cancel(nil)
+
+	var (
+		wg       sync.WaitGroup
+		n, limit int64
+	)
 
 	for {
-		c := 0
-		for limit := w.partSize - int64(w.buf.Len()); limit > 0; {
-			c++
-
-			n, err := w.buf.ReadFrom(io.LimitReader(src, limit))
+		// keep reading from src until either EOF or there are enough bytes for an upload part.
+		for limit = w.partSize - int64(w.buf.Len()); limit > 0; {
+			n, err = w.buf.ReadFrom(io.LimitReader(src, limit))
 			written += n
 			limit -= n
 
 			if err != nil {
 				if errors.Is(err, io.EOF) {
-					if c > 1 {
-						//log.Printf("took %d reads to get EOF", c)
-					}
 					break
 				}
 
-				return written, err
-			}
-			if n == 0 {
-				if c > 1 {
-					//log.Printf("took %d reads to get n==0", c)
-				}
+				return written, fmt.Errorf("buffer write content error: %w", err)
+			} else if n == 0 {
 				break
 			}
 		}
 
-		if n := int64(w.buf.Len()); n < w.partSize {
+		// if src is exhausted but there are still not enough bytes to upload, don't bother.
+		// if flush is true, however, the select block that follows will be responsible for uploading the last
+		// part which does not have to have a minimum size.
+		if n = int64(w.buf.Len()); n < w.partSize {
 			break
 		} else {
 			w.mupObjectSize += n
@@ -286,14 +285,12 @@ func (w *writer) write(src io.Reader, flush bool) (written int64, err error) {
 			}
 		}
 
-		// swap the buffers and compute the checksum.
-		bb := w.buf
-		w.buf = &bytes.Buffer{}
+		// copy from w.buf into a new buffer and then reset w.buf for next loop iteration.
+		data := make([]byte, n)
+		_, _ = w.buf.Read(data)
+		_, _ = w.hasher.Write(data)
+		w.buf.Reset()
 		w.buf.Grow(int(w.partSize))
-		_, _ = w.logger.Write(bb.Bytes())
-		if _, err = w.hasher.Write(bb.Bytes()); err != nil {
-			return written, fmt.Errorf("compute checksum error: %w", err)
-		}
 
 		w.partNumber++
 		partNumber := w.partNumber
@@ -303,10 +300,11 @@ func (w *writer) write(src io.Reader, flush bool) (written int64, err error) {
 		if err = w.ex.Execute(func() {
 			defer wg.Done()
 
-			if err = w.uploadPart(ctx, partNumber, bb); err != nil {
-				cancel(err)
+			if err = w.uploadPart(ctx, partNumber, data); err != nil {
+				cancel(fmt.Errorf("upload part %d error: %w", w.partNumber, err))
 			}
 		}); err != nil {
+			err = fmt.Errorf("submit upload task error: %w", err)
 			cancel(err)
 			return written, err
 		}
@@ -321,31 +319,38 @@ func (w *writer) write(src io.Reader, flush bool) (written int64, err error) {
 
 	select {
 	case <-ctx.Done():
-		return written, ctx.Err()
+		return written, context.Cause(ctx)
 	case <-done:
-		if flush {
-			if w.uploadId == nil {
-				return int64(w.buf.Len()), w.putObject()
-			}
+		if !flush {
+			return written, nil
+		}
+	}
 
-			if n := int64(w.buf.Len()); n > 0 {
-				if _, err = w.hasher.Write(w.buf.Bytes()); err != nil {
-					return written, fmt.Errorf("compute checksum error: %w", err)
-				}
+	// if control flow reaches here, flush is true so must upload remaining data regardless.
+	if n == 0 {
+		return
+	}
 
-				w.mupObjectSize += n
-				w.partNumber++
-
-				if err = w.uploadPart(w.ctx, w.partNumber, w.buf); err != nil {
-					return written, err
-				}
-			}
-
-			return written, w.completeMultipartUpload()
+	if w.uploadId == nil {
+		if written, err = n, w.putObject(w.ctx, w.buf.Bytes()); err != nil {
+			return 0, fmt.Errorf("putObject error: %w", err)
 		}
 
 		return written, nil
 	}
+
+	w.mupObjectSize += n
+	w.partNumber++
+
+	if err = w.uploadPart(w.ctx, w.partNumber, w.buf.Bytes()); err != nil {
+		return written, fmt.Errorf("upload final part %d error: %w", w.partNumber, err)
+	}
+
+	if err = w.completeMultipartUpload(w.ctx); err != nil {
+		return written, fmt.Errorf("complete multipart upload error: %w", err)
+	}
+
+	return written, nil
 }
 
 func (w *writer) createMultipartUpload(ctx context.Context) error {
@@ -392,25 +397,27 @@ func (w *writer) createMultipartUpload(ctx context.Context) error {
 	return err
 }
 
-func (w *writer) putObject() (err error) {
-	w.input.Body = w.buf
+// putObject accepts data instead of io.Reader so that it can wrap the data round a bytes.NewReader which implements
+// io.Seeker which then enables retries at the SDK level.
+func (w *writer) putObject(ctx context.Context, data []byte) (err error) {
+	w.input.Body = bytes.NewReader(data)
 
-	hasher := hashs3.NewFromPutObject(&w.input)
-	_, err = hasher.Write(w.buf.Bytes())
-	if err == nil {
-		_, err = w.client.PutObject(w.ctx, hasher.SumPutObject(&w.input))
-	}
-
+	w.hasher = hashs3.NewFromPutObject(&w.input)
+	_, _ = w.hasher.Write(data)
+	_, err = w.client.PutObject(ctx, w.hasher.SumPutObject(&w.input))
+	_, _ = w.logger.Write(data)
 	return err
 }
 
-func (w *writer) uploadPart(ctx context.Context, partNumber int32, buf *bytes.Buffer) error {
-	uploadPartOutput, err := w.client.UploadPart(ctx, w.hasher.HashUploadPart(buf.Bytes(), &s3.UploadPartInput{
+// uploadPart accepts data instead of io.Reader so that it can wrap the data round a bytes.NewReader which implements
+// io.Seeker which then enables retries at the SDK level.
+func (w *writer) uploadPart(ctx context.Context, partNumber int32, data []byte) error {
+	uploadPartOutput, err := w.client.UploadPart(ctx, w.hasher.HashUploadPart(data, &s3.UploadPartInput{
 		Bucket:               w.input.Bucket,
 		Key:                  w.input.Key,
 		PartNumber:           aws.Int32(partNumber),
 		UploadId:             w.uploadId,
-		Body:                 buf,
+		Body:                 bytes.NewReader(data),
 		ChecksumAlgorithm:    w.input.ChecksumAlgorithm,
 		ExpectedBucketOwner:  w.input.ExpectedBucketOwner,
 		RequestPayer:         w.input.RequestPayer,
@@ -422,7 +429,9 @@ func (w *writer) uploadPart(ctx context.Context, partNumber int32, buf *bytes.Bu
 		return err
 	}
 
-	_, _ = w.logger.Write(buf.Bytes())
+	// update progress logger after upload succeeds to provide it with accurate timing.
+	_, _ = w.logger.Write(data)
+
 	w.parts.Store(partNumber, types.CompletedPart{
 		ChecksumCRC32:     uploadPartOutput.ChecksumCRC32,
 		ChecksumCRC32C:    uploadPartOutput.ChecksumCRC32C,
@@ -436,7 +445,7 @@ func (w *writer) uploadPart(ctx context.Context, partNumber int32, buf *bytes.Bu
 	return nil
 }
 
-func (w *writer) completeMultipartUpload() (err error) {
+func (w *writer) completeMultipartUpload(ctx context.Context) (err error) {
 	// collect and sort the completed parts because the sorting operation is too complex for S3 to do.
 	parts := make([]types.CompletedPart, 0)
 	w.parts.Range(func(_, value any) bool {
@@ -447,7 +456,7 @@ func (w *writer) completeMultipartUpload() (err error) {
 		return int(*a.PartNumber - *b.PartNumber)
 	})
 
-	_, err = w.client.CompleteMultipartUpload(w.ctx, w.hasher.SumCompleteMultipartUpload(&s3.CompleteMultipartUploadInput{
+	_, err = w.client.CompleteMultipartUpload(ctx, w.hasher.SumCompleteMultipartUpload(&s3.CompleteMultipartUploadInput{
 		Bucket:               w.input.Bucket,
 		Key:                  w.input.Key,
 		UploadId:             w.uploadId,

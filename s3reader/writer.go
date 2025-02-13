@@ -53,8 +53,8 @@ func (w *writer) write(partNumber int, body io.Reader) error {
 var errMissingPart = errors.New("missing part to write")
 
 // drain should only be called once all the parts have been downloaded, and only writing to dst remains.
-// if there is a gap in the parts, drain returns errMissingPart. otherwise, drain returns writer.err.
-func (w *writer) drain() (written int64, err error) {
+// if there is a gap in the parts, drain returns errMissingPart.
+func (w *writer) drain() (err error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -70,7 +70,7 @@ func (w *writer) drain() (written int64, err error) {
 		w.written += n
 
 		if err != nil {
-			return w.written, err
+			return err
 		}
 
 		w.nextPartToWrite++
@@ -81,7 +81,7 @@ func (w *writer) drain() (written int64, err error) {
 		return false
 	})
 
-	return w.written, err
+	return
 }
 
 func (w *writer) close() {

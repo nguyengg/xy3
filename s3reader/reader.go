@@ -422,14 +422,18 @@ func (r *reader) read(dst io.Writer, rangeStart, rangeEnd int64) (int64, error) 
 	// if the range is smaller than threshold then let's just do everything in one GetObject.
 	size := rangeEnd - rangeStart + 1
 	if size < r.threshold {
-		getObjectOutput, err := r.client.GetObject(r.ctx, copyInput(r.input, rangeStart, rangeEnd))
+		input := copyInput(r.input, rangeStart, rangeEnd)
+		getObjectOutput, err := r.client.GetObject(r.ctx, input)
 		if err != nil {
-			return 0, err
+			return 0, fmt.Errorf("getObject (%s) error: %w", aws.ToString(input.Range), err)
 		}
 
 		written, err := io.Copy(dst, getObjectOutput.Body)
 		_ = getObjectOutput.Body.Close()
-		return written, err
+		if err != nil {
+			return written, fmt.Errorf("copy getObject (%s) response error: %w", aws.ToString(input.Range), err)
+		}
+		return written, nil
 	}
 
 	partSize := r.partSize
@@ -441,36 +445,36 @@ func (r *reader) read(dst io.Writer, rangeStart, rangeEnd int64) (int64, error) 
 	defer w.close()
 
 	ctx, cancel := context.WithCancelCause(r.ctx)
+	defer cancel(nil)
+
 	for partNumber, lastPart := 0, partCount-1; partNumber <= lastPart; partNumber++ {
-		select {
-		case <-ctx.Done():
-			return w.written, ctx.Err()
-		default:
-			// don't need to copy partNumber and startRange start with go1.22
-			// (https://go.dev/blog/loopvar-preview)
-			if err := r.ex.Execute(func() {
-				defer wg.Done()
+		// don't need to copy partNumber and startRange start with go1.22
+		// (https://go.dev/blog/loopvar-preview)
+		if err := r.ex.Execute(func() {
+			defer wg.Done()
 
-				startRange := int64(partNumber) * partSize
-				var input *s3.GetObjectInput
-				if partNumber == lastPart {
-					input = copyInput(r.input, startRange)
-				} else {
-					input = copyInput(r.input, startRange, startRange+partSize-1)
-				}
-
-				output, err := r.client.GetObject(ctx, input)
-				if err == nil {
-					err = w.write(partNumber, output.Body)
-					_ = output.Body.Close()
-				}
-				if err != nil {
-					cancel(err)
-				}
-			}); err != nil {
-				cancel(err)
-				return w.written, err
+			startRange := int64(partNumber) * partSize
+			var input *s3.GetObjectInput
+			if partNumber == lastPart {
+				input = copyInput(r.input, startRange)
+			} else {
+				input = copyInput(r.input, startRange, startRange+partSize-1)
 			}
+
+			output, err := r.client.GetObject(ctx, input)
+			if err != nil {
+				cancel(fmt.Errorf("getObject (part=%d/%d, %s) error: %w", partNumber, lastPart, aws.ToString(input.Range), err))
+			}
+
+			err = w.write(partNumber, output.Body)
+			_ = output.Body.Close()
+			if err != nil {
+				cancel(fmt.Errorf("copy getObject (part=%d/%d, %s) response error: %w", partNumber, lastPart, aws.ToString(input.Range), err))
+			}
+		}); err != nil {
+			err = fmt.Errorf("submit task error: %w", err)
+			cancel(err)
+			return w.written, err
 		}
 	}
 
@@ -483,9 +487,13 @@ func (r *reader) read(dst io.Writer, rangeStart, rangeEnd int64) (int64, error) 
 
 	select {
 	case <-ctx.Done():
-		return w.written, ctx.Err()
+		return w.written, context.Cause(ctx)
 	case <-done:
-		return w.drain()
+		if err := w.drain(); err != nil {
+			return w.written, fmt.Errorf("drain buffer error: %w", err)
+		}
+
+		return w.written, nil
 	}
 }
 
