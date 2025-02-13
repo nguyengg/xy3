@@ -10,10 +10,10 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/nguyengg/xy3/s3reader"
 	"github.com/nguyengg/xy3/sri"
+	"github.com/nguyengg/xy3/util"
 )
 
 func (c *Command) download(ctx context.Context, name string) error {
@@ -42,7 +42,7 @@ func (c *Command) download(ctx context.Context, name string) error {
 
 	// attempt to create the local file that will store the downloaded artifact.
 	// if we fail to download the file complete, clean up by deleting the local file.
-	file, err = xy3.OpenExclFile(".", strings.TrimSuffix(basename, ext), ext)
+	file, err = util.OpenExclFile(".", strings.TrimSuffix(basename, ext), ext, 0666)
 	if err != nil {
 		return fmt.Errorf("create output file error: %w", err)
 	}

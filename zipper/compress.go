@@ -4,10 +4,12 @@ import (
 	"archive/zip"
 	"compress/flate"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"os"
 
-	"github.com/nguyengg/xy3"
+	"github.com/nguyengg/xy3/util"
 )
 
 const (
@@ -74,34 +76,45 @@ func CompressFile(ctx context.Context, name string, dst io.Writer, optFns ...fun
 
 	src, err := os.Open(name)
 	if err != nil {
-		return err
+		return fmt.Errorf("open src file error: %w", err)
 	}
 	defer src.Close()
 
 	fi, err := src.Stat()
 	if err != nil {
-		return err
+		return fmt.Errorf("describe src file error: %w", err)
 	}
 
 	f, err := zipWriter.CreateHeader(fileHeader(fi, fi.Name()))
 	if err != nil {
-		return err
+		return fmt.Errorf("create zip file header error: %w", err)
 	}
 
 	buf := make([]byte, opts.BufferSize)
 	pr := opts.ProgressReporter
 	if pr == nil {
-		_, err = xy3.CopyBufferWithContext(ctx, f, src, buf)
-		return err
+		if _, err = util.CopyBufferWithContext(ctx, f, src, buf); err != nil {
+			if errors.Is(err, context.Canceled) {
+				return err
+			}
+
+			return fmt.Errorf("add src file to archive error: %w", err)
+		}
+
+		return nil
 	}
 
 	w := pr.createWriter(name, fi.Name())
-	_, err = xy3.CopyBufferWithContext(ctx, io.MultiWriter(f, w), src, buf)
-	if err == nil {
-		w.done()
+	if _, err = util.CopyBufferWithContext(ctx, io.MultiWriter(f, w), src, buf); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return err
+		}
+
+		return fmt.Errorf("add src file to archive error: %w", err)
 	}
 
-	return err
+	w.done()
+	return nil
 }
 
 func fileHeader(fi os.FileInfo, name string) *zip.FileHeader {

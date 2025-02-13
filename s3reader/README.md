@@ -1,5 +1,7 @@
 # Implements io.ReadSeeker, io.ReaderAt, and io.WriterTo using S3 ranged GetObject
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/nguyengg/xy3.svg)](https://pkg.go.dev/github.com/nguyengg/xy3/s3reader)
+
 This module provides implementations of `io.ReadSeeker`, `io.ReaderAt`, and `io.WriterTo` for S3 downloading needs.
 
 ```go

@@ -4,12 +4,14 @@ import (
 	"archive/zip"
 	"compress/flate"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 
-	"github.com/nguyengg/xy3"
+	"github.com/nguyengg/xy3/util"
 )
 
 // CompressDirOptions customises CompressDir.
@@ -110,7 +112,7 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 	buf := make([]byte, opts.BufferSize)
 	pr := opts.ProgressReporter
 
-	return filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+	return filepath.WalkDir(dir, func(srcPath string, d fs.DirEntry, err error) error {
 		select {
 		case <-ctx.Done():
 			// ctx.Err is not supposed to return nil here if ctx.Done() is closed.
@@ -126,7 +128,7 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 
 		switch {
 		case err != nil:
-			return err
+			return fmt.Errorf("walk dir error: %w", err)
 
 		case d.IsDir():
 			if !opts.WriteDir {
@@ -135,54 +137,67 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 
 			fi, err = d.Info()
 			if err != nil {
-				return err
+				return fmt.Errorf("describe directory (path=%s) error: %w", srcPath, err)
 			}
 
-			path, err = archivePath(path)
-			if err != nil || path == "." {
-				return err
+			dstPath, err := archivePath(srcPath)
+			if err != nil {
+				return fmt.Errorf("compute directory (path=%s) name in archive error: %w", srcPath, err)
+			} else if dstPath == "." {
+				return nil
 			}
 
-			_, err = zipWriter.CreateHeader(fileHeader(fi, path+"/"))
-			if err == nil && pr != nil {
-				pr(rel(dir, path), path, 0, true)
+			if _, err = zipWriter.CreateHeader(fileHeader(fi, dstPath+"/")); err != nil {
+				return fmt.Errorf("create zip record (path=%s) for directory (path=%s) error: %w", dstPath, srcPath, err)
 			}
-			return err
+
+			if pr != nil {
+				pr(rel(dir, srcPath), dstPath, 0, true)
+			}
+
+			return nil
 
 		case d.Type().IsRegular():
 			fi, err = d.Info()
 			if err != nil {
-				return err
+				return fmt.Errorf("describe file (path=%s) error: %w", srcPath, err)
 			}
 
-			src, err := os.Open(path)
+			src, err := os.Open(srcPath)
 			if err != nil {
-				return err
+				return fmt.Errorf("open file (path=%s) error: %w", srcPath, err)
 			}
 			defer src.Close()
 
-			path, err = archivePath(path)
+			dstPath, err := archivePath(srcPath)
 			if err != nil {
-				return err
+				return fmt.Errorf("compute file (path=%s) name in archive error: %w", dstPath, err)
 			}
 
-			f, err := zipWriter.CreateHeader(fileHeader(fi, path))
+			f, err := zipWriter.CreateHeader(fileHeader(fi, dstPath))
 			if err != nil {
-				return err
+				return fmt.Errorf("create zip record (name=%s) for file (path=%s) error: %w", dstPath, srcPath, err)
 			}
 
 			if pr == nil {
-				_, err = xy3.CopyBufferWithContext(ctx, f, src, buf)
-				return err
+				if _, err = util.CopyBufferWithContext(ctx, f, src, buf); err != nil {
+					return fmt.Errorf("add file (path=%s) to archive file (name=%s) error: %w", srcPath, dstPath, err)
+				}
+
+				return nil
 			}
 
-			w := pr.createWriter(rel(dir, src.Name()), path)
-			_, err = xy3.CopyBufferWithContext(ctx, io.MultiWriter(f, w), src, buf)
-			if err == nil {
-				w.done()
+			w := pr.createWriter(rel(dir, srcPath), dstPath)
+			if _, err = util.CopyBufferWithContext(ctx, io.MultiWriter(f, w), src, buf); err != nil {
+				if errors.Is(err, context.Canceled) {
+					return err
+				}
+
+				return fmt.Errorf("add file (path=%s) to archive file (name=%s) error: %w", srcPath, dstPath, err)
 			}
 
-			return err
+			w.done()
+			return nil
 
 		default:
 			return nil

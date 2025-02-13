@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/nguyengg/xy3"
+	"github.com/nguyengg/xy3/util"
 	"github.com/nguyengg/xy3/zipper"
 )
 
@@ -17,7 +17,7 @@ import (
 // All files in the archive include root's basename in its path, meaning the top-level file of the archive output is
 // the root directory itself. The returned file is open for reading unless there was an error.
 func (c *Command) compress(ctx context.Context, root string) (f *os.File, contentType *string, err error) {
-	f, err = xy3.OpenExclFile(".", filepath.Base(root), ".zip")
+	f, err = util.OpenExclFile(".", filepath.Base(root), ".zip", 0666)
 	if err != nil {
 		err = fmt.Errorf("create archive error: %w", err)
 		return

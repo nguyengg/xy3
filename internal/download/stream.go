@@ -13,11 +13,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/krolaw/zipstream"
-	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/nguyengg/xy3/s3reader"
 	"github.com/nguyengg/xy3/sri"
+	"github.com/nguyengg/xy3/util"
 	"github.com/nguyengg/xy3/zipper"
 	"github.com/schollz/progressbar/v3"
 )
@@ -72,8 +72,8 @@ func (c *Command) stream(ctx context.Context, man manifest.Manifest) (bool, erro
 
 	// attempt to create the local directory that will store the extracted files.
 	// if we fail to download the file complete, clean up by deleting the directory.
-	stem, _ := xy3.StemAndExt(man.Key)
-	dir, err := xy3.MkExclDir(".", stem)
+	stem, _ := util.StemAndExt(man.Key)
+	dir, err := util.MkExclDir(".", stem, 0666)
 	if err != nil {
 		return true, fmt.Errorf("create output directory error: %w", err)
 	}
@@ -161,7 +161,7 @@ func (c *Command) stream(ctx context.Context, man manifest.Manifest) (bool, erro
 			break
 		}
 
-		_, err = xy3.CopyBufferWithContext(ctx, io.MultiWriter(f, bar), zr, buf)
+		_, err = util.CopyBufferWithContext(ctx, io.MultiWriter(f, bar), zr, buf)
 		_ = f.Close()
 		if err != nil {
 			err = fmt.Errorf("write to file error: %w", err)

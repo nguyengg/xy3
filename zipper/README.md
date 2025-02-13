@@ -1,12 +1,9 @@
 # Zip compress and extract
 
-## Setup
+[![Go Reference](https://pkg.go.dev/badge/github.com/nguyengg/xy3.svg)](https://pkg.go.dev/github.com/nguyengg/xy3/zipper)
 
-```shell
-go get github.com/nguyengg/xy3
-```
-
-## Code Example
+This module provides zip utility functions including scanning central directory for file headers, compress a file or a
+directory (recursively, with or without root dir unwrapping), decompress/extract all files from a ZIP archive, etc.
 
 ```go
 package main

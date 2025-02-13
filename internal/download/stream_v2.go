@@ -14,10 +14,10 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/nguyengg/xy3/s3reader"
+	"github.com/nguyengg/xy3/util"
 	"github.com/nguyengg/xy3/zipper"
 )
 
@@ -34,8 +34,8 @@ func (c *Command) streamV2(ctx context.Context, man manifest.Manifest) (bool, er
 
 	// attempt to create the local directory that will store the extracted files.
 	// if we fail to download the file complete, clean up by deleting the directory.
-	stem, _ := xy3.StemAndExt(man.Key)
-	dir, err := xy3.MkExclDir(".", stem)
+	stem, _ := util.StemAndExt(man.Key)
+	dir, err := util.MkExclDir(".", stem, 0666)
 	if err != nil {
 		return true, fmt.Errorf("create output directory error: %w", err)
 	}
@@ -60,6 +60,7 @@ func (c *Command) streamV2(ctx context.Context, man manifest.Manifest) (bool, er
 	// other, using a shared cancellable-with-cause context so that if one goroutine fails, all others can fail
 	// gracefully and early.
 	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
 
 	r, err := s3reader.New(ctx, c.client, &s3.GetObjectInput{
 		Bucket:              aws.String(man.Bucket),
@@ -124,7 +125,7 @@ func (c *Command) streamV2(ctx context.Context, man manifest.Manifest) (bool, er
 					return
 				}
 
-				_, err = xy3.CopyBufferWithContext(ctx, io.MultiWriter(f, bar), dst, nil)
+				_, err = util.CopyBufferWithContext(ctx, io.MultiWriter(f, bar), dst, nil)
 				_ = f.Close()
 				if err != nil {
 					cancel(fmt.Errorf("write to file error: %w", err))

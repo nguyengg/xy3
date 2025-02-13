@@ -6,14 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
-	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
+	"github.com/nguyengg/xy3/util"
 )
 
 // ExtractOptions is an opaque struct for customising Extract.
@@ -129,7 +128,7 @@ func Extract(ctx context.Context, src, dir string, optFns ...func(*ExtractOption
 
 	zipReader, err := zip.OpenReader(src)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("open zip error: %w", err)
 	}
 
 	// determine the output directory from options.
@@ -146,7 +145,7 @@ func Extract(ctx context.Context, src, dir string, optFns ...func(*ExtractOption
 				i++
 				name = filepath.Join(dir, stem+"-"+strconv.Itoa(i))
 			default:
-				return "", fmt.Errorf("create directory error: %w", err)
+				return "", fmt.Errorf("create output directory error: %w", err)
 			}
 		}
 	}
@@ -179,31 +178,42 @@ func Extract(ctx context.Context, src, dir string, optFns ...func(*ExtractOption
 		fi := f.FileInfo()
 		if fi.IsDir() {
 			if err = os.MkdirAll(path, f.Mode().Perm()); err != nil {
-				return dir, err
+				return dir, fmt.Errorf("create directory (path=%s) error: %w", path, err)
 			}
+
 			continue
 		}
 
-		dst, err := createExclFile(path, f.Mode().Perm())
+		perm := fi.Mode().Perm()
+		if err = os.MkdirAll(filepath.Dir(path), perm); err != nil {
+			return dir, fmt.Errorf("create parent directories to file (path=%s) error: %w", path, err)
+		}
+
+		flag := os.O_WRONLY | os.O_CREATE | os.O_EXCL
+		if !opts.NoOverwrite {
+			flag = os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+		}
+
+		dst, err := os.OpenFile(path, flag, perm)
 		if err != nil {
 			if opts.NoOverwrite && os.IsExist(err) {
 				continue
 			}
 
-			return dir, err
+			return dir, fmt.Errorf("create file (path=%s) error: %w", path, err)
 		}
 
 		src, err := f.Open()
 		if err != nil {
 			_ = dst.Close()
-			return dir, err
+			return dir, fmt.Errorf("open file (name=%s) in archive error: %w", name, err)
 		}
 
 		if pr == nil {
-			_, err = xy3.CopyBufferWithContext(ctx, dst, src, buf)
+			_, err = util.CopyBufferWithContext(ctx, dst, src, buf)
 		} else {
 			w := pr.createWriter(name, rel(dir, dst.Name()))
-			_, err = xy3.CopyBufferWithContext(ctx, io.MultiWriter(dst, w), src, buf)
+			_, err = util.CopyBufferWithContext(ctx, io.MultiWriter(dst, w), src, buf)
 			if err == nil {
 				w.done()
 			}
@@ -211,20 +221,9 @@ func Extract(ctx context.Context, src, dir string, optFns ...func(*ExtractOption
 
 		_, _ = dst.Close(), src.Close()
 		if err != nil {
-			return dir, err
+			return dir, fmt.Errorf("extract file (name%s) in archive to file (path=%s) error: %w", name, path, err)
 		}
 	}
 
 	return dir, nil
-}
-
-// createExclFile creates a new exclusive file for writing and ensures all parent directories to the file exist.
-//
-// Caller must close the file.
-func createExclFile(name string, perm fs.FileMode) (*os.File, error) {
-	if err := os.MkdirAll(filepath.Dir(name), perm); err != nil {
-		return nil, err
-	}
-
-	return os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
 }

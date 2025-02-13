@@ -11,10 +11,10 @@ import (
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/nguyengg/xy3/s3writer"
 	"github.com/nguyengg/xy3/sri"
+	"github.com/nguyengg/xy3/util"
 )
 
 func (c *Command) upload(ctx context.Context, name string) error {
@@ -28,7 +28,7 @@ func (c *Command) upload(ctx context.Context, name string) error {
 
 	// find an unused S3 key that can be used for the CreateMultipartUpload call.
 	filename := f.Name()
-	stem, ext := xy3.StemAndExt(filename)
+	stem, ext := util.StemAndExt(filename)
 	key, err := c.findUnusedS3Key(ctx, stem, ext)
 	if err != nil {
 		return err
@@ -69,7 +69,7 @@ func (c *Command) upload(ctx context.Context, name string) error {
 	// now generate the local .s3 file that contains the S3 URI. if writing to file fails, prints the JSON content
 	// to standard output so that they can be saved manually later.
 	m.Checksum = hash.SumToString(nil)
-	mf, err := xy3.OpenExclFile(".", stem, ext+".s3")
+	mf, err := util.OpenExclFile(".", stem, ext+".s3", 0666)
 	if err != nil {
 		return err
 	}

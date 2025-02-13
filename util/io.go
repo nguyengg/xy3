@@ -1,9 +1,9 @@
-package xy3
+package util
 
 import (
 	"context"
 	"fmt"
-	"io"
+	i0 "io"
 )
 
 // CopyBufferWithContext is a custom implementation of io.CopyBuffer that is cancellable via context.
@@ -14,7 +14,7 @@ import (
 //
 // The context is checked for done status after every write. As a result, having too small a buffer may introduce too
 // much overhead, while having a very large buffer may cause context cancellation to have a delayed effect.
-func CopyBufferWithContext(ctx context.Context, dst io.Writer, src io.Reader, buf []byte) (written int64, err error) {
+func CopyBufferWithContext(ctx context.Context, dst i0.Writer, src i0.Reader, buf []byte) (written int64, err error) {
 	if buf == nil {
 		buf = make([]byte, 32*1024)
 	}
@@ -29,7 +29,7 @@ func CopyBufferWithContext(ctx context.Context, dst io.Writer, src io.Reader, bu
 			case err != nil:
 				return written, err
 			case nr < nw:
-				return written, io.ErrShortWrite
+				return written, i0.ErrShortWrite
 			case nr != nw:
 				return written, fmt.Errorf("invalid write: expected to write %d bytes, wrote %d bytes instead", nr, nw)
 			}
@@ -43,7 +43,7 @@ func CopyBufferWithContext(ctx context.Context, dst io.Writer, src io.Reader, bu
 			}
 		}
 
-		if err == io.EOF {
+		if err == i0.EOF {
 			return written, nil
 		}
 		if err != nil {

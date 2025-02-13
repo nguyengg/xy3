@@ -1,5 +1,7 @@
 # Implements io.Writer and io.ReaderFrom to upload to S3
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/nguyengg/xy3.svg)](https://pkg.go.dev/github.com/nguyengg/xy3/s3writer)
+
 This module provides implementations of `io.Writer` and `io.ReaderFrom` for S3 uploading needs.
 
 ```go

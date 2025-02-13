@@ -1,4 +1,4 @@
-package xy3
+package util
 
 import (
 	"testing"
