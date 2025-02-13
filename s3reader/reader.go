@@ -156,7 +156,7 @@ type Options struct {
 
 	// internal. must use opaque func(*Options) to customise these.
 	size   int64
-	logger io.WriteCloser
+	logger progressLogger
 }
 
 // New returns a Reader with the given GetObject input parameters.
@@ -262,7 +262,7 @@ type reader struct {
 	input                                 s3.GetObjectInput
 	concurrency                           int
 	threshold, bufferSize, partSize, size int64
-	logger                                io.WriteCloser
+	logger                                progressLogger
 
 	// internal.
 	ex      executor.ExecuteCloser
@@ -300,7 +300,7 @@ func (r *reader) Read(p []byte) (n int, err error) {
 	// always download either len(p) or bufferSize, whichever is larger, to provide buffered read ahead capability.
 	// we do need to clamp rangeEnd to size-1 to prevent reading past EOF.
 	rangeEnd := min(r.size-1, r.off+max(int64(m), r.bufferSize))
-	if _, err = r.read(r.buf, rangeStart, rangeEnd); err != nil {
+	if _, err = r.read(io.MultiWriter(r.buf, r.logger), rangeStart, rangeEnd); err != nil {
 		return 0, err
 	}
 
@@ -337,6 +337,7 @@ func (r *reader) Seek(offset int64, whence int) (int64, error) {
 		return r.off, ErrSeekPastLastByte
 	}
 
+	_, _ = r.logger.Seek(offset, whence)
 	return r.off, nil
 }
 
@@ -377,7 +378,7 @@ func (r *reader) WriteTo(dst io.Writer) (int64, error) {
 		return n, nil
 	}
 
-	n, err = r.read(dst, r.off, r.size-1)
+	n, err = r.read(io.MultiWriter(dst, r.logger), r.off, r.size-1)
 	r.off += n
 	return n, err
 }
@@ -387,13 +388,6 @@ func (r *reader) Size() int64 {
 }
 
 func (r *reader) Reopen() Reader {
-	// logger is only copied over if it implements cloneable.
-	// at the moment we don't allow customers to specify their own io.Writer logger so we're in control of this.
-	logger := r.logger
-	if c, ok := logger.(cloneable); ok {
-		logger = c.Clone()
-	}
-
 	return &reader{
 		// from options.
 		ctx:         r.ctx,
@@ -404,7 +398,7 @@ func (r *reader) Reopen() Reader {
 		bufferSize:  r.bufferSize,
 		partSize:    r.partSize,
 		size:        r.size,
-		logger:      logger,
+		logger:      r.logger.Reopen(),
 
 		// internal.
 		ex:      executor.NewCallerRunsOnFullExecutor(r.concurrency - 1),
@@ -443,7 +437,7 @@ func (r *reader) read(dst io.Writer, rangeStart, rangeEnd int64) (int64, error) 
 	var wg sync.WaitGroup
 	wg.Add(partCount)
 
-	w := writer{dst: io.MultiWriter(dst, r.logger)}
+	w := writer{dst: dst}
 	defer w.close()
 
 	ctx, cancel := context.WithCancelCause(r.ctx)
