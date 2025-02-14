@@ -89,9 +89,9 @@ func (c *Command) download(ctx context.Context, name string) error {
 	}
 
 	if verifier.SumAndVerify(nil) {
-		c.logger.Printf("done downloading; checksum does not match: expect %s, got %s", man.Checksum, verifier.SumToString(nil))
-	} else {
 		c.logger.Printf("done downloading; checksum matches")
+	} else {
+		c.logger.Printf("done downloading; checksum does not match: expect %s, got %s", man.Checksum, verifier.SumToString(nil))
 	}
 
 	return nil
