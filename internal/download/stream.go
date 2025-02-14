@@ -18,11 +18,11 @@ import (
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/nguyengg/xy3/util"
-	"github.com/nguyengg/xy3/zipper"
+	"github.com/nguyengg/xy3/z"
 	"github.com/schollz/progressbar/v3"
 )
 
-func (c *Command) canStream(ctx context.Context, man manifest.Manifest) (headers []zipper.CDFileHeader, uncompressedSize uint64, rootDir internal.RootDir, err error) {
+func (c *Command) canStream(ctx context.Context, man manifest.Manifest) (headers []z.CDFileHeader, uncompressedSize uint64, rootDir internal.RootDir, err error) {
 	r, err := s3reader.New(ctx, c.client, &s3.GetObjectInput{
 		Bucket:              aws.String(man.Bucket),
 		Key:                 aws.String(man.Key),
@@ -33,7 +33,7 @@ func (c *Command) canStream(ctx context.Context, man manifest.Manifest) (headers
 	}
 	defer r.Close()
 
-	cd, err := zipper.NewCDScanner(r, r.Size())
+	cd, err := z.NewCDScanner(r, r.Size())
 	if err != nil {
 		return nil, 0, "", err
 	}
@@ -42,7 +42,7 @@ func (c *Command) canStream(ctx context.Context, man manifest.Manifest) (headers
 	n := cd.RecordCount()
 	bar := parseHeadersProgressBar(n)
 	rootFinder := internal.NewZipRootDirFinder()
-	headers = make([]zipper.CDFileHeader, 0, n)
+	headers = make([]z.CDFileHeader, 0, n)
 	for fh := range cd.All() {
 		_ = bar.Add(1)
 		rootDir, _ = rootFinder(fh.Name)
@@ -61,7 +61,7 @@ func (c *Command) stream(ctx context.Context, man manifest.Manifest) (bool, erro
 	// check for streaming eligibility by finding the ZIP headers.
 	headers, uncompressedSize, rootDir, err := c.canStream(ctx, man)
 	if err != nil {
-		if errors.Is(err, zipper.ErrNoEOCDFound) {
+		if errors.Is(err, z.ErrNoEOCDFound) {
 			return false, nil
 		}
 

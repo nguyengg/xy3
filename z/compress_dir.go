@@ -1,4 +1,4 @@
-package zipper
+package z
 
 import (
 	"archive/zip"
