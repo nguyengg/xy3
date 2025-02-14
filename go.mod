@@ -10,6 +10,7 @@ require (
 	github.com/krolaw/zipstream v0.0.0-20180621105154-0a2661891f94
 	github.com/nguyengg/go-aws-commons/s3reader v0.1.1
 	github.com/nguyengg/go-aws-commons/s3writer v0.1.1
+	github.com/nguyengg/go-aws-commons/sri v0.1.0
 	github.com/schollz/progressbar/v3 v3.18.0
 	github.com/stretchr/testify v1.10.0
 	github.com/valyala/bytebufferpool v1.0.0

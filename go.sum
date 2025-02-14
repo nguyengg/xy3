@@ -56,6 +56,8 @@ github.com/nguyengg/go-aws-commons/s3reader v0.1.1 h1:xxpyUzLqgd2lSxAfe8C1vXyuPp
 github.com/nguyengg/go-aws-commons/s3reader v0.1.1/go.mod h1:G9l9r7vFvbpzoF4eYwTKKM8tnPHt395IlyqYK2MCd3o=
 github.com/nguyengg/go-aws-commons/s3writer v0.1.1 h1:Rdp2rZfzscnbHyRextk3EfVpc9Las1PF4PFk+GrCgyU=
 github.com/nguyengg/go-aws-commons/s3writer v0.1.1/go.mod h1:wOT/QSMHFK6rqiWnpNzLs7PUukCyWZqK+xReSft0iPk=
+github.com/nguyengg/go-aws-commons/sri v0.1.0 h1:NuYDIWIGxpfqZ01VkNPwstDLdykoU/hPe732xNltxpU=
+github.com/nguyengg/go-aws-commons/sri v0.1.0/go.mod h1:TjOwNWKjGWfJpONPI+XUkxVczEC3xNPC79knv2ephWQ=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/rivo/uniseg v0.4.7 h1:WUdvkW8uEhrYfLC4ZzdpI2ztxP1I582+49Oc5Mq64VQ=

@@ -12,8 +12,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/nguyengg/go-aws-commons/s3writer"
+	"github.com/nguyengg/go-aws-commons/sri"
 	"github.com/nguyengg/xy3/internal/manifest"
-	"github.com/nguyengg/xy3/sri"
 	"github.com/nguyengg/xy3/util"
 )
 
