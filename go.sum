@@ -59,6 +59,10 @@ github.com/mattn/go-runewidth v0.0.16 h1:E5ScNMtiwvlvB5paMFdw9p4kSQzbXFikJ5SQO6T
 github.com/mattn/go-runewidth v0.0.16/go.mod h1:Jdepj2loyihRzMpdS35Xk/zdY8IAYHsh153qUoGf23w=
 github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db h1:62I3jR2EmQ4l5rM/4FEfDWcRD+abF5XlKShorW5LRoQ=
 github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db/go.mod h1:l0dey0ia/Uv7NcFFVbCLtqEBQbrT4OCwCSKTEv6enCw=
+github.com/nguyengg/go-aws-commons/s3reader v0.1.0 h1:/n+movrL6x9eF/ehLZAr9EKzB4zOYN9XzAirHcfYfcE=
+github.com/nguyengg/go-aws-commons/s3reader v0.1.0/go.mod h1:wpydlY0OAkrvpyuzsd9W1roLoj3jBp3zIanX1eUlvoY=
+github.com/nguyengg/go-aws-commons/s3writer v0.1.0 h1:2sguwtRv0fAYML5wIluOa4NCpVoMluSbTcxXxR0Gz3o=
+github.com/nguyengg/go-aws-commons/s3writer v0.1.0/go.mod h1:TUHDy5EVfflGVi2uJVkHDvZ8+WUyE11jUtueb6GXXs4=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/rivo/uniseg v0.4.7 h1:WUdvkW8uEhrYfLC4ZzdpI2ztxP1I582+49Oc5Mq64VQ=

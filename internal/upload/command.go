@@ -12,8 +12,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jessevdk/go-flags"
+	"github.com/nguyengg/go-aws-commons/s3writer"
 	"github.com/nguyengg/xy3/internal"
-	"github.com/nguyengg/xy3/s3writer"
 )
 
 type Command struct {

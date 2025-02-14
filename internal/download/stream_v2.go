@@ -14,9 +14,9 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/nguyengg/go-aws-commons/s3reader"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/manifest"
-	"github.com/nguyengg/xy3/s3reader"
 	"github.com/nguyengg/xy3/util"
 	"github.com/nguyengg/xy3/zipper"
 )
