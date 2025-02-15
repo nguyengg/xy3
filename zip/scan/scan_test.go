@@ -1,4 +1,4 @@
-package z
+package scan
 
 import (
 	"os"
@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestFindAndFindFromReaderAt(t *testing.T) {
+func TestCentralDirectory(t *testing.T) {
 	// the zip files in testdata should have fixed attributes from parsing.
 	tests := []struct {
 		name     string
@@ -16,7 +16,7 @@ func TestFindAndFindFromReaderAt(t *testing.T) {
 	}{
 		{
 			name:     "default.zip",
-			testdata: "testdata/default.zip",
+			testdata: "../testdata/default.zip",
 			expected: map[string]int64{
 				"test/a.txt":              0x0,
 				"test/another/path/c.txt": 0xc6,
@@ -25,7 +25,7 @@ func TestFindAndFindFromReaderAt(t *testing.T) {
 		},
 		{
 			name:     "unwrap_root.zip",
-			testdata: "testdata/unwrap_root.zip",
+			testdata: "../testdata/unwrap_root.zip",
 			expected: map[string]int64{
 				"a.txt":              0x0,
 				"another/path/c.txt": 0xc1,
@@ -34,7 +34,7 @@ func TestFindAndFindFromReaderAt(t *testing.T) {
 		},
 		{
 			name:     "write_dir.zip",
-			testdata: "testdata/write_dir.zip",
+			testdata: "../testdata/write_dir.zip",
 			expected: map[string]int64{
 				"test/":       0x0,
 				"test/a.txt":  0x3f,
@@ -43,7 +43,7 @@ func TestFindAndFindFromReaderAt(t *testing.T) {
 		},
 		{
 			name:     "write_dir_unwrap_root.zip",
-			testdata: "testdata/write_dir_unwrap_root.zip",
+			testdata: "../testdata/write_dir_unwrap_root.zip",
 			expected: map[string]int64{
 				"a.txt":  0x0,
 				"empty/": 0xc1,
@@ -60,25 +60,30 @@ func TestFindAndFindFromReaderAt(t *testing.T) {
 			fi, err := f.Stat()
 			assert.NoErrorf(t, err, "os.Stat(%s) error = %v", tt.testdata, err)
 
-			_, headers, err := ScanFromReaderAt(f, fi.Size())
-			assert.NoErrorf(t, err, "ScanFromReaderAt(...) error = %v", err)
+			_, headers, err := CentralDirectoryWithReaderAt(f, fi.Size())
+			assert.NoErrorf(t, err, "CentralDirectoryWithReaderAt(...) error = %v", err)
 
 			// we only care about the offset so pull that from the headers.
 			actual := make(map[string]int64)
 			for fh, err := range headers {
 				assert.NoErrorf(t, err, "headers error = %v", err)
-				actual[fh.Name] = fh.Offset
+
+				cdfh, ok := fh.(*CentralDirectoryFileHeader)
+				assert.Truef(t, ok, "fh is not CentralDirectoryFileHeader; type = %T", fh)
+				actual[cdfh.fh.Name] = cdfh.Offset
 			}
 			assert.Equal(t, tt.expected, actual)
 
-			// do same thing but with Scan which.
-			_, headers, err = Scan(f)
+			// do same thing but with a different method.
+			_, headers, err = CentralDirectory(f)
 			assert.NoErrorf(t, err, "Scan(...) error = %v", err)
 
 			actual = make(map[string]int64)
 			for fh, err := range headers {
+				cdfh, ok := fh.(*CentralDirectoryFileHeader)
+				assert.Truef(t, ok, "fh is not CentralDirectoryFileHeader; type = %T", fh)
 				assert.NoErrorf(t, err, "headers error = %v", err)
-				actual[fh.Name] = fh.Offset
+				actual[cdfh.fh.Name] = cdfh.Offset
 			}
 			assert.Equal(t, tt.expected, actual)
 		})

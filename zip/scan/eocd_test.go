@@ -1,4 +1,4 @@
-package z
+package scan
 
 import (
 	"archive/zip"
@@ -20,7 +20,7 @@ func TestFindEOCD_FromFile(t *testing.T) {
 	}{
 		{
 			name:     "default.zip",
-			testdata: "testdata/default.zip",
+			testdata: "../testdata/default.zip",
 			expected: EOCDRecord{
 				DiskNumber:    0,
 				CDDiskOffset:  0,
@@ -32,7 +32,7 @@ func TestFindEOCD_FromFile(t *testing.T) {
 		},
 		{
 			name:     "unwrap_root.zip",
-			testdata: "testdata/unwrap_root.zip",
+			testdata: "../testdata/unwrap_root.zip",
 			expected: EOCDRecord{
 				DiskNumber:    0,
 				CDDiskOffset:  0,
@@ -50,7 +50,7 @@ func TestFindEOCD_FromFile(t *testing.T) {
 			assert.NoErrorf(t, err, "os.Open(%s) error = %v", tt.testdata, err)
 			defer f.Close()
 
-			r, err := findEOCD(f, &Options{Ctx: context.Background()})
+			r, err := findEOCD(f, &CentralDirectoryOptions{Ctx: context.Background()})
 			assert.NoErrorf(t, err, "findEOCD(%s) error = %v", tt.testdata, err)
 			assert.Equal(t, tt.expected, r)
 		})
@@ -96,7 +96,7 @@ func TestFindEOCD_WithComment(t *testing.T) {
 				assert.NoErrorf(t, err, "Close() error = %v", err)
 				assert.Equalf(t, tt.commentLength+22+delta, buf.Len(), "Mismatched buffer size; got = %d, want = %d", buf.Len(), tt.commentLength+22+delta)
 
-				r, err := findEOCD(bytes.NewReader(buf.Bytes()), &Options{
+				r, err := findEOCD(bytes.NewReader(buf.Bytes()), &CentralDirectoryOptions{
 					Ctx:         context.Background(),
 					KeepComment: true,
 				})
