@@ -28,46 +28,111 @@ func putUint32(v uint32) (b []byte) {
 	return b
 }
 
-// CentralDirectoryFileHeader is a FileHeader parsed from the central directory of the ZIP file.
-//
-// See https://en.wikipedia.org/wiki/ZIP_(file_format)#Central_directory_file_header_(CDFH).
-type CentralDirectoryFileHeader struct {
-	fh zip.FileHeader
-
-	// DiskNumber is the disk number where file starts.
-	//
-	// Since floppy disks aren't a thing anymore, this field is most likely unused.
-	DiskNumber uint16
-
-	// Offset is the relative offset of local file header.
-	//
-	// This is the number of bytes between the start of the first disk on which the file occurs, and the start of
-	// the local file header.
-	//
-	// See https://en.wikipedia.org/wiki/ZIP_(file_format)#Central_directory_file_header_(CDFH).
-	Offset int64
+// localFileHeader is a ReadableFileHeader parsed from the local file headers of a ZIP file.
+type localFileHeader struct {
+	zip.FileHeader
 }
 
-func (f *CentralDirectoryFileHeader) FileHeader() zip.FileHeader {
-	return f.fh
+// unmarshalLocalFileHeader decodes the 30-byte slice as a localFileHeader.
+// read will always be called to retrieve the variable-size part of the header. if there is no variable-size part, read
+// will be passed an empty slice.
+func unmarshalLocalFileHeader(b [30]byte, read func(b []byte) (int, error)) (fh localFileHeader, err error) {
+	data := &struct {
+		Signature        uint32
+		ReaderVersion    uint16
+		Flags            uint16
+		Method           uint16
+		ModifiedTime     uint16
+		ModifiedDate     uint16
+		CRC32            uint32
+		CompressedSize   uint32
+		UncompressedSize uint32
+		FileNameLength   uint16
+		ExtraFieldLength uint16
+	}{}
+
+	if bytes.Compare(lfhSigBytes, b[:4]) != 0 {
+		return fh, fmt.Errorf("mismatched signature, got 0x%x, expected 0x%x", b[:4], lfhSigBytes)
+	}
+
+	if err = binary.Read(bytes.NewReader(b[:]), binary.LittleEndian, data); err != nil {
+		return fh, fmt.Errorf("unmarshal error: %w", err)
+	}
+
+	fh = localFileHeader{
+		FileHeader: zip.FileHeader{
+			ReaderVersion:      data.ReaderVersion,
+			Flags:              data.Flags,
+			Method:             data.Method,
+			Modified:           time.Time{},
+			ModifiedTime:       data.ModifiedTime,
+			ModifiedDate:       data.ModifiedDate,
+			CRC32:              data.CRC32,
+			CompressedSize:     data.CompressedSize,
+			UncompressedSize:   data.UncompressedSize,
+			CompressedSize64:   uint64(data.CompressedSize),
+			UncompressedSize64: uint64(data.UncompressedSize),
+		},
+	}
+	fh.Modified = msDosTimeToTime(fh.ModifiedDate, fh.ModifiedTime)
+	n, m := data.FileNameLength, data.ExtraFieldLength
+	nmLen := int(n + m)
+	nm := make([]byte, nmLen)
+	switch readN, err := read(nm); {
+	case err != nil && !errors.Is(err, io.EOF):
+		return fh, fmt.Errorf("read variable-size data error: %w", err)
+	case readN < nmLen:
+		return fh, fmt.Errorf("read variable-size data error: insufficient read: expected at least %d bytes, got %d", nmLen, readN)
+	default:
+		fh.Name, fh.Extra = string(nm[:n]), nm[n+m:]
+	}
+
+	return fh, nil
 }
 
-func (f *CentralDirectoryFileHeader) Open() (io.Reader, error) {
+func (l *localFileHeader) Open() (io.Reader, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (l *localFileHeader) WriteTo(dst io.Writer) (int64, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (l *localFileHeader) ZipFileHeader() zip.FileHeader {
+	return l.FileHeader
+}
+
+// cdFileHeader is a ReadableFileHeader parsed from the central directory file headers of a ZIP file
+type cdFileHeader struct {
+	zip.FileHeader
+
+	offset int64
+}
+
+func (f *cdFileHeader) Open() (io.Reader, error) {
+	//TODO implement me
 	panic("implement me")
 }
 
 // WriteTo reads and decompress content to the given dst.
 //
-// It is safe to open concurrent files for read if the CentralDirectoryFileHeader was created using ScanFromReaderAt since they use
+// It is safe to open concurrent files for read if the cdFileHeader was created using ScanFromReaderAt since they use
 // io.ReaderAt under the hood.
-func (f *CentralDirectoryFileHeader) WriteTo(dst io.Writer) (int64, error) {
+func (f *cdFileHeader) WriteTo(dst io.Writer) (int64, error) {
+	//TODO implement me
 	panic("implement me")
 }
 
-// unmarshalCDFileHeader decodes the 46-byte slice as a CentralDirectoryFileHeader.
+func (f *cdFileHeader) ZipFileHeader() zip.FileHeader {
+	return f.FileHeader
+}
+
+// unmarshalCDFileHeader decodes the 46-byte slice as a cdFileHeader.
 // read will always be called to retrieve the variable-size part of the header. if there is no variable-size part, read
 // will be passed an empty slice.
-func unmarshalCDFileHeader(b [46]byte, read func(b []byte) (int, error)) (fh CentralDirectoryFileHeader, err error) {
+func unmarshalCDFileHeader(b [46]byte, read func(b []byte) (int, error)) (fh cdFileHeader, err error) {
 	data := &struct {
 		Signature         uint32
 		CreatorVersion    uint16
@@ -96,8 +161,8 @@ func unmarshalCDFileHeader(b [46]byte, read func(b []byte) (int, error)) (fh Cen
 		return fh, fmt.Errorf("unmarshal error: %w", err)
 	}
 
-	fh = CentralDirectoryFileHeader{
-		fh: zip.FileHeader{
+	fh = cdFileHeader{
+		FileHeader: zip.FileHeader{
 			CreatorVersion:     data.CreatorVersion,
 			ReaderVersion:      data.ReaderVersion,
 			Flags:              data.Flags,
@@ -112,10 +177,9 @@ func unmarshalCDFileHeader(b [46]byte, read func(b []byte) (int, error)) (fh Cen
 			UncompressedSize64: uint64(data.UncompressedSize),
 			ExternalAttrs:      data.ExternalAttrs,
 		},
-		DiskNumber: data.DiskNumber,
-		Offset:     int64(data.Offset),
+		offset: int64(data.Offset),
 	}
-	fh.fh.Modified = msDosTimeToTime(fh.fh.ModifiedDate, fh.fh.ModifiedTime)
+	fh.Modified = msDosTimeToTime(fh.ModifiedDate, fh.ModifiedTime)
 	n, m, k := data.FileNameLength, data.ExtraFieldLength, data.FileCommentLength
 	nmkLen := int(n + m + k)
 	nmk := make([]byte, nmkLen)
@@ -123,9 +187,9 @@ func unmarshalCDFileHeader(b [46]byte, read func(b []byte) (int, error)) (fh Cen
 	case err != nil && !errors.Is(err, io.EOF):
 		return fh, fmt.Errorf("read variable-size data error: %w", err)
 	case readN < nmkLen:
-		return fh, fmt.Errorf("read variable-size data error: insufficient read: needs at least %d bytes, got %d", nmkLen, readN)
+		return fh, fmt.Errorf("read variable-size data error: insufficient read: expected at least %d bytes, got %d", nmkLen, readN)
 	default:
-		fh.fh.Name, fh.fh.Comment, fh.fh.Extra = string(nmk[:n]), string(nmk[n:n+m]), nmk[n+m:n+m+k]
+		fh.Name, fh.Comment, fh.Extra = string(nmk[:n]), string(nmk[n:n+m]), nmk[n+m:n+m+k]
 	}
 
 	return fh, nil

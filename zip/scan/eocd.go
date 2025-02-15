@@ -136,7 +136,7 @@ func unmarshalEOCDRecord(b [22]byte, read func(b []byte) (int, error)) (r EOCDRe
 	case err != nil && !errors.Is(err, io.EOF):
 		return r, fmt.Errorf("read variable-size data error: %w", err)
 	case readN < int(data.CommentLength):
-		return r, fmt.Errorf("read variable-size data error: insufficient read: needs at least %d bytes, got %d", data.CommentLength, readN)
+		return r, fmt.Errorf("read variable-size data error: insufficient read: expected at least %d bytes, got %d", data.CommentLength, readN)
 	default:
 		r.Comment = string(comment)
 	}

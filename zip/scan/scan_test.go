@@ -1,23 +1,56 @@
 package scan
 
 import (
+	"fmt"
+	"iter"
 	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func TestCentralDirectory(t *testing.T) {
-	// the zip files in testdata should have fixed attributes from parsing.
+func collectCRC32sAndOffsets(it iter.Seq2[ReadableFileHeader, error]) (crc32s, offsets map[string]int64, err error) {
+	crc32s = make(map[string]int64)
+	offsets = make(map[string]int64)
+
+	for fh, err := range it {
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if v, ok := fh.(*localFileHeader); ok {
+			crc32s[v.Name] = int64(v.CRC32)
+			continue
+		}
+		if v, ok := fh.(*cdFileHeader); ok {
+			crc32s[v.Name] = int64(v.CRC32)
+			offsets[v.Name] = v.offset
+			continue
+		}
+
+		return nil, nil, fmt.Errorf("unknown type: %T", fh)
+	}
+
+	return
+}
+
+func TestScan(t *testing.T) {
+	// the zip files in testdata should have fixed paths, CRC32sl, and offsets.
 	tests := []struct {
-		name     string
-		testdata string
-		expected map[string]int64
+		name            string
+		testdata        string
+		expectedCRC32s  map[string]int64
+		expectedOffsets map[string]int64
 	}{
 		{
 			name:     "default.zip",
 			testdata: "../testdata/default.zip",
-			expected: map[string]int64{
+			expectedCRC32s: map[string]int64{
+				"test/a.txt":              0x506d938f,
+				"test/another/path/c.txt": 0xe434c8e8,
+				"test/path/b.txt":         0xb9bb1847,
+			},
+			expectedOffsets: map[string]int64{
 				"test/a.txt":              0x0,
 				"test/another/path/c.txt": 0xc6,
 				"test/path/b.txt":         0x245,
@@ -26,7 +59,12 @@ func TestCentralDirectory(t *testing.T) {
 		{
 			name:     "unwrap_root.zip",
 			testdata: "../testdata/unwrap_root.zip",
-			expected: map[string]int64{
+			expectedCRC32s: map[string]int64{
+				"a.txt":              0x506d938f,
+				"another/path/c.txt": 0xe434c8e8,
+				"path/b.txt":         0xb9bb1847,
+			},
+			expectedOffsets: map[string]int64{
 				"a.txt":              0x0,
 				"another/path/c.txt": 0xc1,
 				"path/b.txt":         0x23b,
@@ -35,7 +73,12 @@ func TestCentralDirectory(t *testing.T) {
 		{
 			name:     "write_dir.zip",
 			testdata: "../testdata/write_dir.zip",
-			expected: map[string]int64{
+			expectedCRC32s: map[string]int64{
+				"test/":       0x0,
+				"test/a.txt":  0x506d938f,
+				"test/empty/": 0x0,
+			},
+			expectedOffsets: map[string]int64{
 				"test/":       0x0,
 				"test/a.txt":  0x3f,
 				"test/empty/": 0x105,
@@ -44,7 +87,11 @@ func TestCentralDirectory(t *testing.T) {
 		{
 			name:     "write_dir_unwrap_root.zip",
 			testdata: "../testdata/write_dir_unwrap_root.zip",
-			expected: map[string]int64{
+			expectedCRC32s: map[string]int64{
+				"a.txt":  0x506d938f,
+				"empty/": 0x0,
+			},
+			expectedOffsets: map[string]int64{
 				"a.txt":  0x0,
 				"empty/": 0xc1,
 			},
@@ -63,29 +110,17 @@ func TestCentralDirectory(t *testing.T) {
 			_, headers, err := CentralDirectoryWithReaderAt(f, fi.Size())
 			assert.NoErrorf(t, err, "CentralDirectoryWithReaderAt(...) error = %v", err)
 
-			// we only care about the offset so pull that from the headers.
-			actual := make(map[string]int64)
-			for fh, err := range headers {
-				assert.NoErrorf(t, err, "headers error = %v", err)
+			// we only care about the CRC32s and the offsets so pull that from the headers.
+			crc32s, offsets, err := collectCRC32sAndOffsets(headers)
+			assert.NoErrorf(t, err, "collectCRC32sAndOffsets(...) error = %v", err)
+			assert.Equal(t, tt.expectedCRC32s, crc32s)
+			assert.Equal(t, tt.expectedOffsets, offsets)
 
-				cdfh, ok := fh.(*CentralDirectoryFileHeader)
-				assert.Truef(t, ok, "fh is not CentralDirectoryFileHeader; type = %T", fh)
-				actual[cdfh.fh.Name] = cdfh.Offset
-			}
-			assert.Equal(t, tt.expected, actual)
-
-			// do same thing but with a different method.
+			// do same thing but with CentralDirectory.
 			_, headers, err = CentralDirectory(f)
-			assert.NoErrorf(t, err, "Scan(...) error = %v", err)
-
-			actual = make(map[string]int64)
-			for fh, err := range headers {
-				cdfh, ok := fh.(*CentralDirectoryFileHeader)
-				assert.Truef(t, ok, "fh is not CentralDirectoryFileHeader; type = %T", fh)
-				assert.NoErrorf(t, err, "headers error = %v", err)
-				actual[cdfh.fh.Name] = cdfh.Offset
-			}
-			assert.Equal(t, tt.expected, actual)
+			assert.NoErrorf(t, err, "collectCRC32sAndOffsets(...) error = %v", err)
+			assert.Equal(t, tt.expectedCRC32s, crc32s)
+			assert.Equal(t, tt.expectedOffsets, offsets)
 		})
 	}
 }

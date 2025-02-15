@@ -51,8 +51,8 @@ type ReadableFileHeader interface {
 	// the same local file in any order. Otherwise, ErrSeekNotSupported is returned.
 	WriteTo(dst io.Writer) (int64, error)
 
-	// FileHeader returns embedded zip.FileHeader for metadata needs.
-	FileHeader() zip.FileHeader
+	// ZipFileHeader returns embedded zip.FileHeader for metadata needs.
+	ZipFileHeader() zip.FileHeader
 }
 
 // Forward scans forwards the given io.Reader for ZIP local file headers.
@@ -67,7 +67,49 @@ type ReadableFileHeader interface {
 // [ReadableFileHeader.Open] and [ReadableFileHeader.WriteTo] can be called multiple times on the same local file or
 // previous files that were returned by the iterator; ErrSeekNotSupported is returned otherwise.
 func Forward(src io.Reader) iter.Seq2[ReadableFileHeader, error] {
-	panic("implement me")
+	return func(yield func(ReadableFileHeader, error) bool) {
+		var (
+			// bufSrc wraps src to provide buffered read.
+			bufSrc = bufio.NewReaderSize(src, 16*1024)
+			// buf is the data slice to read 30 bytes which is the fixed-size part of the local file header.
+			buf = make([]byte, 30)
+		)
+
+		for {
+			switch readN, err := bufSrc.Read(buf); {
+			case err != nil && !errors.Is(err, io.EOF):
+				yield(nil, fmt.Errorf("read file header error: %w", err))
+				return
+			case readN >= 4 && bytes.Compare(buf[:4], cdfhSigBytes) == 0:
+				return
+			case readN < 30:
+				yield(nil, fmt.Errorf("read file header error: insufficient read: expected at least 46 bytes, got %d", readN))
+				return
+			}
+
+			fh, err := unmarshalLocalFileHeader(([30]byte)(buf), bufSrc.Read)
+			if err != nil {
+				yield(nil, fmt.Errorf("read file header error: %w", err))
+				return
+			}
+
+			// TODO support fh.Open and fh.WriteTo.
+
+			if !yield(&fh, nil) {
+				return
+			}
+
+			// right now we're just advancing pass the compressed data.
+			switch n, err := io.Copy(io.Discard, io.LimitReader(src, int64(fh.CompressedSize64))); {
+			case err != nil && !errors.Is(err, io.EOF):
+				yield(nil, fmt.Errorf("read past file compressed data error: %w", err))
+				return
+			case uint64(n) < fh.CompressedSize64:
+				yield(nil, fmt.Errorf("read past file compressed data error: insufficient read: expected at least %d bytes, got %d", fh.CompressedSize64, n))
+				return
+			}
+		}
+	}
 }
 
 // ForwardWithReaderAt scans forwards the given io.ReaderAt for ZIP local file headers.
@@ -80,7 +122,69 @@ func Forward(src io.Reader) iter.Seq2[ReadableFileHeader, error] {
 // Because src is an io.ReaderAt, [ReadableFileHeader.Open] and [ReadableFileHeader.WriteTo] can be used concurrently
 // on multiple files in any order.
 func ForwardWithReaderAt(src io.ReaderAt) iter.Seq2[ReadableFileHeader, error] {
-	panic("implement me")
+	return func(yield func(ReadableFileHeader, error) bool) {
+		var (
+			// bb is the dynamic read/write buffer that stores data from previous read operations.
+			bb = &bytes.Buffer{}
+			// buf is the fixed-size read buffer for every src.ReadAt. the result of this read will be
+			// appended to bb which should never be longer than len(buf)+30.
+			buf = make([]byte, 16*1024)
+			// offset is the next offset to use with src.ReadAt.
+			offset int64
+		)
+
+		for {
+			// if bb has enough bytes for the fixed-size part of the CD file header then use it.
+			// if not, read the next batch.
+			if bbLen := bb.Len(); bbLen < 30 {
+				switch n, err := src.ReadAt(buf, offset); {
+				case err != nil && !errors.Is(err, io.EOF):
+					yield(nil, fmt.Errorf("read file header error: %w", err))
+					return
+				default:
+					bb.Write(buf[:n])
+					offset += int64(n)
+				}
+			}
+
+			switch bbLen := bb.Len(); {
+			case bbLen >= 4 && bytes.Compare(bb.Bytes()[:4], cdfhSigBytes) == 0:
+				return
+			case bbLen < 30:
+				yield(nil, fmt.Errorf("read file header error: insufficient read: expected at least 30 bytes, got %d", bbLen))
+				return
+			}
+
+			fh, err := unmarshalLocalFileHeader(([30]byte)(bb.Next(30)), func(b []byte) (int, error) {
+				bLen := len(b)
+				if bLen > bb.Len() {
+					switch n, err := src.ReadAt(buf, offset); {
+					case n < bLen || (err != nil && !errors.Is(err, io.EOF)):
+						return n, err
+					default:
+						bb.Write(buf[:n])
+						offset += int64(n)
+					}
+				}
+
+				return copy(b, bb.Next(bLen)), nil
+			})
+
+			if err != nil {
+				yield(nil, fmt.Errorf("read CD file header error: %w", err))
+				return
+			}
+
+			// TODO support fh.Open and fh.WriteTo.
+
+			if !yield(&fh, nil) {
+				return
+			}
+
+			// right now we're just advancing pass the compressed data.
+			offset += int64(fh.CompressedSize64)
+		}
+	}
 }
 
 // CentralDirectoryOptions customises how the central directory is scanned.
@@ -93,8 +197,8 @@ type CentralDirectoryOptions struct {
 
 // CentralDirectory scans from end of stream for ZIP central directory file headers.
 //
-// Returns the end-of-central-directory (EOCD) record, an iterator over the central directory file headers
-// (CentralDirectoryFileHeader), and any error from searching for and parsing the EOCD/CD.
+// Returns the end-of-central-directory (EOCD) record, an iterator over the central directory file headers, and any
+// error from searching for and parsing the EOCD/CD.
 //
 // The method assumes the contents from src contains exactly 1 well-formatted ZIP archive. All bets are off otherwise.
 // By default, only the last DefaultMaxBytes number of bytes are scanned. If an EOCD is not found in this range, it is
@@ -126,7 +230,7 @@ func CentralDirectory(src io.ReadSeeker, optFns ...func(*CentralDirectoryOptions
 		var (
 			// bufSrc wraps src to provide buffered read.
 			bufSrc = bufio.NewReaderSize(src, 16*1024)
-			// buf is the data slice to read 46 bytes which is the fixed-size part of the CD header.
+			// buf is the data slice to read 46 bytes which is the fixed-size part of the CD file header.
 			buf = make([]byte, 46)
 		)
 
@@ -138,7 +242,7 @@ func CentralDirectory(src io.ReadSeeker, optFns ...func(*CentralDirectoryOptions
 			case readN >= 4 && bytes.Compare(buf[:4], eocdSigBytes) == 0:
 				return
 			case readN < 46:
-				yield(nil, fmt.Errorf("read CD file header error: insufficient read: needs at least 46 bytes, got %d", readN))
+				yield(nil, fmt.Errorf("read CD file header error: insufficient read: expected at least 46 bytes, got %d", readN))
 				return
 			}
 
@@ -159,8 +263,8 @@ func CentralDirectory(src io.ReadSeeker, optFns ...func(*CentralDirectoryOptions
 
 // CentralDirectoryWithReaderAt scans from end of stream for ZIP central directory file headers.
 //
-// Returns the end-of-central-directory (EOCD) record, an iterator over the central directory file headers
-// (CentralDirectoryFileHeader), and any error from searching for and parsing the EOCD/CD.
+// Returns the end-of-central-directory (EOCD) record, an iterator over the central directory file headers, and any
+// error from searching for and parsing the EOCD/CD.
 //
 // The method assumes the contents from src contains exactly 1 well-formatted ZIP archive. All bets are off otherwise.
 // By default, only the last DefaultMaxBytes number of bytes are scanned. If an EOCD is not found in this range, it is
@@ -211,15 +315,15 @@ func CentralDirectoryWithReaderAt(src io.ReaderAt, size int64, optFns ...func(*C
 			case bbLen >= 4 && bytes.Compare(bb.Bytes()[:4], eocdSigBytes) == 0:
 				return
 			case bbLen < 46:
-				yield(nil, fmt.Errorf("read CD file header error: insufficient read: needs at least 46 bytes, got %d", bbLen))
+				yield(nil, fmt.Errorf("read CD file header error: insufficient read: expected at least 46 bytes, got %d", bbLen))
 				return
 			}
 
 			fh, err := unmarshalCDFileHeader(([46]byte)(bb.Next(46)), func(b []byte) (int, error) {
-				nmkLen := len(b)
-				if nmkLen > bb.Len() {
+				bLen := len(b)
+				if bLen > bb.Len() {
 					switch n, err := src.ReadAt(buf, offset); {
-					case n < nmkLen || (err != nil && !errors.Is(err, io.EOF)):
+					case n < bLen || (err != nil && !errors.Is(err, io.EOF)):
 						return n, err
 					default:
 						bb.Write(buf[:n])
@@ -227,7 +331,7 @@ func CentralDirectoryWithReaderAt(src io.ReaderAt, size int64, optFns ...func(*C
 					}
 				}
 
-				return copy(b, bb.Next(nmkLen)), nil
+				return copy(b, bb.Next(bLen)), nil
 			})
 
 			if err != nil {
