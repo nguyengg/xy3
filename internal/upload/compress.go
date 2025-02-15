@@ -9,7 +9,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/nguyengg/xy3/util"
-	"github.com/nguyengg/xy3/z"
+	"github.com/nguyengg/xy3/zipper"
 )
 
 // compress creates a new archive and compresses all files recursively starting at root.
@@ -23,10 +23,10 @@ func (c *Command) compress(ctx context.Context, root string) (f *os.File, conten
 		return
 	}
 
-	var pr z.ProgressReporter
-	if pr, err = z.NewProgressBarReporter(ctx, root, nil); err == nil {
-		err = z.CompressDir(ctx, root, f, func(options *z.CompressDirOptions) {
-			options.NewWriter = z.NewWriterWithDeflateLevel(flate.BestCompression)
+	var pr zipper.ProgressReporter
+	if pr, err = zipper.NewProgressBarReporter(ctx, root, nil); err == nil {
+		err = zipper.CompressDir(ctx, root, f, func(options *zipper.CompressDirOptions) {
+			options.NewWriter = zipper.NewWriterWithDeflateLevel(flate.BestCompression)
 			options.ProgressReporter = pr
 		})
 	}

@@ -18,14 +18,14 @@ import (
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/nguyengg/xy3/util"
-	"github.com/nguyengg/xy3/z"
+	"github.com/nguyengg/xy3/zipper"
 )
 
 func (c *Command) streamV2(ctx context.Context, man manifest.Manifest) (bool, error) {
 	// check for streaming eligibility by finding the ZIP headers.
 	headers, uncompressedSize, rootDir, err := c.canStream(ctx, man)
 	if err != nil {
-		if errors.Is(err, z.ErrNoEOCDFound) {
+		if errors.Is(err, zipper.ErrNoEOCDFound) {
 			return false, nil
 		}
 
@@ -72,7 +72,7 @@ func (c *Command) streamV2(ctx context.Context, man manifest.Manifest) (bool, er
 	}
 	defer r.Close()
 
-	inputs := make(chan z.CDFileHeader, len(headers))
+	inputs := make(chan zipper.CDFileHeader, len(headers))
 	bar := internal.DefaultBytes(int64(uncompressedSize), fmt.Sprintf("extracting %d files", len(headers)))
 	defer bar.Close()
 

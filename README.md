@@ -38,4 +38,4 @@ xy3 remove doc.txt.s3 log.zip.s3
 ## Go module to compress and extract Zip
 
 You can use `github.com/nguyengg/xy3/zipper` directly to ZIP-compress directories and extract them. See 
-[zipper](z) for more information.
+[zipper](zipper) for more information.
