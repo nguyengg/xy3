@@ -9,8 +9,6 @@ import (
 	"fmt"
 	"io"
 	"iter"
-
-	"github.com/valyala/bytebufferpool"
 )
 
 const (
@@ -197,15 +195,14 @@ func CentralDirectoryWithReaderAt(src io.ReaderAt, size int64, optFns ...func(*C
 
 	return r, func(yield func(ReadableFileHeader, error) bool) {
 		var (
-			// bb is the dynamic read buffer that stores data from previous read operations.
-			bb = bytebufferpool.Get()
+			// bb is the dynamic read/write buffer that stores data from previous read operations.
+			bb = &bytes.Buffer{}
 			// buf is the fixed-size read buffer for every src.ReadAt. the result of this read will be
-			// appended to bb which should never be longer than buf+46.
+			// appended to bb which should never be longer than len(buf)+46.
 			buf = make([]byte, 16*1024)
 			// offset is the next offset to use with src.ReadAt.
 			offset = int64(r.CDOffset)
 		)
-		defer bytebufferpool.Put(bb)
 
 		for {
 			// if bb has enough bytes for the fixed-size part of the CD file header then use it.
@@ -216,36 +213,32 @@ func CentralDirectoryWithReaderAt(src io.ReaderAt, size int64, optFns ...func(*C
 					yield(nil, fmt.Errorf("read CD file header error: %w", err))
 					return
 				default:
-					bb.B = append(bb.B, buf[:n]...)
+					bb.Write(buf[:n])
 					offset += int64(n)
 				}
 			}
 
 			switch bbLen := bb.Len(); {
-			case bbLen >= 4 && bytes.Compare(bb.B[:4], eocdSigBytes) == 0:
+			case bbLen >= 4 && bytes.Compare(bb.Bytes()[:4], eocdSigBytes) == 0:
 				return
 			case bbLen < 46:
 				yield(nil, fmt.Errorf("read CD file header error: insufficient read: needs at least 46 bytes, got %d", bbLen))
 				return
 			}
 
-			fh, err := parseCDFileHeader(([46]byte)(bb.B[:46]), func(b []byte) (int, error) {
+			fh, err := parseCDFileHeader(([46]byte)(bb.Next(46)), func(b []byte) (int, error) {
 				nmkLen := len(b)
-				bb.B = bb.B[46:]
-
 				if nmkLen > bb.Len() {
 					switch n, err := src.ReadAt(buf, offset); {
 					case n < nmkLen || (err != nil && !errors.Is(err, io.EOF)):
 						return n, err
 					default:
-						bb.B = append(bb.B, buf[:n]...)
+						bb.Write(buf[:n])
 						offset += int64(n)
 					}
 				}
 
-				copy(b, bb.B[:nmkLen])
-				bb.B = bb.B[nmkLen:]
-				return nmkLen, nil
+				return copy(b, bb.Next(nmkLen)), nil
 			})
 
 			if err != nil {
