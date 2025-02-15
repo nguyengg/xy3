@@ -1,4 +1,4 @@
-package cd
+package z
 
 import (
 	"archive/zip"
@@ -21,9 +21,9 @@ type FileHeader struct {
 	// the local file header.
 	//
 	// See https://en.wikipedia.org/wiki/ZIP_(file_format)#Central_directory_file_header_(CDFH).
-	Offset uint64
+	Offset int64
 
-	opener   func() (io.ReadCloser, error)
+	opener   func() (io.Reader, error)
 	writerTo func(io.Writer) (int64, error)
 }
 
@@ -52,15 +52,15 @@ type fixedSizeCDFileHeader struct {
 
 // Open returns a new io.Reader to the uncompressed file.
 //
-// It is safe to open concurrent files for read if the FileHeader was created using FindFromReaderAt since they use
+// It is safe to open concurrent files for read if the FileHeader was created using ScanFromReaderAt since they use
 // io.ReaderAt under the hood.
-func (f *FileHeader) Open() (io.ReadCloser, error) {
+func (f *FileHeader) Open() (io.Reader, error) {
 	return f.opener()
 }
 
 // WriteTo reads and decompress content to the given dst.
 //
-// It is safe to open concurrent files for read if the FileHeader was created using FindFromReaderAt since they use
+// It is safe to open concurrent files for read if the FileHeader was created using ScanFromReaderAt since they use
 // io.ReaderAt under the hood.
 func (f *FileHeader) WriteTo(dst io.Writer) (int64, error) {
 	return f.writerTo(dst)

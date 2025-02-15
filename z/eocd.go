@@ -1,4 +1,4 @@
-package cd
+package z
 
 import (
 	"bytes"
@@ -10,7 +10,7 @@ import (
 	"github.com/valyala/bytebufferpool"
 )
 
-// EOCDRecord models the end of central directory record of aa ZIP file.
+// EOCDRecord models the end of central directory record of a ZIP file.
 //
 // See https://en.wikipedia.org/wiki/ZIP_(file_format)#End_of_central_directory_record_(EOCD).
 type EOCDRecord struct {
@@ -27,20 +27,20 @@ type EOCDRecord struct {
 	// CDOffset is offset of start of central directory, relative to start of archive (or 0xffffffff for ZIP64).
 	CDOffset uint32
 	// Comment is the comment section of the EOCD.
-	Comment []byte
+	Comment string
 }
 
 // findEOCD searches the given src backwards for the EOCD record.
 func findEOCD(src io.ReadSeeker, opts *Options) (r EOCDRecord, err error) {
 	var (
-		// bb contains two parts: the most recently read data from byte 0 to byte 32*1024 (or n, whichever is smaller
-		// from the read call), and previously read data for the remaining bytes.
+		// bb contains two parts: the most recently read data from byte 0 to byte 16*1024 (or n, whichever is
+		// smaller from the read call), and previously read data for the remaining bytes.
 		bb = bytebufferpool.Get()
 		// buf is the buffer for a single read which is then prepended to bb.B.
-		buf     = make([]byte, 32*1024)
-		bufSize = int64(32 * 1024)
-		offset  int64
-		n, m    int
+		buf          = make([]byte, 16*1024)
+		bufSize      = int64(len(buf))
+		offset       int64
+		readN, bbLen int
 	)
 	defer bytebufferpool.Put(bb)
 
@@ -67,33 +67,43 @@ func findEOCD(src io.ReadSeeker, opts *Options) (r EOCDRecord, err error) {
 		}
 
 		// bb.Len() must be at least 22 bytes since that is the minimum EOCD size.
-		if n, err = src.Read(buf); err != nil && !errors.Is(err, io.EOF) {
+		if readN, err = src.Read(buf); err != nil && !errors.Is(err, io.EOF) {
 			return r, fmt.Errorf("find EOCD: read error: %w", err)
 		} else {
-			bb.B = append(buf[:n], bb.B...)
-			if m = bb.Len(); m < 22 {
-				return r, fmt.Errorf("find EOCD: read returns insufficient data, need at least 22 bytes, got %d", n)
+			// must copy to prevent byte slicing shenanigans since we'll be reusing buf.
+			b := make([]byte, readN+bbLen)
+			_ = copy(b, buf[:readN])
+			_ = copy(b[readN:], bb.B)
+			bb.B = b
+			if i := bytes.Index(b, buf[:readN]); i != 0 {
+				panic(fmt.Errorf("expected i == 0, got %d", i))
+			}
+			//if i := bytes.Index(bb.B, b); len(b) > 0 && i != readN {
+			//	panic(fmt.Errorf("expected i == %d, got %d", readN, i))
+			//}
+			if bbLen = bb.Len(); bbLen < 22 {
+				return r, fmt.Errorf("find EOCD: read returns insufficient data, need at least 22 bytes, got %d", readN)
 			}
 		}
 
 		// when searching for EOCD signature, start at n+3 if possible to avoid reading through previous data.
-		if i := bytes.LastIndex(bb.B[:min(n+3, m)], sigEOCD); i != -1 {
-			br := &fixedSizeEOCDRecord{}
-			if err = binary.Read(bytes.NewReader(bb.B[i:i+22]), binary.LittleEndian, br); err != nil {
+		if i := bytes.LastIndex(bb.B[:min(readN+3, bbLen)], sigEOCD); i != -1 {
+			fsr := &fixedSizeEOCDRecord{}
+			if err = binary.Read(bytes.NewReader(bb.B[i:i+22]), binary.LittleEndian, fsr); err != nil {
 				return r, fmt.Errorf("find EOCD: parse error: %w", err)
 			}
 
 			r = EOCDRecord{
-				DiskNumber:    br.DiskNumber,
-				CDDiskOffset:  br.CDDiskOffset,
-				CDCountOnDisk: br.CDCountOnDisk,
-				CDCount:       br.CDCount,
-				CDSize:        br.CDSize,
-				CDOffset:      br.CDOffset,
+				DiskNumber:    fsr.DiskNumber,
+				CDDiskOffset:  fsr.CDDiskOffset,
+				CDCountOnDisk: fsr.CDCountOnDisk,
+				CDCount:       fsr.CDCount,
+				CDSize:        fsr.CDSize,
+				CDOffset:      fsr.CDOffset,
 			}
 			if opts.KeepComment {
-				if r.Comment = bb.B[i+22:]; len(r.Comment) != int(br.CommentLength) {
-					return r, fmt.Errorf("find EOCD: mismatched comment size, expected %d, got %d", br.CommentLength, len(r.Comment))
+				if r.Comment = string(bb.B[i+22:]); len(r.Comment) != int(fsr.CommentLength) {
+					return r, fmt.Errorf("find EOCD: mismatched comment size, expected %d, got %d", fsr.CommentLength, len(r.Comment))
 				}
 			}
 
@@ -101,7 +111,7 @@ func findEOCD(src io.ReadSeeker, opts *Options) (r EOCDRecord, err error) {
 		}
 
 		// if we're already at start of file or at limit, stop reading.
-		if offset == 0 || (opts.MaxBytes > 0 && int64(m) >= opts.MaxBytes) {
+		if offset == 0 || (opts.MaxBytes > 0 && int64(bbLen) >= opts.MaxBytes) {
 			return r, ErrNoEOCDFound
 		}
 
@@ -109,6 +119,8 @@ func findEOCD(src io.ReadSeeker, opts *Options) (r EOCDRecord, err error) {
 		if offset < bufSize {
 			buf = make([]byte, offset)
 			offset = 0
+		} else {
+			offset -= bufSize
 		}
 
 		// move offset to prepare for next read.
