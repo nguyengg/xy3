@@ -3,7 +3,6 @@ package scan
 import (
 	"archive/zip"
 	"bytes"
-	"context"
 	"fmt"
 	"math/rand/v2"
 	"os"
@@ -50,7 +49,7 @@ func TestFindEOCD_FromFile(t *testing.T) {
 			assert.NoErrorf(t, err, "os.Open(%s) error = %v", tt.testdata, err)
 			defer f.Close()
 
-			r, err := findEOCD(f, &CentralDirectoryOptions{Ctx: context.Background()})
+			r, err := findEOCD(f, &CentralDirectoryOptions{})
 			assert.NoErrorf(t, err, "findEOCD(%s) error = %v", tt.testdata, err)
 			assert.Equal(t, tt.expected, r)
 		})
@@ -96,10 +95,7 @@ func TestFindEOCD_WithComment(t *testing.T) {
 				assert.NoErrorf(t, err, "Close() error = %v", err)
 				assert.Equalf(t, tt.commentLength+22+delta, buf.Len(), "Mismatched buffer size; got = %d, want = %d", buf.Len(), tt.commentLength+22+delta)
 
-				r, err := findEOCD(bytes.NewReader(buf.Bytes()), &CentralDirectoryOptions{
-					Ctx:         context.Background(),
-					KeepComment: true,
-				})
+				r, err := findEOCD(bytes.NewReader(buf.Bytes()), &CentralDirectoryOptions{})
 				assert.NoErrorf(t, err, "findEOCD() error = %v", err)
 				assert.Equal(t, string(comment), r.Comment)
 			})

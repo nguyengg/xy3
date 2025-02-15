@@ -11,13 +11,15 @@ import (
 )
 
 const (
+	lfhSig  = 0x04034b50
 	cdfhSig = 0x02014b50
 	eocdSig = 0x06054b50
 )
 
 var (
-	cdfhSigBytes = putUint32(0x02014b50)
-	eocdSigBytes = putUint32(0x06054b50)
+	lfhSigBytes  = putUint32(lfhSig)
+	cdfhSigBytes = putUint32(cdfhSig)
+	eocdSigBytes = putUint32(eocdSig)
 )
 
 func putUint32(v uint32) (b []byte) {
@@ -62,33 +64,10 @@ func (f *CentralDirectoryFileHeader) WriteTo(dst io.Writer) (int64, error) {
 	panic("implement me")
 }
 
-// fixedSizeCDFileHeader needs to be fixed size to work with binary.Read.
-//
-// https://en.wikipedia.org/wiki/ZIP_(file_format)#Central_directory_file_header_(CDFH)
-type fixedSizeCDFileHeader struct {
-	Signature         uint32
-	CreatorVersion    uint16
-	ReaderVersion     uint16
-	Flags             uint16
-	Method            uint16
-	ModifiedTime      uint16
-	ModifiedDate      uint16
-	CRC32             uint32
-	CompressedSize    uint32
-	UncompressedSize  uint32
-	FileNameLength    uint16
-	ExtraFieldLength  uint16
-	FileCommentLength uint16
-	DiskNumber        uint16
-	InternalAttrs     uint16
-	ExternalAttrs     uint32
-	Offset            uint32
-}
-
-// parseCDFileHeader parses the 46-byte slice as a CentralDirectoryFileHeader.
-// read will also be called to retrieve the variable-size part of the header. if there is no variable-size part, read
+// unmarshalCDFileHeader decodes the 46-byte slice as a CentralDirectoryFileHeader.
+// read will always be called to retrieve the variable-size part of the header. if there is no variable-size part, read
 // will be passed an empty slice.
-func parseCDFileHeader(b [46]byte, read func(b []byte) (int, error)) (fh CentralDirectoryFileHeader, err error) {
+func unmarshalCDFileHeader(b [46]byte, read func(b []byte) (int, error)) (fh CentralDirectoryFileHeader, err error) {
 	data := &struct {
 		Signature         uint32
 		CreatorVersion    uint16
@@ -150,31 +129,6 @@ func parseCDFileHeader(b [46]byte, read func(b []byte) (int, error)) (fh Central
 	}
 
 	return fh, nil
-}
-
-func (fsfh *fixedSizeCDFileHeader) toFileHeader() *CentralDirectoryFileHeader {
-	fh := zip.FileHeader{
-		CreatorVersion:     fsfh.CreatorVersion,
-		ReaderVersion:      fsfh.ReaderVersion,
-		Flags:              fsfh.Flags,
-		Method:             fsfh.Method,
-		Modified:           time.Time{},
-		ModifiedTime:       fsfh.ModifiedTime,
-		ModifiedDate:       fsfh.ModifiedDate,
-		CRC32:              fsfh.CRC32,
-		CompressedSize:     fsfh.CompressedSize,
-		UncompressedSize:   fsfh.UncompressedSize,
-		CompressedSize64:   uint64(fsfh.CompressedSize),
-		UncompressedSize64: uint64(fsfh.UncompressedSize),
-		ExternalAttrs:      fsfh.ExternalAttrs,
-	}
-	fh.Modified = msDosTimeToTime(fh.ModifiedDate, fh.ModifiedTime)
-
-	return &CentralDirectoryFileHeader{
-		fh:         fh,
-		DiskNumber: fsfh.DiskNumber,
-		Offset:     int64(fsfh.Offset),
-	}
 }
 
 // msDosTimeToTime converts an MS-DOS date and time into a time.Time.

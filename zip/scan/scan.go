@@ -4,7 +4,6 @@ import (
 	"archive/zip"
 	"bufio"
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -56,11 +55,12 @@ type ReadableFileHeader interface {
 	FileHeader() zip.FileHeader
 }
 
-// Forward scans forwards the given io.Reader for the local file headers.
+// Forward scans forwards the given io.Reader for ZIP local file headers.
 //
 // The headers are returned as an interator which is stopped if any error is encountered. Each header can be inspected
 // for metadata or can be opened to read its uncompressed content using [ReadableFileHeader.Open] and
-// [ReadableFileHeader.WriteTo].
+// [ReadableFileHeader.WriteTo]. If you only need to list all files in a ZIP archive, consider CentralDirectory which
+// scans from end of stream for the central directory instead.
 //
 // Because src is an io.Reader, [ReadableFileHeader.Open] and [ReadableFileHeader.WriteTo] cannot be used concurrently
 // on multiple files lest ErrConcurrentReadNotSupported is returned. If src also implements io.Seeker,
@@ -70,11 +70,12 @@ func Forward(src io.Reader) iter.Seq2[ReadableFileHeader, error] {
 	panic("implement me")
 }
 
-// ForwardWithReaderAt scans forwards the given io.ReaderAt for the local file headers.
+// ForwardWithReaderAt scans forwards the given io.ReaderAt for ZIP local file headers.
 //
 // The headers are returned as an interator which is stopped if any error is encountered. Each header can be inspected
 // for metadata or can be opened to read its uncompressed content using [ReadableFileHeader.Open] and
-// [ReadableFileHeader.WriteTo].
+// [ReadableFileHeader.WriteTo]. If you only need to list all files in a ZIP archive, consider
+// CentralDirectoryWithReaderAt which scans from end of stream for the central directory instead.
 //
 // Because src is an io.ReaderAt, [ReadableFileHeader.Open] and [ReadableFileHeader.WriteTo] can be used concurrently
 // on multiple files in any order.
@@ -84,21 +85,13 @@ func ForwardWithReaderAt(src io.ReaderAt) iter.Seq2[ReadableFileHeader, error] {
 
 // CentralDirectoryOptions customises how the central directory is scanned.
 type CentralDirectoryOptions struct {
-	// Ctx can be given to cancel the scanning prematurely.
-	Ctx context.Context
-
 	// MaxBytes can be given to limit the number of bytes scanned.
 	//
 	// By default, DefaultMaxBytes is used. Set this to 0 or to the file size to force scanning the entire file.
 	MaxBytes int64
-
-	// KeepComment controls whether header's comment is kept or discarded.
-	//
-	// By default, the zero value discards comment fields from all returned records and headers.
-	KeepComment bool
 }
 
-// CentralDirectory scans backwards from the given io.ReadSeeker for the central directory file headers.
+// CentralDirectory scans from end of stream for ZIP central directory file headers.
 //
 // Returns the end-of-central-directory (EOCD) record, an iterator over the central directory file headers
 // (CentralDirectoryFileHeader), and any error from searching for and parsing the EOCD/CD.
@@ -114,9 +107,7 @@ type CentralDirectoryOptions struct {
 // by the iterator since seek is supported.
 func CentralDirectory(src io.ReadSeeker, optFns ...func(*CentralDirectoryOptions)) (EOCDRecord, iter.Seq2[ReadableFileHeader, error], error) {
 	opts := &CentralDirectoryOptions{
-		Ctx:         context.Background(),
-		MaxBytes:    DefaultMaxBytes,
-		KeepComment: false,
+		MaxBytes: DefaultMaxBytes,
 	}
 	for _, fn := range optFns {
 		fn(opts)
@@ -151,7 +142,7 @@ func CentralDirectory(src io.ReadSeeker, optFns ...func(*CentralDirectoryOptions
 				return
 			}
 
-			fh, err := parseCDFileHeader(([46]byte)(buf), bufSrc.Read)
+			fh, err := unmarshalCDFileHeader(([46]byte)(buf), bufSrc.Read)
 			if err != nil {
 				yield(nil, fmt.Errorf("read CD file header error: %w", err))
 				return
@@ -166,7 +157,7 @@ func CentralDirectory(src io.ReadSeeker, optFns ...func(*CentralDirectoryOptions
 	}, nil
 }
 
-// CentralDirectoryWithReaderAt scans backwards from the given io.ReaderAt and size for the central directory (CD).
+// CentralDirectoryWithReaderAt scans from end of stream for ZIP central directory file headers.
 //
 // Returns the end-of-central-directory (EOCD) record, an iterator over the central directory file headers
 // (CentralDirectoryFileHeader), and any error from searching for and parsing the EOCD/CD.
@@ -180,9 +171,7 @@ func CentralDirectory(src io.ReadSeeker, optFns ...func(*CentralDirectoryOptions
 // on multiple files in any order.
 func CentralDirectoryWithReaderAt(src io.ReaderAt, size int64, optFns ...func(*CentralDirectoryOptions)) (EOCDRecord, iter.Seq2[ReadableFileHeader, error], error) {
 	opts := &CentralDirectoryOptions{
-		Ctx:         context.Background(),
-		MaxBytes:    DefaultMaxBytes,
-		KeepComment: false,
+		MaxBytes: DefaultMaxBytes,
 	}
 	for _, fn := range optFns {
 		fn(opts)
@@ -226,7 +215,7 @@ func CentralDirectoryWithReaderAt(src io.ReaderAt, size int64, optFns ...func(*C
 				return
 			}
 
-			fh, err := parseCDFileHeader(([46]byte)(bb.Next(46)), func(b []byte) (int, error) {
+			fh, err := unmarshalCDFileHeader(([46]byte)(bb.Next(46)), func(b []byte) (int, error) {
 				nmkLen := len(b)
 				if nmkLen > bb.Len() {
 					switch n, err := src.ReadAt(buf, offset); {

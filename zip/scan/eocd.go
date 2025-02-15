@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-
-	"github.com/valyala/bytebufferpool"
 )
 
 // EOCDRecord models the end of central directory record of a ZIP file.
@@ -33,17 +31,15 @@ type EOCDRecord struct {
 // findEOCD searches the given src backwards for the EOCD record.
 func findEOCD(src io.ReadSeeker, opts *CentralDirectoryOptions) (r EOCDRecord, err error) {
 	var (
-		// bb contains two parts: the most recently read data from byte 0 to byte 16*1024 (or n, whichever is
-		// smaller from the read call), and previously read data for the remaining bytes.
-		bb = bytebufferpool.Get()
-		// buf is the buffer for a single read which is then prepended to bb.B.
-		buf = make([]byte, 16*1024)
-
-		bufSize      = int64(len(buf))
-		offset       int64
-		readN, bbLen int
+		// two buffers are used.
+		// buf is the fixed-size read buffer to be used with src.Read.
+		// b is the variable-sized read buffer that contains data from previous reads.
+		// after buf is written to with src.Read, buf is prepended to b so that processing on b is easy.
+		buf     = make([]byte, 16*1024)
+		b       = make([]byte, 0)
+		bufSize = int64(len(buf))
+		offset  int64
 	)
-	defer bytebufferpool.Put(bb)
 
 	// the first seek is only for the last 22 bytes so that we can get an accurate assessment of the file size
 	// from the offset (size = offset + 22).
@@ -61,52 +57,30 @@ func findEOCD(src io.ReadSeeker, opts *CentralDirectoryOptions) (r EOCDRecord, e
 	}
 
 	for {
-		select {
-		case <-opts.Ctx.Done():
-			return r, opts.Ctx.Err()
-		default:
-		}
-
-		// bb.Len() must be at least 22 bytes since that is the minimum EOCD size.
-		if readN, err = src.Read(buf); err != nil && !errors.Is(err, io.EOF) {
+		switch n, err := src.Read(buf); {
+		case err != nil && !errors.Is(err, io.EOF):
 			return r, fmt.Errorf("find EOCD: read error: %w", err)
-		} else {
-			// must copy to prevent byte slicing shenanigans since we'll be reusing buf.
-			b := make([]byte, readN+bbLen)
-			_ = copy(b, buf[:readN])
-			_ = copy(b[readN:], bb.B)
-			bb.B = b
-			if bbLen = bb.Len(); bbLen < 22 {
-				return r, fmt.Errorf("find EOCD: insufficient read: need at least 22 bytes, got %d", readN)
-			}
-		}
+		default:
+			b = append(make([]byte, n), b...)
+			copy(b, buf[:n])
 
-		// when searching for EOCD signature, start at n+3 if possible to avoid reading through previous data.
-		if i := bytes.LastIndex(bb.B[:min(readN+3, bbLen)], eocdSigBytes); i != -1 {
-			fsr := &fixedSizeEOCDRecord{}
-			if err = binary.Read(bytes.NewReader(bb.B[i:i+22]), binary.LittleEndian, fsr); err != nil {
-				return r, fmt.Errorf("find EOCD: parse error: %w", err)
+			if len(b) < 22 {
+				return r, fmt.Errorf("find EOCD: insufficient read: need at least 22 bytes, got %d", n)
 			}
 
-			r = EOCDRecord{
-				DiskNumber:    fsr.DiskNumber,
-				CDDiskOffset:  fsr.CDDiskOffset,
-				CDCountOnDisk: fsr.CDCountOnDisk,
-				CDCount:       fsr.CDCount,
-				CDSize:        fsr.CDSize,
-				CDOffset:      fsr.CDOffset,
-			}
-			if opts.KeepComment {
-				if r.Comment = string(bb.B[i+22:]); len(r.Comment) != int(fsr.CommentLength) {
-					return r, fmt.Errorf("find EOCD: mismatched comment size, expected %d, got %d", fsr.CommentLength, len(r.Comment))
+			if i := bytes.LastIndex(b[:min(n+3, len(b))], eocdSigBytes); i != -1 {
+				if r, err = unmarshalEOCDRecord(([22]byte)(b[i:i+22]), func(c []byte) (int, error) {
+					return copy(c, b[i+22:]), nil
+				}); err != nil {
+					return r, fmt.Errorf("find ECOD: %w", err)
 				}
-			}
 
-			return
+				return r, nil
+			}
 		}
 
 		// if we're already at start of file or at limit, stop reading.
-		if offset == 0 || (opts.MaxBytes > 0 && int64(bbLen) >= opts.MaxBytes) {
+		if offset == 0 || (opts.MaxBytes > 0 && int64(len(b)) >= opts.MaxBytes) {
 			return r, ErrNoEOCDFound
 		}
 
@@ -125,16 +99,47 @@ func findEOCD(src io.ReadSeeker, opts *CentralDirectoryOptions) (r EOCDRecord, e
 	}
 }
 
-// fixedSizeEOCDRecord needs to be fixed size to work with binary.Read.
-//
-// https://en.wikipedia.org/wiki/ZIP_(file_format)#End_of_central_directory_record_(EOCD)
-type fixedSizeEOCDRecord struct {
-	Signature     uint32
-	DiskNumber    uint16
-	CDDiskOffset  uint16
-	CDCountOnDisk uint16
-	CDCount       uint16
-	CDSize        uint32
-	CDOffset      uint32
-	CommentLength uint16
+// unmarshalEOCDRecord decodes the 22-byte slice as a EOCDRecord.
+// read will always be called to retrieve the variable-size part of the header. if there is no variable-size part, read
+// will be passed an empty slice.
+func unmarshalEOCDRecord(b [22]byte, read func(b []byte) (int, error)) (r EOCDRecord, err error) {
+	data := &struct {
+		Signature     uint32
+		DiskNumber    uint16
+		CDDiskOffset  uint16
+		CDCountOnDisk uint16
+		CDCount       uint16
+		CDSize        uint32
+		CDOffset      uint32
+		CommentLength uint16
+	}{}
+
+	if bytes.Compare(eocdSigBytes, b[:4]) != 0 {
+		return r, fmt.Errorf("mismatched signature, got 0x%x, expected 0x%x", b[:4], eocdSigBytes)
+	}
+
+	if err = binary.Read(bytes.NewReader(b[:]), binary.LittleEndian, data); err != nil {
+		return r, fmt.Errorf("unmarshal error: %w", err)
+	}
+
+	r = EOCDRecord{
+		DiskNumber:    data.DiskNumber,
+		CDDiskOffset:  data.CDDiskOffset,
+		CDCountOnDisk: data.CDCountOnDisk,
+		CDCount:       data.CDCount,
+		CDSize:        data.CDSize,
+		CDOffset:      data.CDOffset,
+	}
+
+	comment := make([]byte, data.CommentLength)
+	switch readN, err := read(comment); {
+	case err != nil && !errors.Is(err, io.EOF):
+		return r, fmt.Errorf("read variable-size data error: %w", err)
+	case readN < int(data.CommentLength):
+		return r, fmt.Errorf("read variable-size data error: insufficient read: needs at least %d bytes, got %d", data.CommentLength, readN)
+	default:
+		r.Comment = string(comment)
+	}
+
+	return r, nil
 }
