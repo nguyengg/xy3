@@ -66,6 +66,8 @@ type ReadableFileHeader interface {
 // on multiple files lest ErrConcurrentReadNotSupported is returned. If src also implements io.Seeker,
 // [ReadableFileHeader.Open] and [ReadableFileHeader.WriteTo] can be called multiple times on the same local file or
 // previous files that were returned by the iterator; ErrSeekNotSupported is returned otherwise.
+//
+// Known bug: currently, the returned file headers do not account for data descriptor.
 func Forward(src io.Reader) iter.Seq2[ReadableFileHeader, error] {
 	return func(yield func(ReadableFileHeader, error) bool) {
 		var (
@@ -101,7 +103,7 @@ func Forward(src io.Reader) iter.Seq2[ReadableFileHeader, error] {
 			}
 
 			// TODO support fh.Open and fh.WriteTo.
-			fh.offset = fhOffset
+			fh.localHeaderOffset = fhOffset
 			if !yield(&fh, nil) {
 				return
 			}
@@ -130,6 +132,8 @@ func Forward(src io.Reader) iter.Seq2[ReadableFileHeader, error] {
 //
 // Because src is an io.ReaderAt, [ReadableFileHeader.Open] and [ReadableFileHeader.WriteTo] can be used concurrently
 // on multiple files in any order.
+//
+// Known bug: currently, the returned file headers do not account for data descriptor.
 func ForwardWithReaderAt(src io.ReaderAt) iter.Seq2[ReadableFileHeader, error] {
 	return func(yield func(ReadableFileHeader, error) bool) {
 		var (
@@ -187,7 +191,7 @@ func ForwardWithReaderAt(src io.ReaderAt) iter.Seq2[ReadableFileHeader, error] {
 			}
 
 			// TODO support fh.Open and fh.WriteTo.
-			fh.offset = fhOffset
+			fh.localHeaderOffset = fhOffset
 			fh.readerAt = src
 			if !yield(&fh, nil) {
 				return
@@ -235,16 +239,19 @@ func CentralDirectory(src io.ReadSeeker, optFns ...func(*CentralDirectoryOptions
 	}
 
 	return r, func(yield func(ReadableFileHeader, error) bool) {
-		if _, err := src.Seek(int64(r.CDOffset), io.SeekStart); err != nil {
+		var (
+			// wrap original src to provide a way to track offset.
+			seeker = &cdReadSeeker{ReadSeeker: src}
+			// bufSrc wraps seeker to provide buffered read.
+			bufSrc = bufio.NewReaderSize(seeker, 16*1024)
+			// buf is the data slice to read 46 bytes which is the fixed-size part of the CD file header.
+			buf    = make([]byte, 46)
+			offset int64
+		)
+
+		if offset, err = seeker.Seek(int64(r.CDOffset), io.SeekStart); err != nil {
 			yield(nil, fmt.Errorf("next CD file header: set read offset to start of central directory (0x%x) error: %w", r.CDOffset, err))
 		}
-
-		var (
-			// bufSrc wraps src to provide buffered read.
-			bufSrc = bufio.NewReaderSize(src, 16*1024)
-			// buf is the data slice to read 46 bytes which is the fixed-size part of the CD file header.
-			buf = make([]byte, 46)
-		)
 
 		for {
 			switch readN, err := bufSrc.Read(buf); {
@@ -264,10 +271,20 @@ func CentralDirectory(src io.ReadSeeker, optFns ...func(*CentralDirectoryOptions
 				return
 			}
 
-			// TODO support fh.Open and fh.WriteTo.
+			// if seeker.offset has changed after yield, that means user has used Open or WriteTo so we'll
+			// reset offset and buffer.
+			offset = seeker.offset
+			fh.readSeeker = seeker
 
 			if !yield(&fh, nil) {
 				return
+			}
+
+			if seeker.offset != offset {
+				if _, err = seeker.Seek(offset, io.SeekStart); err != nil {
+					yield(nil, fmt.Errorf("next CD file header: set read offset to next header (0x%x) error: %w", offset, err))
+					return
+				}
 			}
 		}
 	}, nil
@@ -351,8 +368,8 @@ func CentralDirectoryWithReaderAt(src io.ReaderAt, size int64, optFns ...func(*C
 				return
 			}
 
-			// TODO support fh.Open and fh.WriteTo.
 			fh.readerAt = src
+
 			if !yield(&fh, nil) {
 				return
 			}

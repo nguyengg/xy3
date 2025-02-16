@@ -1,7 +1,11 @@
 package scan
 
 import (
+	"archive/zip"
+	"bytes"
+	"crypto/rand"
 	"fmt"
+	"io"
 	"iter"
 	"os"
 	"testing"
@@ -20,12 +24,22 @@ func collectCRC32sAndOffsets(it iter.Seq2[ReadableFileHeader, error]) (crc32s, o
 
 		if v, ok := fh.(*localFileHeader); ok {
 			crc32s[v.Name] = int64(v.CRC32)
-			offsets[v.Name] = v.offset
+			offsets[v.Name] = v.localHeaderOffset
 			continue
 		}
 		if v, ok := fh.(*cdFileHeader); ok {
 			crc32s[v.Name] = int64(v.CRC32)
-			offsets[v.Name] = v.offset
+			offsets[v.Name] = v.localHeaderOffset
+
+			if _, err = v.Open(); err != nil {
+				return nil, nil, err
+			}
+
+			// TODO see why WriteTo breaks the test.
+			//if _, err = v.WriteTo(io.Discard); err != nil {
+			//	return nil, nil, err
+			//}
+
 			continue
 		}
 
@@ -140,5 +154,63 @@ func TestScan(t *testing.T) {
 			assert.Equal(t, tt.expectedCRC32s, crc32s)
 			assert.Equal(t, tt.expectedOffsets, offsets)
 		})
+	}
+}
+
+func TestCdFileHeader_OpenWriteToWithReaderAt(t *testing.T) {
+	// this will create a ZIP file with a local header that requires data descriptor.
+	expected := make([]byte, 1024)
+	_, _ = io.ReadFull(rand.Reader, expected)
+	buf := &bytes.Buffer{}
+	zw := zip.NewWriter(buf)
+	w, _ := zw.Create("test")
+	_, _ = w.Write(expected)
+	_ = zw.Close()
+
+	_, headers, err := CentralDirectoryWithReaderAt(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	assert.NoErrorf(t, err, "CentralDirectoryWithReaderAt(...) error = %v", err)
+
+	for fh := range headers {
+		// test Open first.
+		r, err := fh.Open()
+		assert.NoErrorf(t, err, "CdFileHeader.Open() error = %v", err)
+		actual, err := io.ReadAll(r)
+		assert.NoErrorf(t, err, "ReadAll(...) error = %v", err)
+		assert.Equal(t, expected, actual)
+
+		// test WriteTo next.
+		newBuf := &bytes.Buffer{}
+		_, err = fh.WriteTo(newBuf)
+		assert.NoErrorf(t, err, "WriteTo(...) error = %v", err)
+		assert.Equal(t, expected, newBuf.Bytes())
+	}
+}
+
+func TestCdFileHeader_OpenWriteToWithReader(t *testing.T) {
+	// this will create a ZIP file with a local header that requires data descriptor.
+	expected := make([]byte, 1024)
+	_, _ = io.ReadFull(rand.Reader, expected)
+	buf := &bytes.Buffer{}
+	zw := zip.NewWriter(buf)
+	w, _ := zw.Create("test")
+	_, _ = w.Write(expected)
+	_ = zw.Close()
+
+	_, headers, err := CentralDirectory(bytes.NewReader(buf.Bytes()))
+	assert.NoErrorf(t, err, "CentralDirectory(...) error = %v", err)
+
+	for fh := range headers {
+		// test Open first.
+		r, err := fh.Open()
+		assert.NoErrorf(t, err, "CdFileHeader.Open() error = %v", err)
+		actual, err := io.ReadAll(r)
+		assert.NoErrorf(t, err, "ReadAll(...) error = %v", err)
+		assert.Equal(t, expected, actual)
+
+		// test WriteTo next.
+		newBuf := &bytes.Buffer{}
+		_, err = fh.WriteTo(newBuf)
+		assert.NoErrorf(t, err, "WriteTo(...) error = %v", err)
+		assert.Equal(t, expected, newBuf.Bytes())
 	}
 }

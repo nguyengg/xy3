@@ -3,6 +3,7 @@ package scan
 import (
 	"archive/zip"
 	"bytes"
+	"compress/flate"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -14,12 +15,14 @@ const (
 	lfhSig  = 0x04034b50
 	cdfhSig = 0x02014b50
 	eocdSig = 0x06054b50
+	descSig = 0x08074b50
 )
 
 var (
 	lfhSigBytes  = putUint32(lfhSig)
 	cdfhSigBytes = putUint32(cdfhSig)
 	eocdSigBytes = putUint32(eocdSig)
+	descSigBytes = putUint32(descSig)
 )
 
 func putUint32(v uint32) (b []byte) {
@@ -32,8 +35,8 @@ func putUint32(v uint32) (b []byte) {
 type localFileHeader struct {
 	zip.FileHeader
 
-	offset   int64
-	readerAt io.ReaderAt
+	localHeaderOffset int64
+	readerAt          io.ReaderAt
 }
 
 // unmarshalLocalFileHeader decodes the 30-byte slice as a localFileHeader.
@@ -62,6 +65,7 @@ func unmarshalLocalFileHeader(b [30]byte, read func(b []byte) (int, error)) (fh 
 		return fh, fmt.Errorf("unmarshal error: %w", err)
 	}
 
+	// TODO fix CRC32 and sizes when data descriptor is required.
 	fh = localFileHeader{
 		FileHeader: zip.FileHeader{
 			ReaderVersion:      data.ReaderVersion,
@@ -94,20 +98,14 @@ func unmarshalLocalFileHeader(b [30]byte, read func(b []byte) (int, error)) (fh 
 }
 
 func (f *localFileHeader) Open() (io.Reader, error) {
-	if f.readerAt != nil {
-		return io.NewSectionReader(f.readerAt, f.offset, int64(f.CompressedSize64)), nil
-	}
-
 	//TODO implement me
+	// need support for https://en.wikipedia.org/wiki/ZIP_(file_format)#Data_descriptor
 	panic("implement me")
 }
 
 func (f *localFileHeader) WriteTo(dst io.Writer) (int64, error) {
-	if f.readerAt != nil {
-		return io.Copy(dst, io.NewSectionReader(f.readerAt, f.offset, int64(f.CompressedSize64)))
-	}
-
 	//TODO implement me
+	// need support for https://en.wikipedia.org/wiki/ZIP_(file_format)#Data_descriptor
 	panic("implement me")
 }
 
@@ -119,17 +117,33 @@ func (f *localFileHeader) ZipFileHeader() zip.FileHeader {
 type cdFileHeader struct {
 	zip.FileHeader
 
-	offset   int64
-	readerAt io.ReaderAt
+	localHeaderOffset int64
+	readSeeker        *cdReadSeeker
+	readerAt          io.ReaderAt
 }
 
-func (f *cdFileHeader) Open() (io.Reader, error) {
+func (f *cdFileHeader) Open() (r io.Reader, err error) {
+	offset := f.localHeaderOffset + 30 + int64(len(f.Name)+len(f.Extra))
+
 	if f.readerAt != nil {
-		return io.NewSectionReader(f.readerAt, f.offset, int64(f.CompressedSize64)), nil
+		r = io.NewSectionReader(f.readerAt, offset, int64(f.CompressedSize64))
+		if f.Method == zip.Deflate {
+			r = flate.NewReader(r)
+		}
+
+		return
 	}
 
-	//TODO implement me
-	panic("implement me")
+	if _, err = f.readSeeker.Seek(offset, io.SeekStart); err != nil {
+		return nil, err
+	}
+
+	r = io.LimitReader(f.readSeeker, int64(f.CompressedSize64))
+	if f.Method == zip.Deflate {
+		r = flate.NewReader(r)
+	}
+
+	return
 }
 
 // WriteTo reads and decompress content to the given dst.
@@ -137,12 +151,27 @@ func (f *cdFileHeader) Open() (io.Reader, error) {
 // It is safe to open concurrent files for read if the cdFileHeader was created using ScanFromReaderAt since they use
 // io.ReaderAt under the hood.
 func (f *cdFileHeader) WriteTo(dst io.Writer) (int64, error) {
+	offset := f.localHeaderOffset + 30 + int64(len(f.Name)+len(f.Extra))
+
 	if f.readerAt != nil {
-		return io.Copy(dst, io.NewSectionReader(f.readerAt, f.offset, int64(f.CompressedSize64)))
+		var r io.Reader = io.NewSectionReader(f.readerAt, offset, int64(f.CompressedSize64))
+		if f.Method == zip.Deflate {
+			r = flate.NewReader(r)
+		}
+
+		return io.Copy(dst, r)
 	}
 
-	//TODO implement me
-	panic("implement me")
+	if _, err := f.readSeeker.Seek(offset, io.SeekStart); err != nil {
+		return 0, err
+	}
+
+	r := io.LimitReader(f.readSeeker, int64(f.CompressedSize64))
+	if f.Method == zip.Deflate {
+		r = flate.NewReader(r)
+	}
+
+	return io.Copy(dst, r)
 }
 
 func (f *cdFileHeader) ZipFileHeader() zip.FileHeader {
@@ -197,7 +226,7 @@ func unmarshalCDFileHeader(b [46]byte, read func(b []byte) (int, error)) (fh cdF
 			UncompressedSize64: uint64(data.UncompressedSize),
 			ExternalAttrs:      data.ExternalAttrs,
 		},
-		offset: int64(data.Offset),
+		localHeaderOffset: int64(data.Offset),
 	}
 	fh.Modified = msDosTimeToTime(fh.ModifiedDate, fh.ModifiedTime)
 	n, m, k := data.FileNameLength, data.ExtraFieldLength, data.FileCommentLength
