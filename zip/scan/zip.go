@@ -31,6 +31,9 @@ func putUint32(v uint32) (b []byte) {
 // localFileHeader is a ReadableFileHeader parsed from the local file headers of a ZIP file.
 type localFileHeader struct {
 	zip.FileHeader
+
+	offset   int64
+	readerAt io.ReaderAt
 }
 
 // unmarshalLocalFileHeader decodes the 30-byte slice as a localFileHeader.
@@ -90,28 +93,41 @@ func unmarshalLocalFileHeader(b [30]byte, read func(b []byte) (int, error)) (fh 
 	return fh, nil
 }
 
-func (l *localFileHeader) Open() (io.Reader, error) {
+func (f *localFileHeader) Open() (io.Reader, error) {
+	if f.readerAt != nil {
+		return io.NewSectionReader(f.readerAt, f.offset, int64(f.CompressedSize64)), nil
+	}
+
 	//TODO implement me
 	panic("implement me")
 }
 
-func (l *localFileHeader) WriteTo(dst io.Writer) (int64, error) {
+func (f *localFileHeader) WriteTo(dst io.Writer) (int64, error) {
+	if f.readerAt != nil {
+		return io.Copy(dst, io.NewSectionReader(f.readerAt, f.offset, int64(f.CompressedSize64)))
+	}
+
 	//TODO implement me
 	panic("implement me")
 }
 
-func (l *localFileHeader) ZipFileHeader() zip.FileHeader {
-	return l.FileHeader
+func (f *localFileHeader) ZipFileHeader() zip.FileHeader {
+	return f.FileHeader
 }
 
 // cdFileHeader is a ReadableFileHeader parsed from the central directory file headers of a ZIP file
 type cdFileHeader struct {
 	zip.FileHeader
 
-	offset int64
+	offset   int64
+	readerAt io.ReaderAt
 }
 
 func (f *cdFileHeader) Open() (io.Reader, error) {
+	if f.readerAt != nil {
+		return io.NewSectionReader(f.readerAt, f.offset, int64(f.CompressedSize64)), nil
+	}
+
 	//TODO implement me
 	panic("implement me")
 }
@@ -121,6 +137,10 @@ func (f *cdFileHeader) Open() (io.Reader, error) {
 // It is safe to open concurrent files for read if the cdFileHeader was created using ScanFromReaderAt since they use
 // io.ReaderAt under the hood.
 func (f *cdFileHeader) WriteTo(dst io.Writer) (int64, error) {
+	if f.readerAt != nil {
+		return io.Copy(dst, io.NewSectionReader(f.readerAt, f.offset, int64(f.CompressedSize64)))
+	}
+
 	//TODO implement me
 	panic("implement me")
 }

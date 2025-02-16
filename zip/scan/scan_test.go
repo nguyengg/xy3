@@ -20,6 +20,7 @@ func collectCRC32sAndOffsets(it iter.Seq2[ReadableFileHeader, error]) (crc32s, o
 
 		if v, ok := fh.(*localFileHeader); ok {
 			crc32s[v.Name] = int64(v.CRC32)
+			offsets[v.Name] = v.offset
 			continue
 		}
 		if v, ok := fh.(*cdFileHeader); ok {
@@ -118,6 +119,23 @@ func TestScan(t *testing.T) {
 
 			// do same thing but with CentralDirectory.
 			_, headers, err = CentralDirectory(f)
+			assert.NoErrorf(t, err, "CentralDirectory(...) error = %v", err)
+			crc32s, offsets, err = collectCRC32sAndOffsets(headers)
+			assert.NoErrorf(t, err, "collectCRC32sAndOffsets(...) error = %v", err)
+			assert.Equal(t, tt.expectedCRC32s, crc32s)
+			assert.Equal(t, tt.expectedOffsets, offsets)
+
+			// now for Forward.
+			_, _ = f.Seek(0, 0)
+			headers = Forward(f)
+			crc32s, offsets, err = collectCRC32sAndOffsets(headers)
+			assert.NoErrorf(t, err, "collectCRC32sAndOffsets(...) error = %v", err)
+			assert.Equal(t, tt.expectedCRC32s, crc32s)
+			assert.Equal(t, tt.expectedOffsets, offsets)
+
+			// finally for ForwardWithReaderAt.
+			headers = ForwardWithReaderAt(f)
+			crc32s, offsets, err = collectCRC32sAndOffsets(headers)
 			assert.NoErrorf(t, err, "collectCRC32sAndOffsets(...) error = %v", err)
 			assert.Equal(t, tt.expectedCRC32s, crc32s)
 			assert.Equal(t, tt.expectedOffsets, offsets)

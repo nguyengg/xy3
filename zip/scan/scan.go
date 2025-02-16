@@ -73,6 +73,8 @@ func Forward(src io.Reader) iter.Seq2[ReadableFileHeader, error] {
 			bufSrc = bufio.NewReaderSize(src, 16*1024)
 			// buf is the data slice to read 30 bytes which is the fixed-size part of the local file header.
 			buf = make([]byte, 30)
+			// offset is read offset of the next byte.
+			offset int64
 		)
 
 		for {
@@ -83,30 +85,37 @@ func Forward(src io.Reader) iter.Seq2[ReadableFileHeader, error] {
 			case readN >= 4 && bytes.Compare(buf[:4], cdfhSigBytes) == 0:
 				return
 			case readN < 30:
-				yield(nil, fmt.Errorf("read file header error: insufficient read: expected at least 46 bytes, got %d", readN))
+				yield(nil, fmt.Errorf("read file header error: insufficient read: expected at least 30 bytes, got %d", readN))
 				return
 			}
 
-			fh, err := unmarshalLocalFileHeader(([30]byte)(buf), bufSrc.Read)
+			fhOffset := offset
+			fh, err := unmarshalLocalFileHeader(([30]byte)(buf), func(b []byte) (int, error) {
+				n, err := bufSrc.Read(b)
+				offset += 30 + int64(n)
+				return n, err
+			})
 			if err != nil {
 				yield(nil, fmt.Errorf("read file header error: %w", err))
 				return
 			}
 
 			// TODO support fh.Open and fh.WriteTo.
-
+			fh.offset = fhOffset
 			if !yield(&fh, nil) {
 				return
 			}
 
 			// right now we're just advancing pass the compressed data.
-			switch n, err := io.Copy(io.Discard, io.LimitReader(src, int64(fh.CompressedSize64))); {
+			switch n, err := io.Copy(io.Discard, io.LimitReader(bufSrc, int64(fh.CompressedSize64))); {
 			case err != nil && !errors.Is(err, io.EOF):
-				yield(nil, fmt.Errorf("read past file compressed data error: %w", err))
+				yield(nil, fmt.Errorf("read compressed data error: %w", err))
 				return
 			case uint64(n) < fh.CompressedSize64:
-				yield(nil, fmt.Errorf("read past file compressed data error: insufficient read: expected at least %d bytes, got %d", fh.CompressedSize64, n))
+				yield(nil, fmt.Errorf("read compressed data error: insufficient read: expected at least %d bytes, got %d", fh.CompressedSize64, n))
 				return
+			default:
+				offset += n
 			}
 		}
 	}
@@ -129,21 +138,22 @@ func ForwardWithReaderAt(src io.ReaderAt) iter.Seq2[ReadableFileHeader, error] {
 			// buf is the fixed-size read buffer for every src.ReadAt. the result of this read will be
 			// appended to bb which should never be longer than len(buf)+30.
 			buf = make([]byte, 16*1024)
-			// offset is the next offset to use with src.ReadAt.
-			offset int64
+			// offset is the offset of the first byte in bb relative to src start.
+			// readOffset is the next offset to use with src.ReadAt.
+			offset, readOffset int64
 		)
 
 		for {
 			// if bb has enough bytes for the fixed-size part of the CD file header then use it.
 			// if not, read the next batch.
 			if bbLen := bb.Len(); bbLen < 30 {
-				switch n, err := src.ReadAt(buf, offset); {
+				switch n, err := src.ReadAt(buf, readOffset); {
 				case err != nil && !errors.Is(err, io.EOF):
 					yield(nil, fmt.Errorf("read file header error: %w", err))
 					return
 				default:
 					bb.Write(buf[:n])
-					offset += int64(n)
+					readOffset += int64(n)
 				}
 			}
 
@@ -155,34 +165,36 @@ func ForwardWithReaderAt(src io.ReaderAt) iter.Seq2[ReadableFileHeader, error] {
 				return
 			}
 
+			fhOffset := offset
 			fh, err := unmarshalLocalFileHeader(([30]byte)(bb.Next(30)), func(b []byte) (int, error) {
 				bLen := len(b)
 				if bLen > bb.Len() {
-					switch n, err := src.ReadAt(buf, offset); {
+					switch n, err := src.ReadAt(buf, readOffset); {
 					case n < bLen || (err != nil && !errors.Is(err, io.EOF)):
 						return n, err
 					default:
 						bb.Write(buf[:n])
-						offset += int64(n)
+						readOffset += int64(n)
 					}
 				}
 
+				offset += 30 + int64(bLen)
 				return copy(b, bb.Next(bLen)), nil
 			})
-
 			if err != nil {
-				yield(nil, fmt.Errorf("read CD file header error: %w", err))
+				yield(nil, fmt.Errorf("read file header error: %w", err))
 				return
 			}
 
 			// TODO support fh.Open and fh.WriteTo.
-
+			fh.offset = fhOffset
+			fh.readerAt = src
 			if !yield(&fh, nil) {
 				return
 			}
 
 			// right now we're just advancing pass the compressed data.
-			offset += int64(fh.CompressedSize64)
+			offset += int64(len(bb.Next(int(fh.CompressedSize64))))
 		}
 	}
 }
@@ -340,7 +352,7 @@ func CentralDirectoryWithReaderAt(src io.ReaderAt, size int64, optFns ...func(*C
 			}
 
 			// TODO support fh.Open and fh.WriteTo.
-
+			fh.readerAt = src
 			if !yield(&fh, nil) {
 				return
 			}
