@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/nguyengg/xy3/util"
 )
@@ -119,7 +120,7 @@ func CompressFile(ctx context.Context, name string, dst io.Writer, optFns ...fun
 
 func fileHeader(fi os.FileInfo, name string) *zip.FileHeader {
 	fh := &zip.FileHeader{
-		Name:     name,
+		Name:     strings.ReplaceAll(name, "\\", "/"),
 		Modified: fi.ModTime(),
 	}
 	fh.SetMode(fi.Mode())

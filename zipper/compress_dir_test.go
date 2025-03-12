@@ -87,7 +87,7 @@ func TestCompressDir(t *testing.T) {
 			assert.NoErrorf(t, err, "zip.NewReader(...) error = %v", err)
 
 			tt.expected = cleanAndSort(tt.expected)
-			actual := sortedNames(zipReader.File)
+			actual := cleanAndSort(sortedNames(zipReader.File))
 			assert.Equalf(t, tt.expected, actual, "CompressDir did not produce expected directory structure; got = %v, want = %v", actual, tt.expected)
 		})
 	}
@@ -187,7 +187,7 @@ func TestCompressDir_InMemory(t *testing.T) {
 			assert.NoErrorf(t, err, "zip.NewReader(...) error = %v", err)
 
 			tt.expected = cleanAndSort(tt.expected)
-			actual := sortedNames(zipReader.File)
+			actual := cleanAndSort(sortedNames(zipReader.File))
 			assert.Equalf(t, tt.expected, actual, "CompressDir did not produce expected directory structure; got = %v, want = %v", actual, tt.expected)
 
 			// might as well verify the contents of the file.
