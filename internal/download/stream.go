@@ -73,7 +73,7 @@ func (c *Command) stream(ctx context.Context, man manifest.Manifest) (bool, erro
 	// attempt to create the local directory that will store the extracted files.
 	// if we fail to download the file complete, clean up by deleting the directory.
 	stem, _ := util.StemAndExt(man.Key)
-	dir, err := util.MkExclDir(".", stem, 0666)
+	dir, err := util.MkExclDir(".", stem, 0755)
 	if err != nil {
 		return true, fmt.Errorf("create output directory error: %w", err)
 	}
