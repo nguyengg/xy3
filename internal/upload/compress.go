@@ -4,6 +4,7 @@ import (
 	"compress/flate"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -15,7 +16,8 @@ import (
 // compress creates a new archive and compresses all files recursively starting at root.
 //
 // All files in the archive include root's basename in its path, meaning the top-level file of the archive output is
-// the root directory itself. The returned file is open for reading unless there was an error.
+// the root directory itself. The returned file is open for reading at read offset 0 (start of file) unless there was an
+// error.
 func (c *Command) compress(ctx context.Context, root string) (f *os.File, contentType *string, err error) {
 	f, err = util.OpenExclFile(".", filepath.Base(root), ".zip", 0666)
 	if err != nil {
@@ -31,6 +33,9 @@ func (c *Command) compress(ctx context.Context, root string) (f *os.File, conten
 		})
 	}
 
+	if err == nil {
+		_, err = f.Seek(0, io.SeekStart)
+	}
 	if err != nil {
 		_, _ = f.Close(), os.Remove(f.Name())
 		return nil, nil, err

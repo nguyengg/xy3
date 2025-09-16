@@ -34,6 +34,8 @@ func (c *Command) prepare(ctx context.Context, name string) (f *os.File, size in
 			return nil, 0, nil, fmt.Errorf("check compressed file size error: %w", err)
 		}
 
+		c.logger.Printf(`done compressing "%s" to "%s"`, name, fi.Name())
+
 		return f, fi.Size(), contentType, nil
 
 	case fi.Mode().IsRegular():
