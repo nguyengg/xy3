@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -17,16 +15,12 @@ import (
 )
 
 func (c *Command) download(ctx context.Context, name string) error {
-	file, err := os.Open(name)
+	man, err := manifest.UnmarshalFromFile(name)
 	if err != nil {
-		return fmt.Errorf("open file error: %w", err)
+		return fmt.Errorf("read mannifest error: %w", err)
 	}
-	man, err := manifest.UnmarshalFrom(file)
-	if _ = file.Close(); err != nil {
-		return err
-	}
-	basename := filepath.Base(man.Key)
-	ext := filepath.Ext(basename)
+
+	stem, ext := util.StemAndExt(man.Key)
 	verifier, _ := sri.NewVerifier(man.Checksum)
 
 	// see if the file is eligible for auto-extract.
@@ -42,7 +36,7 @@ func (c *Command) download(ctx context.Context, name string) error {
 
 	// attempt to create the local file that will store the downloaded artifact.
 	// if we fail to download the file complete, clean up by deleting the local file.
-	file, err = util.OpenExclFile(".", strings.TrimSuffix(basename, ext), ext, 0666)
+	file, err := util.OpenExclFile(".", stem, ext, 0666)
 	if err != nil {
 		return fmt.Errorf("create output file error: %w", err)
 	}

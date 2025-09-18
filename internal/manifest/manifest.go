@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 )
 
 // Manifest contains the bucket, key, and expectedBucketOwner field.
@@ -15,7 +16,18 @@ type Manifest struct {
 	Checksum            string  `json:"checksum,omitempty"`
 }
 
-func UnmarshalFrom(r io.Reader) (m Manifest, err error) {
+func UnmarshalFromFile(name string) (m Manifest, err error) {
+	var f *os.File
+	if f, err = os.Open(name); err != nil {
+		return
+	}
+	defer f.Close()
+
+	m, err = UnmarshalFromReader(f)
+	return
+}
+
+func UnmarshalFromReader(r io.Reader) (m Manifest, err error) {
 	d := json.NewDecoder(r)
 	d.DisallowUnknownFields()
 	if err = d.Decode(&m); err != nil {

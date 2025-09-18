@@ -9,15 +9,17 @@ import (
 
 	"github.com/jessevdk/go-flags"
 	"github.com/nguyengg/xy3/internal/download"
+	"github.com/nguyengg/xy3/internal/recompress"
 	"github.com/nguyengg/xy3/internal/remove"
 	"github.com/nguyengg/xy3/internal/upload"
 )
 
 var opts struct {
-	Profile  string           `short:"p" long:"profile" description:"override AWS_PROFILE if given" default:"nguyen-gg" default-mask:"-"`
-	Download download.Command `command:"download" alias:"down" description:"download files from S3"`
-	Upload   upload.Command   `command:"upload" alias:"up" description:"upload files or directories (after compressing the directories with zip) to S3"`
-	Remove   remove.Command   `command:"remove" alias:"rm" description:"remove both local and S3 files"`
+	Profile    string             `short:"p" long:"profile" description:"override AWS_PROFILE if given" default:"nguyen-gg" default-mask:"-"`
+	Download   download.Command   `command:"download" alias:"down" description:"download files from S3"`
+	Upload     upload.Command     `command:"upload" alias:"up" description:"upload files or directories (after compressing the directories with zip) to S3"`
+	Remove     remove.Command     `command:"remove" alias:"rm" description:"remove both local and S3 files"`
+	Recompress recompress.Command `command:"recompress" alias:"rc" description:"recompress 7z archives to zip archives"`
 }
 
 func main() {

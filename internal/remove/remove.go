@@ -21,7 +21,7 @@ func (c *Command) remove(ctx context.Context, name string) error {
 	if err != nil {
 		return fmt.Errorf("open file error: %w", err)
 	}
-	man, err := manifest.UnmarshalFrom(file)
+	man, err := manifest.UnmarshalFromReader(file)
 	if _ = file.Close(); err != nil {
 		return err
 	}
