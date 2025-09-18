@@ -61,7 +61,7 @@ func WithBestCompression(options *CompressOptions) {
 	}
 }
 
-// CompressFile compresses a single file to the archive opened as io.Writer.
+// CompressFile compresses a single file (specified by name) to the archive opened as io.Writer.
 func CompressFile(ctx context.Context, name string, dst io.Writer, optFns ...func(*CompressOptions)) error {
 	opts := &CompressOptions{
 		ProgressReporter: DefaultProgressReporter,

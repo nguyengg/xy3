@@ -12,10 +12,10 @@ import (
 //
 // The first argument is the parent directory of the file to be created. The second argument is the stem of the file,
 // the third the extension. For example, the stem of "hello-world.txt" is "hello-world", its ext ".txt". But with
-// "hello-world.txt.s3", filepath.Ext will think ".s3" is the ext while this method allows you to choose ".txt.s3" a
-// s extension instead. If you use ".txt.s3" as extension, the naming is more natural: it will be "hello-world-1.txt.s3"
+// "hello-world.txt.s3", filepath.Ext will think ".s3" is the ext while this method allows you to choose ".txt.s3" as
+// extension instead. If you use ".txt.s3" as extension, the naming is more natural: it will be "hello-world-1.txt.s3"
 // or "hello-world-2.txt.s3" instead of "hello-world.txt-1.s3". See StemAndExt for a variant of filepath.Ext that allows
-// up to 4 characters to be counted as ext.
+// up to 6 characters to be counted as ext.
 //
 // The file is opened with flag `os.O_RDWR|os.O_CREATE|os.O_EXCL`. Caller is responsible for closing the file upon a
 // successful return. See MkExclDir for a dir equivalent.

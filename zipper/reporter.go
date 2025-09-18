@@ -17,20 +17,20 @@ import (
 //   - src: path of the file being added to the archive
 //   - dst: path of the file in the archive
 //   - written: number of bytes of the file specified by src that has been read and written to dst so far
-//   - done: is true only when the file has been read and written in its entirety
+//   - done: is true only when the file specified by src has been read and written to archive in its entirety
 //
 // If being used with Extract:
 //   - src: path of the file in archive being extracted
 //   - dst: path (relative to output directory) of the file on filesystem
 //   - written: number of bytes of the file specified by src that has been read and written to dst so far
-//   - done: is true only when the file has been read and written in its entirety
+//   - done: is true only when the file specified by src has been read and written to filesystem in its entirety
 //
 // The method will be called at least once for every file being processed. If the file is small enough to fit into one
 // read (see DefaultBufferSize), then the method is called exactly once with `done` being true.
 type ProgressReporter func(src, dst string, written int64, done bool)
 
-// DefaultProgressReporter is the default progress reporter that only logs upon a file being successfully added
-// to archive.
+// DefaultProgressReporter is the default progress reporter that only logs upon a file being successfully added to
+// archive.
 func DefaultProgressReporter(src, dst string, written int64, done bool) {
 	if done {
 		log.Printf(`%s => %s`, src, dst)
@@ -146,7 +146,7 @@ func CountDirContents(ctx context.Context, root string) (n int, size int64, err 
 
 // WalkRegularFiles is a specialisation of filepath.WalkDir that applies the callback only to regular files.
 //
-// This is the same method that Compressor.CompressDir will use to compress files.
+// This is the same method that CompressDir uses to find the files for compressing.
 func WalkRegularFiles(ctx context.Context, root string, fn func(path string, d fs.DirEntry) error) error {
 	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		select {

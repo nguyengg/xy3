@@ -25,7 +25,7 @@ type CompressDirOptions struct {
 	WriteDir bool
 }
 
-// NewWriterWithDeflateLevel is a [CompressOptions.NewWriter] option.
+// NewWriterWithDeflateLevel is a CompressOptions.NewWriter option.
 //
 // See [flate.NewWriter] on the acceptable level, for example [flate.BestCompression].
 func NewWriterWithDeflateLevel(level int) func(w io.Writer) *zip.Writer {
@@ -53,13 +53,13 @@ func NewWriterWithDeflateLevel(level int) func(w io.Writer) *zip.Writer {
 //	my-dir/path/b.txt
 //	my-dir/another/path/c.txt
 //
-// If [CompressDirOptions.UnwrapRoot] is true, the archive content looks like this:
+// If CompressDirOptions.UnwrapRoot is true, the archive content looks like this:
 //
 //	a.txt
 //	path/b.txt
 //	another/path/c.txt
 //
-// If [CompressDirOptions.WriteDir] is true and [CompressDirOptions.UnwrapRoot] is false, the archive content become:
+// If CompressDirOptions.WriteDir is true and CompressDirOptions.UnwrapRoot is false, the archive content become:
 //
 //	my-dir/
 //	my-dir/a.txt
@@ -69,7 +69,7 @@ func NewWriterWithDeflateLevel(level int) func(w io.Writer) *zip.Writer {
 //	my-dir/another/path/
 //	my-dir/another/path/c.txt
 //
-// If both [CompressDirOptions.WriteDir] and [CompressDirOptions.UnwrapRoot] are true, the archive content become:
+// If both CompressDirOptions.WriteDir and CompressDirOptions.UnwrapRoot are true, the archive content become:
 //
 //	a.txt
 //	path/

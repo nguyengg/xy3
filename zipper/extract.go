@@ -82,31 +82,32 @@ type ExtractOptions struct {
 //
 // If "my-archive" already exists, "my-archive-1", "my-archive-2", etc. will be created.
 //
-// If [ExtractOptions.UseGivenDirectory] is true, the dir argument is used as the root directory to extract files to.
+// If ExtractOptions.UseGivenDirectory is true, the dir argument is used as the root directory to extract files to.
 // Extract is able to create dir if it didn't exist as a directory prior to invocation.
 //
-// If [ExtractOptions.NoUnwrapRoot] is true, the common root directory in archive will be created in the extracted
+// If ExtractOptions.NoUnwrapRoot is true, the common root directory in archive will be created in the extracted
 // directory. This flag is only meaningful if all files in the archive content are under one common top-level directory
 // ("root" directory). For example, the "no-root.zip" example above has no common root because a.txt exists at the top
 // level while b.txt and c.txt shares no common path.
 //
-// Using "default.zip" example, if [ExtractOptions.NoUnwrapRoot] is true and [ExtractOptions.UseGivenDirectory] is true,
+// Using "default.zip" example, if ExtractOptions.NoUnwrapRoot is true and ExtractOptions.UseGivenDirectory is true,
 // the extracted directory for would become:
 //
 //	my-dir/test/a.txt
 //	my-dir/test/path/b.txt
 //	my-dir/test/another/path/c.txt
 //
-// If [ExtractOptions.NoUnwrapRoot] is true and [ExtractOptions.UseGivenDirectory] is false, however, the extracted
+// If ExtractOptions.NoUnwrapRoot is true and ExtractOptions.UseGivenDirectory is false, however, the extracted
 // directory becomes:
 //
 //	my-dir/default/a.txt
 //	my-dir/default/path/b.txt
 //	my-dir/default/another/path/c.txt
 //
-// In other words, because [ExtractOptions.UseGivenDirectory] is false, "default" (or "default-1", "default-2") was
-// created as the output directory. So long as [ExtractOptions.UseGivenDirectory] is false, the default settings will
-// always try to extract to a newly created directory to avoid conflicts.
+// In other words, because ExtractOptions.UseGivenDirectory is false, "default" (or "default-1", "default-2") was
+// created as the output directory because "default" is the stem of the archive "default.zip". So long as
+// ExtractOptions.UseGivenDirectory is false, the default settings will always try to extract to a newly created
+// directory to avoid conflicts.
 //
 // Note: the definition of root is limited to only the top-level directory. Even if the archive may have a longer common
 // root, in this example the archive is still considered to have only "test" as the common root:
