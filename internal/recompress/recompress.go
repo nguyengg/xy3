@@ -18,8 +18,10 @@ import (
 	"github.com/bodgit/sevenzip"
 	"github.com/nguyengg/go-aws-commons/s3writer"
 	"github.com/nguyengg/go-aws-commons/sri"
+	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/nguyengg/xy3/util"
+	"github.com/schollz/progressbar/v3"
 )
 
 func (c *Command) recompressArchive(ctx context.Context, manifestName string) error {
@@ -45,13 +47,20 @@ func (c *Command) recompressArchive(ctx context.Context, manifestName string) er
 		return err
 	}
 
+	c.logger.Printf(`uploading to "s3://%s/%s"`, srcManifest.Bucket, key)
+
 	src, err := sevenzip.OpenReader(srcName)
 	if err != nil {
 		return fmt.Errorf("open original archive error: %w", err)
 	}
 	defer src.Close()
 
-	c.logger.Printf(`uploading to "s3://%s/%s"`, srcManifest.Bucket, key)
+	bar := internal.DefaultBytes(
+		int64(len(src.File)),
+		"recompressing",
+		progressbar.OptionShowBytes(false),
+		progressbar.OptionSetMaxDetailRow(1))
+	defer bar.Close()
 
 	w, err := s3writer.New(ctx, c.client, &s3.PutObjectInput{
 		Bucket:              aws.String(srcManifest.Bucket),
@@ -75,16 +84,18 @@ func (c *Command) recompressArchive(ctx context.Context, manifestName string) er
 	})
 
 	buf := make([]byte, 32*1024)
-	for i, f := range src.File {
+	for _, f := range src.File {
 		if f.FileInfo().IsDir() {
 			continue
 		}
 
-		if dstName, err := c.recompressFile(ctx, f, zw, buf); err != nil {
+		_ = bar.AddDetail(f.Name)
+
+		if _, err := c.recompressFile(ctx, f, zw, buf); err != nil {
 			return err
-		} else {
-			c.logger.Printf("%d/%d %s => %s", i, len(src.File), f.Name, dstName)
 		}
+
+		_ = bar.Add(1)
 	}
 	if err = zw.Close(); err != nil {
 		return fmt.Errorf("write to zip archive error: %w", err)

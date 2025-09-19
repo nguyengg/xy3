@@ -44,7 +44,11 @@ func (c *Command) Execute(args []string) error {
 		return fmt.Errorf("load default config error:%w", err)
 	}
 
-	c.client = s3.NewFromConfig(cfg)
+	c.client = s3.NewFromConfig(cfg, func(options *s3.Options) {
+		// without this, getting a bunch of WARN message below:
+		// WARN Response has no supported checksum. Not validating response payload.
+		options.DisableLogOutputChecksumValidationSkipped = true
+	})
 
 	success := 0
 	n := len(c.Args.Files)
