@@ -1,4 +1,4 @@
-package codec
+package compress
 
 import (
 	"archive/tar"
@@ -62,7 +62,7 @@ func (tc *tarCompressor) Close() (err error) {
 	return nil
 }
 
-func newZSTDCompressor(dst io.Writer, opts *CompressOptions) (compressor, error) {
+func newZSTDCompressor(dst io.Writer, opts *Options) (compressor, error) {
 	ze, err := zstd.NewWriter(
 		dst,
 		zstd.WithEncoderLevel(zstd.SpeedFastest),
@@ -78,7 +78,7 @@ func newZSTDCompressor(dst io.Writer, opts *CompressOptions) (compressor, error)
 	}, nil
 }
 
-func newGZIPCompressor(dst io.Writer, opts *CompressOptions) compressor {
+func newGZIPCompressor(dst io.Writer, opts *Options) compressor {
 	return &tarCompressor{
 		concurrency: opts.MaxConcurrency,
 		buf:         make([]byte, opts.BufferSize),

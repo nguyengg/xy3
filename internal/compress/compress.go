@@ -1,4 +1,4 @@
-package codec
+package compress
 
 import (
 	"context"
@@ -13,15 +13,15 @@ import (
 	"github.com/nguyengg/xy3/zipper"
 )
 
-type CompressOptions struct {
+type Options struct {
 	Mode           Mode
 	MaxConcurrency int
 	BufferSize     int
 }
 
-// CompressDir recursively compresses the given directory.
-func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(options *CompressOptions)) error {
-	opts := &CompressOptions{
+// ArchiveDir recursively compresses the given directory.
+func ArchiveDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(options *Options)) error {
+	opts := &Options{
 		Mode:           ZSTD,
 		MaxConcurrency: 5,
 		BufferSize:     32 * 1024,

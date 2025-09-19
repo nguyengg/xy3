@@ -1,4 +1,4 @@
-package codec
+package compress
 
 import (
 	"archive/zip"
@@ -46,7 +46,7 @@ func (c *zipCompressor) Close() error {
 	return c.zw.Close()
 }
 
-func newZIPCompressor(dst io.Writer, opts *CompressOptions) *zipCompressor {
+func newZIPCompressor(dst io.Writer, opts *Options) *zipCompressor {
 	zw := zip.NewWriter(dst)
 	zw.RegisterCompressor(zip.Deflate, func(w io.Writer) (io.WriteCloser, error) {
 		return flate.NewWriter(w, flate.DefaultCompression)

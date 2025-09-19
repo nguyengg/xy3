@@ -1,4 +1,4 @@
-package codec
+package compress
 
 import (
 	"fmt"
@@ -40,7 +40,7 @@ func (m Mode) Ext() string {
 	}
 }
 
-func (m Mode) createCompressor(dst io.Writer, opts *CompressOptions) (compressor, error) {
+func (m Mode) createCompressor(dst io.Writer, opts *Options) (compressor, error) {
 	switch m {
 	case ZSTD:
 		return newZSTDCompressor(dst, opts)
