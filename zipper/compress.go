@@ -105,7 +105,7 @@ func CompressFile(ctx context.Context, name string, dst io.Writer, optFns ...fun
 		return nil
 	}
 
-	w := pr.createWriter(name, fi.Name())
+	w := pr.CreateWriter(name, fi.Name())
 	if _, err = util.CopyBufferWithContext(ctx, io.MultiWriter(f, w), src, buf); err != nil {
 		if errors.Is(err, context.Canceled) {
 			return err
@@ -114,8 +114,7 @@ func CompressFile(ctx context.Context, name string, dst io.Writer, optFns ...fun
 		return fmt.Errorf("add src file to archive error: %w", err)
 	}
 
-	w.done()
-	return nil
+	return w.Close()
 }
 
 func fileHeader(fi os.FileInfo, name string) *zip.FileHeader {

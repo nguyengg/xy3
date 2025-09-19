@@ -2,6 +2,7 @@ package zipper
 
 import (
 	"context"
+	"io"
 	"io/fs"
 	"log"
 	"os"
@@ -169,14 +170,19 @@ func WalkRegularFiles(ctx context.Context, root string, fn func(path string, d f
 	})
 }
 
+// CreateWriter creates an io.WriteCloser for the given src and dst.
+//
+// When Write is called, ProgressReport is called with the src and dst given here, while the number of bytes written
+// is a rolling sum created with initial value 0. Close will call ProgressReport again passing the total number of bytes
+// written and done flag being true. Close will never return a non-nil error.
+func (r ProgressReporter) CreateWriter(src, dst string) io.WriteCloser {
+	return &progressReporterWriter{r, src, dst, 0}
+}
+
 type progressReporterWriter struct {
 	ProgressReporter
 	src, dst string
 	written  int64
-}
-
-func (r ProgressReporter) createWriter(src, dst string) *progressReporterWriter {
-	return &progressReporterWriter{r, src, dst, 0}
 }
 
 func (w *progressReporterWriter) Write(data []byte) (int, error) {
@@ -186,6 +192,7 @@ func (w *progressReporterWriter) Write(data []byte) (int, error) {
 	return n, nil
 }
 
-func (w *progressReporterWriter) done() {
+func (w *progressReporterWriter) Close() error {
 	w.ProgressReporter(w.src, w.dst, w.written, true)
+	return nil
 }

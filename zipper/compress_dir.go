@@ -187,7 +187,7 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 				return nil
 			}
 
-			w := pr.createWriter(rel(dir, srcPath), dstPath)
+			w := pr.CreateWriter(rel(dir, srcPath), dstPath)
 			if _, err = util.CopyBufferWithContext(ctx, io.MultiWriter(f, w), src, buf); err != nil {
 				if errors.Is(err, context.Canceled) {
 					return err
@@ -196,8 +196,7 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 				return fmt.Errorf("add file (path=%s) to archive file (name=%s) error: %w", srcPath, dstPath, err)
 			}
 
-			w.done()
-			return nil
+			return w.Close()
 
 		default:
 			return nil

@@ -213,10 +213,10 @@ func Extract(ctx context.Context, src, dir string, optFns ...func(*ExtractOption
 		if pr == nil {
 			_, err = util.CopyBufferWithContext(ctx, dst, src, buf)
 		} else {
-			w := pr.createWriter(name, rel(dir, dst.Name()))
+			w := pr.CreateWriter(name, rel(dir, dst.Name()))
 			_, err = util.CopyBufferWithContext(ctx, io.MultiWriter(dst, w), src, buf)
 			if err == nil {
-				w.done()
+				_ = w.Close()
 			}
 		}
 
