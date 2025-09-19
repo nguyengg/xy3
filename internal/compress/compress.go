@@ -19,8 +19,11 @@ type Options struct {
 	BufferSize     int
 }
 
-// ArchiveDir recursively compresses the given directory.
-func ArchiveDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(options *Options)) error {
+// CompressDir recursively compresses the given directory.
+//
+// The archive will have a single root directory that is the given dir argument so that extracting the archive will put
+// all files under the same directory.
+func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(options *Options)) error {
 	opts := &Options{
 		Mode:           ZSTD,
 		MaxConcurrency: 5,
