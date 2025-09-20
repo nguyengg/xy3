@@ -3,11 +3,14 @@ package compress
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/dustin/go-humanize"
 	"github.com/jessevdk/go-flags"
 	"github.com/nguyengg/xy3/util"
 )
@@ -56,11 +59,15 @@ func (c *Command) Execute(args []string) (err error) {
 	}
 	defer dst.Close()
 
+	start := time.Now()
+
 	if err = CompressDir(ctx, path, dst, func(opts *Options) {
 		opts.Mode = mode
 	}); err != nil {
 		return fmt.Errorf("compress error: %w", err)
 	}
+
+	log.Printf(`compressing "%s" took %s`, path, humanize.RelTime(start, time.Now(), "", ""))
 
 	return nil
 }

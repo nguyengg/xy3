@@ -47,7 +47,7 @@ func (m Mode) createCompressor(dst io.Writer, opts *Options) (compressor, error)
 	case ZIP:
 		return newZIPCompressor(dst, opts), nil
 	case GZIP:
-		return newGZIPCompressor(dst, opts), nil
+		return newGZIPCompressor(dst, opts)
 	default:
 		return nil, fmt.Errorf("unknown mode: %v", m)
 	}

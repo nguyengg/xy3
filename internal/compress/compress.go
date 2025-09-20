@@ -27,7 +27,7 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 	opts := &Options{
 		Mode:           ZSTD,
 		MaxConcurrency: 5,
-		BufferSize:     32 * 1024,
+		BufferSize:     64 * 1024,
 	}
 	for _, fn := range optFns {
 		fn(opts)

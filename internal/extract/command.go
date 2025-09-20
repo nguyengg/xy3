@@ -9,7 +9,9 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/dustin/go-humanize"
 	"github.com/jessevdk/go-flags"
 	"github.com/nguyengg/xy3/internal"
 )
@@ -42,9 +44,12 @@ func (c *Command) Execute(args []string) error {
 			continue
 		}
 
+		start := time.Now()
+
 		err = Extract(ctx, f, filepath.Base(string(file)))
 		_ = f.Close()
 		if err == nil {
+			c.logger.Printf("extracting took %s", humanize.RelTime(start, time.Now(), "", ""))
 			success++
 			continue
 		}
