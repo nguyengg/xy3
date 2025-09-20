@@ -49,7 +49,7 @@ func (c *zipCompressor) Close() error {
 func newZIPCompressor(dst io.Writer, opts *Options) *zipCompressor {
 	zw := zip.NewWriter(dst)
 	zw.RegisterCompressor(zip.Deflate, func(w io.Writer) (io.WriteCloser, error) {
-		return flate.NewWriter(w, flate.DefaultCompression)
+		return flate.NewWriter(w, flate.BestCompression)
 	})
 
 	return &zipCompressor{
