@@ -20,7 +20,6 @@ type Command struct {
 	Bucket              string  `short:"b" long:"bucket" description:"name of the S3 bucket containing the files" required:"true"`
 	Prefix              string  `short:"k" long:"key-prefix" description:"key prefix to apply to all S3 uploads"`
 	ExpectedBucketOwner *string `long:"expected-bucket-owner" description:"optional ExpectedBucketOwner field to apply to all S3 uploads"`
-	StorageClass        string  `long:"storage-class" description:"the S3 storage class to use for all S3 uploads" default:"INTELLIGENT_TIERING"`
 	Delete              bool    `short:"d" long:"delete" description:"if given, the local files will be deleted only upon successful upload. If compressing a directory, the directory will not be deleted but the intermediate archive will be."`
 	MaxConcurrency      int     `short:"P" long:"max-concurrency" description:"use up to max-concurrency number of goroutines at a time for parallel uploads." default:"5"`
 	Args                struct {

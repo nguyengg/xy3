@@ -1,7 +1,6 @@
 package upload
 
 import (
-	"compress/flate"
 	"context"
 	"fmt"
 	"io"
@@ -9,31 +8,26 @@ import (
 	"path/filepath"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/nguyengg/xy3/internal"
+	"github.com/nguyengg/xy3/internal/compress"
 	"github.com/nguyengg/xy3/util"
-	"github.com/nguyengg/xy3/zipper"
 )
 
 // compress creates a new archive and compresses all files recursively starting at root.
-//
-// All files in the archive include root's basename in its path, meaning the top-level file of the archive output is
-// the root directory itself. The returned file is open for reading at read offset 0 (start of file) unless there was an
-// error.
 func (c *Command) compress(ctx context.Context, root string) (f *os.File, contentType *string, err error) {
-	f, err = util.OpenExclFile(".", filepath.Base(root), ".zip", 0666)
+	mode := compress.ZSTD
+
+	f, err = util.OpenExclFile(".", filepath.Base(root), mode.Ext(), 0666)
 	if err != nil {
 		err = fmt.Errorf("create archive error: %w", err)
 		return
 	}
 
-	var pr zipper.ProgressReporter
-	if pr, err = zipper.NewProgressBarReporter(ctx, root, nil); err == nil {
-		err = zipper.CompressDir(ctx, root, f, func(options *zipper.CompressDirOptions) {
-			options.NewWriter = zipper.NewWriterWithDeflateLevel(flate.BestCompression)
-			options.ProgressReporter = pr
-		})
-	}
-
-	if err == nil {
+	bar := internal.DefaultBytes(-1, filepath.Base(root))
+	if err, _ = compress.Compress(ctx, root, io.MultiWriter(f, bar), func(opts *compress.Options) {
+		opts.Mode = mode
+		opts.MaxConcurrency = c.MaxConcurrency
+	}), bar.Close(); err == nil {
 		_, err = f.Seek(0, io.SeekStart)
 	}
 	if err != nil {

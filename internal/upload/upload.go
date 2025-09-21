@@ -48,7 +48,7 @@ func (c *Command) upload(ctx context.Context, name string) error {
 		ExpectedBucketOwner: c.ExpectedBucketOwner,
 		ContentType:         contentType,
 		Metadata:            map[string]string{"name": filename},
-		StorageClass:        types.StorageClass(c.StorageClass),
+		StorageClass:        types.StorageClassIntelligentTiering,
 	}, func(options *s3writer.Options) {
 		options.Concurrency = c.MaxConcurrency
 	}, s3writer.WithProgressBar(size))
