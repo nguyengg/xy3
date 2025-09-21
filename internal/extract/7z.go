@@ -1,58 +1,61 @@
 package extract
 
 import (
-	"context"
 	"fmt"
+	"io"
+	"iter"
 	"os"
-	"path/filepath"
 
 	"github.com/bodgit/sevenzip"
-	"github.com/nguyengg/xy3/util"
 )
 
-func extract7zFile(ctx context.Context, src *os.File, buf []byte) error {
-	fi, err := src.Stat()
-	if err != nil {
-		return fmt.Errorf(`stat file "%s" error: %w`, src.Name(), err)
-	}
+func From7zFile(src *os.File) iter.Seq2[Entry, error] {
+	return func(yield func(Entry, error) bool) {
+		fi, err := src.Stat()
+		if err != nil {
+			yield(nil, fmt.Errorf(`stat file "%s" error: %w`, src.Name(), err))
+			return
+		}
 
-	zr, err := sevenzip.NewReader(src, fi.Size())
-	if err != nil {
-		return fmt.Errorf(`open 7z file "%s" error: %w`, src.Name(), err)
-	}
+		zr, err := sevenzip.NewReader(src, fi.Size())
+		if err != nil {
+			yield(nil, fmt.Errorf(`open 7z file "%s" error: %w`, src.Name(), err))
+			return
+		}
 
-	for _, zf := range zr.File {
-		path := zf.Name
-
-		fi := zf.FileInfo()
-		if fi.IsDir() {
-			if err = os.MkdirAll(path, 0755); err != nil {
-				return fmt.Errorf(`create dir "%s" error: %w`, path, err)
+		for _, f := range zr.File {
+			if fi = f.FileInfo(); fi.IsDir() {
+				// TODO support creating empty directories.
+				continue
 			}
-			continue
-		}
 
-		if err = os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-			return fmt.Errorf(`create path to file "%s" error: %w`, path, err)
-		}
+			// we'll always open the file for reading for now. caller is responsible for closing it.
+			rc, err := f.Open()
+			if err != nil {
+				yield(nil, fmt.Errorf(`open entry "%s" error: %w`, f.Name, err))
+				return
+			}
 
-		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, fi.Mode())
-		if err != nil {
-			return fmt.Errorf(`create file "%s" error: %w`, path, err)
-		}
-
-		w, err := zf.Open()
-		if err != nil {
-			_ = f.Close()
-			return fmt.Errorf(`open file "%s" in archive error: %w`, path, err)
-		}
-
-		_, err = util.CopyBufferWithContext(ctx, f, w, buf)
-		_, _ = w.Close(), f.Close()
-		if err != nil {
-			return fmt.Errorf(`write to file "%s" error: %w`, path, err)
+			if !yield(&sevenZipEntry{fh: &f.FileHeader, ReadCloser: rc}, nil) {
+				return
+			}
 		}
 	}
+}
 
-	return nil
+type sevenZipEntry struct {
+	fh *sevenzip.FileHeader
+	io.ReadCloser
+}
+
+func (e *sevenZipEntry) Name() string {
+	return e.fh.Name
+}
+
+func (e *sevenZipEntry) FileInfo() os.FileInfo {
+	return e.fh.FileInfo()
+}
+
+func (e *sevenZipEntry) FileMode() os.FileMode {
+	return e.fh.Mode()
 }

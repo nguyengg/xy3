@@ -2,97 +2,87 @@ package extract
 
 import (
 	"archive/zip"
-	"context"
 	"fmt"
 	"io"
+	"iter"
 	"os"
-	"path/filepath"
 
 	"github.com/krolaw/zipstream"
-	"github.com/nguyengg/xy3/util"
 )
 
-func extractZip(ctx context.Context, src io.Reader, buf []byte) error {
-	zr := zipstream.NewReader(src)
+func FromZipReader(src io.Reader) iter.Seq2[Entry, error] {
+	return func(yield func(Entry, error) bool) {
+		zr := zipstream.NewReader(src)
 
-	for {
-		fh, err := zr.Next()
-		if err == io.EOF {
-			return nil
-		} else if err != nil {
-			return fmt.Errorf("stream zip error: %w", err)
-		}
-
-		path := fh.Name
-
-		fi := fh.FileInfo()
-		if fi.IsDir() {
-			if err = os.MkdirAll(path, 0755); err != nil {
-				return fmt.Errorf(`create dir "%s" error: %w`, path, err)
+		for {
+			fh, err := zr.Next()
+			if err == io.EOF {
+				return
 			}
-			continue
-		}
+			if err != nil {
+				yield(nil, fmt.Errorf("stream zip error: %w", err))
+				return
+			}
 
-		if err = os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-			return fmt.Errorf(`create path to file "%s" error: %w`, path, err)
-		}
+			if fh.FileInfo().IsDir() {
+				// TODO support creating empty directories.
+				continue
+			}
 
-		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, fi.Mode())
-		if err != nil {
-			return fmt.Errorf(`create file "%s" error: %w`, path, err)
-		}
-
-		_, err = util.CopyBufferWithContext(ctx, f, zr, buf)
-		_ = f.Close()
-		if err != nil {
-			return fmt.Errorf(`write to file "%s" error: %w`, path, err)
+			if !yield(&zipEntry{fh: fh, ReadCloser: io.NopCloser(zr)}, nil) {
+				return
+			}
 		}
 	}
 }
 
-func extractZipFile(ctx context.Context, src *os.File, buf []byte) error {
-	fi, err := src.Stat()
-	if err != nil {
-		return fmt.Errorf(`stat file "%s" error: %w`, src.Name(), err)
-	}
+func FromZipFile(src *os.File) iter.Seq2[Entry, error] {
+	return func(yield func(Entry, error) bool) {
+		fi, err := src.Stat()
+		if err != nil {
+			yield(nil, fmt.Errorf(`stat file "%s" error: %w`, src.Name(), err))
+			return
+		}
 
-	zr, err := zip.NewReader(src, fi.Size())
-	if err != nil {
-		return fmt.Errorf(`open zip file "%s" error: %w`, src.Name(), err)
-	}
+		zr, err := zip.NewReader(src, fi.Size())
+		if err != nil {
+			yield(nil, fmt.Errorf(`open zip file "%s" error: %w`, src.Name(), err))
+			return
+		}
 
-	for _, zf := range zr.File {
-		path := zf.Name
-
-		fi := zf.FileInfo()
-		if fi.IsDir() {
-			if err = os.MkdirAll(path, 0755); err != nil {
-				return fmt.Errorf(`create dir "%s" error: %w`, path, err)
+		for _, f := range zr.File {
+			if fi = f.FileInfo(); fi.IsDir() {
+				// TODO support creating empty directories.
+				continue
 			}
-			continue
-		}
 
-		if err = os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-			return fmt.Errorf(`create path to file "%s" error: %w`, path, err)
-		}
+			// we'll always open the file for reading for now. caller is responsible for closing it.
+			rc, err := f.Open()
+			if err != nil {
+				yield(nil, fmt.Errorf(`open entry "%s" error: %w`, f.Name, err))
+				return
+			}
 
-		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, fi.Mode())
-		if err != nil {
-			return fmt.Errorf(`create file "%s" error: %w`, path, err)
-		}
-
-		w, err := zf.Open()
-		if err != nil {
-			_ = f.Close()
-			return fmt.Errorf(`open file "%s" in archive error: %w`, path, err)
-		}
-
-		_, err = util.CopyBufferWithContext(ctx, f, w, buf)
-		_, _ = w.Close(), f.Close()
-		if err != nil {
-			return fmt.Errorf(`write to file "%s" error: %w`, path, err)
+			if !yield(&zipEntry{fh: &f.FileHeader, ReadCloser: rc}, nil) {
+				return
+			}
 		}
 	}
+}
 
-	return nil
+type zipEntry struct {
+	fh *zip.FileHeader
+	io.ReadCloser
+}
+
+func (e *zipEntry) Name() string {
+	return e.fh.Name
+}
+
+func (e *zipEntry) FileInfo() os.FileInfo {
+	return e.fh.FileInfo()
+}
+
+func (e *zipEntry) FileMode() os.FileMode {
+	return e.fh.Mode()
 }

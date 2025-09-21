@@ -15,7 +15,6 @@ func DefaultBytes(maxBytes int64, description string, options ...progressbar.Opt
 			progressbar.OptionSetDescription(description),
 			progressbar.OptionSetWriter(os.Stderr),
 			progressbar.OptionShowBytes(true),
-			progressbar.OptionSetWidth(10),
 			progressbar.OptionThrottle(1 * time.Second),
 			progressbar.OptionShowCount(),
 			progressbar.OptionOnCompletion(func() {

@@ -18,9 +18,9 @@ import (
 func (c *Command) download(ctx context.Context, man manifest.Manifest) (*os.File, error) {
 	// temp file is automatically closed and deleted on failure.
 	stem, ext := util.StemAndExt(man.Key)
-	file, err := os.CreateTemp(".", stem+"-*"+ext)
+	file, err := util.OpenExclFile(".", stem, ext, 066)
 	if err != nil {
-		return nil, fmt.Errorf("create temp file error: %w", err)
+		return nil, fmt.Errorf("create file error: %w", err)
 	}
 
 	success := true
