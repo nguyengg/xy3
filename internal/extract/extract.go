@@ -2,20 +2,27 @@ package extract
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"iter"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/nguyengg/xy3/util"
+	"github.com/schollz/progressbar/v3"
 )
 
 const defaultBufferSize = 32 * 1024
 
-// EntriesFromExt attempt to use the extension of the file's name to determine decompression algorithm.
+var ErrUnknownArchiveExtension = errors.New("unknown archive extension")
+
+// EntriesFromExt uses the extension of the file's name to determine decompression algorithm.
 //
 // TODO use http.DetectContentType() instead of relying on file extension.
+//
+// Returns ErrUnknownArchiveExtension if the extension is not supported.
 func EntriesFromExt(src io.Reader, ext string) (iter.Seq2[Entry, error], error) {
 	switch ext {
 	case ".7z":
@@ -36,14 +43,28 @@ func EntriesFromExt(src io.Reader, ext string) (iter.Seq2[Entry, error], error) 
 	case ".tar.gz":
 		return FromTarGzipReader(src), nil
 	default:
-		return nil, fmt.Errorf("unknown extension: %v", ext)
+		return nil, ErrUnknownArchiveExtension
 	}
 }
 
-func Extract(ctx context.Context, src io.Reader, ext string) error {
+// Options customises Extract.
+type Options struct {
+	// ProgressBar if given will be used to provide progress report.
+	ProgressBar *progressbar.ProgressBar
+}
+
+// Extract uses the extension of the file's name to determine decompression algorithm (see EntriesFromExt).
+//
+// Returns ErrUnknownArchiveExtension if the extension is not supported.
+func Extract(ctx context.Context, src io.Reader, ext string, optFns ...func(*Options)) error {
+	opts := &Options{}
+	for _, fn := range optFns {
+		fn(opts)
+	}
+
 	files, err := EntriesFromExt(src, ext)
 	if err != nil {
-		return nil
+		return err
 	}
 
 	buf := make([]byte, defaultBufferSize)
@@ -55,7 +76,8 @@ func Extract(ctx context.Context, src io.Reader, ext string) error {
 
 		// TODO support creating directories as well
 
-		path := f.Name()
+		path, fi := f.Name(), f.FileInfo()
+
 		if err = os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 			_ = f.Close()
 			return fmt.Errorf(`create path to file "%s" error: %w`, path, err)
@@ -67,10 +89,19 @@ func Extract(ctx context.Context, src io.Reader, ext string) error {
 			return fmt.Errorf(`create file "%s" error: %w`, path, err)
 		}
 
-		_, err = util.CopyBufferWithContext(ctx, w, f, buf)
+		if opts.ProgressBar != nil {
+			_, err = util.CopyBufferWithContext(ctx, io.MultiWriter(w, opts.ProgressBar), f, buf)
+		} else {
+			_, err = util.CopyBufferWithContext(ctx, w, f, buf)
+		}
+
 		_, _ = w.Close(), f.Close()
 		if err != nil {
 			return fmt.Errorf(`write to file "%s" error: %w`, path, err)
+		}
+
+		if err = os.Chtimes(path, time.Time{}, fi.ModTime()); err != nil {
+			return fmt.Errorf(`change mod time of "%s" error: %w"`, path, err)
 		}
 	}
 

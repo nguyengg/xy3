@@ -2,6 +2,7 @@ package download
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/nguyengg/go-aws-commons/s3reader"
 	"github.com/nguyengg/go-aws-commons/sri"
+	"github.com/nguyengg/xy3/internal"
+	"github.com/nguyengg/xy3/internal/extract"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/nguyengg/xy3/util"
 )
@@ -23,17 +26,6 @@ func (c *Command) download(ctx context.Context, name string) error {
 	stem, ext := util.StemAndExt(man.Key)
 	verifier, _ := sri.NewVerifier(man.Checksum)
 
-	// see if the file is eligible for auto-extract.
-	if c.StreamAndExtractV2 {
-		if ok, err := c.streamV2(ctx, man); ok || err != nil {
-			return err
-		}
-	} else if c.StreamAndExtract {
-		if ok, err := c.stream(ctx, man); ok || err != nil {
-			return err
-		}
-	}
-
 	// attempt to create the local file that will store the downloaded artifact.
 	// if we fail to download the file complete, clean up by deleting the local file.
 	file, err := util.OpenExclFile(".", stem, ext, 0666)
@@ -44,14 +36,14 @@ func (c *Command) download(ctx context.Context, name string) error {
 	c.logger.Printf(`downloading to "%s"`, file.Name())
 
 	success := false
-	defer func(file *os.File) {
+	defer func() {
 		if name, _ = file.Name(), file.Close(); !success {
 			c.logger.Printf(`deleting file "%s"`, name)
 			if err = os.Remove(name); err != nil {
 				c.logger.Printf("delete file error: %v", err)
 			}
 		}
-	}(file)
+	}()
 
 	r, err := s3reader.New(ctx, c.client, &s3.GetObjectInput{
 		Bucket:              aws.String(man.Bucket),
@@ -79,13 +71,41 @@ func (c *Command) download(ctx context.Context, name string) error {
 
 	if verifier == nil {
 		c.logger.Printf("done downloading; no checksum to verify")
-		return nil
-	}
-
-	if verifier.SumAndVerify(nil) {
+	} else if verifier.SumAndVerify(nil) {
 		c.logger.Printf("done downloading; checksum matches")
 	} else {
 		c.logger.Printf("done downloading; checksum does not match: expect %s, got %s", man.Checksum, verifier.SumToString(nil))
+	}
+
+	if c.Extract {
+		return c.extract(ctx, file, ext)
+	}
+
+	return nil
+}
+
+func (c *Command) extract(ctx context.Context, file *os.File, ext string) (err error) {
+	if _, err = file.Seek(0, io.SeekStart); err != nil {
+		c.logger.Printf("seek start file error, will not extract: %v", err)
+		return nil
+	}
+
+	bar := internal.DefaultBytes(-1, "extracting")
+	if err, _ = extract.Extract(ctx, file, ext, func(opts *extract.Options) {
+		opts.ProgressBar = bar
+	}), bar.Close(); err != nil {
+		if errors.Is(err, extract.ErrUnknownArchiveExtension) {
+			c.logger.Printf("file is not eligible for auto-extracting: %v", err)
+			return nil
+		}
+
+		return err
+	}
+
+	// if extraction is successful, delete the archive.
+	c.logger.Printf("extract success, deleting archive")
+	if _, err = file.Close(), os.Remove(file.Name()); err != nil {
+		c.logger.Printf("delete file error: %v", err)
 	}
 
 	return nil
