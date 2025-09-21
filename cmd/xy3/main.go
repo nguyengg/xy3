@@ -10,6 +10,7 @@ import (
 	"github.com/jessevdk/go-flags"
 	"github.com/nguyengg/xy3/internal/compress"
 	"github.com/nguyengg/xy3/internal/download"
+	"github.com/nguyengg/xy3/internal/extract"
 	"github.com/nguyengg/xy3/internal/recompress"
 	"github.com/nguyengg/xy3/internal/remove"
 	"github.com/nguyengg/xy3/internal/upload"
@@ -22,7 +23,7 @@ var opts struct {
 	Upload     upload.Command     `command:"upload" alias:"up" description:"upload files to S3"`
 	Remove     remove.Command     `command:"remove" alias:"rm" description:"remove both local and S3 files"`
 	Recompress recompress.Command `command:"recompress" alias:"rc" description:"recompress S3 archives"`
-	Extract    compress.Command   `command:"extract" alias:"x" description:"extract archives"`
+	Extract    extract.Command    `command:"extract" alias:"x" description:"extract archives"`
 }
 
 func main() {

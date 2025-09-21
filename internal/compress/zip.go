@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -15,6 +16,8 @@ type zipCompressor struct {
 }
 
 func (c *zipCompressor) NewFile(src, dst string) error {
+	dst = filepath.ToSlash(dst)
+
 	fi, err := os.Stat(src)
 	if err != nil {
 		return fmt.Errorf(`stat file "%s" error: %w`, src, err)

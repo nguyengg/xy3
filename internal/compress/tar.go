@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/klauspost/compress/zstd"
 	"github.com/ulikunitz/xz"
@@ -17,6 +18,8 @@ type tarCompressor struct {
 }
 
 func (tc *tarCompressor) NewFile(src, dst string) error {
+	dst = filepath.ToSlash(dst)
+
 	if tc.tw == nil {
 		tc.tw = tar.NewWriter(tc.wc)
 	}

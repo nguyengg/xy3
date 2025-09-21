@@ -9,11 +9,10 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
-	"time"
 
-	"github.com/dustin/go-humanize"
 	"github.com/jessevdk/go-flags"
 	"github.com/nguyengg/xy3/internal"
+	"github.com/nguyengg/xy3/util"
 )
 
 type Command struct {
@@ -38,18 +37,18 @@ func (c *Command) Execute(args []string) error {
 	for i, file := range c.Args.Files {
 		c.logger = internal.NewLogger(i, n, file)
 
-		f, err := os.Open(string(file))
+		path := string(file)
+		_, ext := util.StemAndExt(path)
+		f, err := os.Open(path)
 		if err != nil {
 			c.logger.Printf(`open file "%s" error: %v`, file, err)
 			continue
 		}
 
-		start := time.Now()
-
-		err = Extract(ctx, f, filepath.Base(string(file)))
-		_ = f.Close()
-		if err == nil {
-			c.logger.Printf("extracting took %s", humanize.RelTime(start, time.Now(), "", ""))
+		bar := internal.DefaultBytes(-1, filepath.Base(path))
+		if err, _, _ = Extract(ctx, f, ext, func(opts *Options) {
+			opts.ProgressBar = bar
+		}), f.Close(), bar.Close(); err == nil {
 			success++
 			continue
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -52,19 +53,23 @@ func (c *Command) Execute(args []string) (err error) {
 		c.logger = internal.NewLogger(i, n, file)
 
 		path := string(file)
+		basename := filepath.Base(path)
 
-		dst, err := util.OpenExclFile(".", filepath.Base(path), mode.Ext(), 066)
+		dst, err := util.OpenExclFile(".", basename, mode.Ext(), 066)
 		if err != nil {
 			return fmt.Errorf("create archive error: %w", err)
 		}
 
-		err = Compress(ctx, path, dst, func(opts *Options) {
+		bar := internal.DefaultBytes(-1, basename)
+		if err, _, _ = Compress(ctx, path, io.MultiWriter(dst, bar), func(opts *Options) {
 			opts.Mode = mode
-		})
-		_ = dst.Close()
-		if err == nil {
+		}), dst.Close(), bar.Close(); err == nil {
 			success++
 			continue
+		}
+
+		if err := os.Remove(dst.Name()); err != nil {
+			c.logger.Printf(`clean up "%s" error: %v`, dst.Name(), err)
 		}
 
 		if errors.Is(err, context.Canceled) {

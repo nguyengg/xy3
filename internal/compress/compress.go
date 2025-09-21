@@ -10,7 +10,6 @@ import (
 
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/util"
-	"github.com/nguyengg/xy3/zipper"
 )
 
 // Options customises Compress.
@@ -37,28 +36,34 @@ func Compress(ctx context.Context, name string, dst io.Writer, optFns ...func(op
 		fn(opts)
 	}
 
-	// check if is file.
-	fi, err := os.Stat(name)
-	if err != nil {
-		return fmt.Errorf(`stat file "%s" error: %w`, name, err)
-	}
-	if !fi.IsDir() {
-		return compressFile(ctx, name, fi.Size(), dst, opts)
-	}
-
-	pbr, err := zipper.NewProgressBarReporter(ctx, name, nil)
-	if err != nil {
-		return fmt.Errorf("create progress bar reporter error: %w", err)
-	}
-
 	comp, err := opts.Mode.createCompressor(dst, opts)
 	if err != nil {
 		return fmt.Errorf("create compressor error: %w", err)
 	}
 
+	fi, err := os.Stat(name)
+	if err != nil {
+		return fmt.Errorf(`stat file "%s" error: %w`, name, err)
+	}
+
+	if fi.IsDir() {
+		return compressDir(ctx, name, dst, comp)
+	}
+
+	return compressFile(ctx, name, fi.Size(), dst, comp)
+}
+
+func compressDir(ctx context.Context, dir string, dst io.Writer, comp compressor) error {
+	// this effectively makes all files in the tarball be under a single root directory to prevent tarbomb.
+	base := filepath.Base(dir)
+	archivePath := func(path string) (name string, err error) {
+		name, err = filepath.Rel(dir, path)
+		return filepath.Join(base, name), err
+	}
+
 	buf := make([]byte, 32*1024)
 
-	err = filepath.WalkDir(name, func(srcPath string, d fs.DirEntry, err error) error {
+	err := filepath.WalkDir(dir, func(srcPath string, d fs.DirEntry, err error) error {
 		select {
 		case <-ctx.Done():
 			// ctx.Err is not supposed to return nil here if ctx.Done() is closed.
@@ -82,7 +87,7 @@ func Compress(ctx context.Context, name string, dst io.Writer, optFns ...func(op
 			}
 			defer src.Close()
 
-			dstPath, err := filepath.Rel(name, srcPath)
+			dstPath, err := archivePath(srcPath)
 			if err == nil {
 				err = comp.NewFile(srcPath, dstPath)
 			}
@@ -90,12 +95,11 @@ func Compress(ctx context.Context, name string, dst io.Writer, optFns ...func(op
 				return fmt.Errorf("compute file (path=%s) name in archive error: %w", dstPath, err)
 			}
 
-			pbw := pbr.CreateWriter(rel(name, srcPath), dstPath)
-			if _, err = util.CopyBufferWithContext(ctx, comp, io.TeeReader(src, pbw), buf); err != nil {
+			if _, err = util.CopyBufferWithContext(ctx, comp, src, buf); err != nil {
 				return fmt.Errorf("add file (path=%s) to archive file (name=%s) error: %w", srcPath, dstPath, err)
 			}
 
-			return pbw.Close()
+			return nil
 
 		default:
 			return nil
@@ -111,7 +115,7 @@ func Compress(ctx context.Context, name string, dst io.Writer, optFns ...func(op
 	return nil
 }
 
-func compressFile(ctx context.Context, name string, size int64, dst io.Writer, opts *Options) error {
+func compressFile(ctx context.Context, name string, size int64, dst io.Writer, comp compressor) error {
 	src, err := os.Open(name)
 	if err != nil {
 		return fmt.Errorf(`open file "%s" error: %w`, name, err)
@@ -121,11 +125,6 @@ func compressFile(ctx context.Context, name string, size int64, dst io.Writer, o
 	base := filepath.Base(name)
 	bar := internal.DefaultBytes(size, "compressing "+base)
 	defer bar.Close()
-
-	comp, err := opts.Mode.createCompressor(dst, opts)
-	if err != nil {
-		return fmt.Errorf("create compressor error: %w", err)
-	}
 
 	if err = comp.NewFile(name, base); err != nil {
 		return fmt.Errorf(`create file "%s" in archive error: %w`, base, err)
