@@ -2,38 +2,51 @@ package compress
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 
+	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/util"
 	"github.com/nguyengg/xy3/zipper"
 )
 
+// Options customises Compress.
 type Options struct {
-	Mode           Mode
+	// Mode indicates which compression algorithm to use.
+	Mode Mode
+	// MaxConcurrency customises the concurrency level.
+	// Applicable only for compression libraries that support it (e.g. zstd).
 	MaxConcurrency int
-	BufferSize     int
 }
 
-// CompressDir recursively compresses the given directory.
+// Compress recursively compresses the given named file or directory.
 //
-// The archive will have a single root directory that is the given dir argument so that extracting the archive will put
-// all files under the same directory.
-func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(options *Options)) error {
+// If name is a directory, the resulting archive will have a single root directory that is the basename of the name
+// argument so that extracting the archive will put all files under the same directory.
+//
+// If name is a file, it will still be tar-ed if the mode does not support metadata out of the box.
+func Compress(ctx context.Context, name string, dst io.Writer, optFns ...func(options *Options)) error {
 	opts := &Options{
 		Mode:           ZSTD,
 		MaxConcurrency: 5,
-		BufferSize:     64 * 1024,
 	}
 	for _, fn := range optFns {
 		fn(opts)
 	}
 
-	pbr, err := zipper.NewProgressBarReporter(ctx, dir, nil)
+	// check if is file.
+	fi, err := os.Stat(name)
+	if err != nil {
+		return fmt.Errorf(`stat file "%s" error: %w`, name, err)
+	}
+	if !fi.IsDir() {
+		return compressFile(ctx, name, fi.Size(), dst, opts)
+	}
+
+	pbr, err := zipper.NewProgressBarReporter(ctx, name, nil)
 	if err != nil {
 		return fmt.Errorf("create progress bar reporter error: %w", err)
 	}
@@ -43,9 +56,9 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 		return fmt.Errorf("create compressor error: %w", err)
 	}
 
-	buf := make([]byte, opts.BufferSize)
+	buf := make([]byte, 32*1024)
 
-	err = filepath.WalkDir(dir, func(srcPath string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(name, func(srcPath string, d fs.DirEntry, err error) error {
 		select {
 		case <-ctx.Done():
 			// ctx.Err is not supposed to return nil here if ctx.Done() is closed.
@@ -69,7 +82,7 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 			}
 			defer src.Close()
 
-			dstPath, err := filepath.Rel(dir, srcPath)
+			dstPath, err := filepath.Rel(name, srcPath)
 			if err == nil {
 				err = comp.NewFile(srcPath, dstPath)
 			}
@@ -77,12 +90,8 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 				return fmt.Errorf("compute file (path=%s) name in archive error: %w", dstPath, err)
 			}
 
-			pbw := pbr.CreateWriter(rel(dir, srcPath), dstPath)
+			pbw := pbr.CreateWriter(rel(name, srcPath), dstPath)
 			if _, err = util.CopyBufferWithContext(ctx, comp, io.TeeReader(src, pbw), buf); err != nil {
-				if errors.Is(err, context.Canceled) {
-					return err
-				}
-
 				return fmt.Errorf("add file (path=%s) to archive file (name=%s) error: %w", srcPath, dstPath, err)
 			}
 
@@ -97,6 +106,36 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 	}
 	if err != nil {
 		return fmt.Errorf("compress error: %w", err)
+	}
+
+	return nil
+}
+
+func compressFile(ctx context.Context, name string, size int64, dst io.Writer, opts *Options) error {
+	src, err := os.Open(name)
+	if err != nil {
+		return fmt.Errorf(`open file "%s" error: %w`, name, err)
+	}
+	defer src.Close()
+
+	base := filepath.Base(name)
+	bar := internal.DefaultBytes(size, "compressing "+base)
+	defer bar.Close()
+
+	comp, err := opts.Mode.createCompressor(dst, opts)
+	if err != nil {
+		return fmt.Errorf("create compressor error: %w", err)
+	}
+
+	if err = comp.NewFile(name, base); err != nil {
+		return fmt.Errorf(`create file "%s" in archive error: %w`, base, err)
+	}
+	if _, err = util.CopyBufferWithContext(ctx, comp, io.TeeReader(src, bar), nil); err != nil {
+		return fmt.Errorf(`compress file "%s" error: %w`, base, err)
+	}
+
+	if err = comp.Close(); err != nil {
+		return fmt.Errorf("close compressor error: %w", err)
 	}
 
 	return nil

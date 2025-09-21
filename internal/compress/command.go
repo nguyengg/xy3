@@ -2,24 +2,26 @@ package compress
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"strings"
-	"time"
 
-	"github.com/dustin/go-humanize"
 	"github.com/jessevdk/go-flags"
+	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/util"
 )
 
 type Command struct {
 	Args struct {
-		File flags.Filename `positional-arg-name:"file" description:"the file or directory to be compressed" required:"yes"`
+		Files []flags.Filename `positional-arg-name:"file" description:"the files/directories to be compressed" required:"yes"`
 	} `positional-args:"yes"`
-	Mode string `short:"m" long:"short" choice:"zstd" choice:"zip" choice:"gzip" default:"zstd"`
+	Mode string `short:"m" long:"short" choice:"zstd" choice:"zip" choice:"gzip" choice:"xz" default:"zstd"`
+
+	logger *log.Logger
 }
 
 func (c *Command) Execute(args []string) (err error) {
@@ -27,47 +29,51 @@ func (c *Command) Execute(args []string) (err error) {
 		return fmt.Errorf("unknown positional arguments: %s", strings.Join(args, " "))
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
-	defer stop()
-
-	var (
-		dst  *os.File
-		mode Mode
-		path = string(c.Args.File)
-	)
+	var mode Mode
 	switch c.Mode {
 	case "zstd":
-		if dst, err = util.OpenExclFile(".", filepath.Base(path), ".tar.zst", 0666); err != nil {
-			return fmt.Errorf("create .tar.zst file error: %w", err)
-		}
-
 		mode = ZSTD
 	case "zip":
-		if dst, err = util.OpenExclFile(".", filepath.Base(path), ".zip", 0666); err != nil {
-			return fmt.Errorf("create zip file error: %w", err)
-		}
-
 		mode = ZIP
 	case "gzip":
-		if dst, err = util.OpenExclFile(".", filepath.Base(path), ".tar.gz", 0666); err != nil {
-			return fmt.Errorf("create .tar.gz file error: %w", err)
-		}
-
 		mode = GZIP
+	case "xz":
+		mode = XZ
 	default:
 		return fmt.Errorf("unknown mode: %v", mode)
 	}
-	defer dst.Close()
 
-	start := time.Now()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
+	defer stop()
 
-	if err = CompressDir(ctx, path, dst, func(opts *Options) {
-		opts.Mode = mode
-	}); err != nil {
-		return fmt.Errorf("compress error: %w", err)
+	success := 0
+	n := len(c.Args.Files)
+	for i, file := range c.Args.Files {
+		c.logger = internal.NewLogger(i, n, file)
+
+		path := string(file)
+
+		dst, err := util.OpenExclFile(".", filepath.Base(path), mode.Ext(), 066)
+		if err != nil {
+			return fmt.Errorf("create archive error: %w", err)
+		}
+
+		err = Compress(ctx, path, dst, func(opts *Options) {
+			opts.Mode = mode
+		})
+		_ = dst.Close()
+		if err == nil {
+			success++
+			continue
+		}
+
+		if errors.Is(err, context.Canceled) {
+			break
+		}
+
+		c.logger.Printf("compress error: %v", err)
 	}
 
-	log.Printf(`compressing "%s" took %s`, path, humanize.RelTime(start, time.Now(), "", ""))
-
+	log.Printf("successfully compressed %d/%d files", success, n)
 	return nil
 }

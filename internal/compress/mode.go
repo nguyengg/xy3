@@ -12,6 +12,7 @@ const (
 	ZSTD
 	ZIP
 	GZIP
+	XZ
 )
 
 func (m Mode) ContentType() string {
@@ -22,6 +23,8 @@ func (m Mode) ContentType() string {
 		return "application/zip"
 	case GZIP:
 		return "application/gzip"
+	case XZ:
+		return "application/x-xz"
 	default:
 		panic(fmt.Sprintf("unknown mode: %v", m))
 	}
@@ -30,11 +33,13 @@ func (m Mode) ContentType() string {
 func (m Mode) Ext() string {
 	switch m {
 	case ZSTD:
-		return ".zst"
+		return ".tar.zst"
 	case ZIP:
 		return ".zip"
 	case GZIP:
-		return ".gz"
+		return ".tar.gz"
+	case XZ:
+		return ".tar.xz"
 	default:
 		panic(fmt.Sprintf("unknown mode: %v", m))
 	}
@@ -43,11 +48,13 @@ func (m Mode) Ext() string {
 func (m Mode) createCompressor(dst io.Writer, opts *Options) (compressor, error) {
 	switch m {
 	case ZSTD:
-		return newZSTDCompressor(dst, opts)
+		return newZstdCompressor(dst, opts)
 	case ZIP:
-		return newZIPCompressor(dst, opts), nil
+		return newZipCompressor(dst, opts), nil
 	case GZIP:
-		return newGZIPCompressor(dst, opts)
+		return newGzipCompressor(dst, opts)
+	case XZ:
+		return newXzCompressor(dst, opts)
 	default:
 		return nil, fmt.Errorf("unknown mode: %v", m)
 	}

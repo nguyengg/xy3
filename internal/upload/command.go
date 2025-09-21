@@ -24,7 +24,7 @@ type Command struct {
 	Delete              bool    `short:"d" long:"delete" description:"if given, the local files will be deleted only upon successful upload. If compressing a directory, the directory will not be deleted but the intermediate archive will be."`
 	MaxConcurrency      int     `short:"P" long:"max-concurrency" description:"use up to max-concurrency number of goroutines at a time for parallel uploads." default:"5"`
 	Args                struct {
-		Files []flags.Filename `positional-arg-name:"file" description:"the local files or directories (after compressing the contents of the directory to a .zip file with DEFLATE best compression) to be uploaded to S3." required:"yes"`
+		Files []flags.Filename `positional-arg-name:"file" description:"the local directories to be uploaded to S3 as archives." required:"yes"`
 	} `positional-args:"yes"`
 
 	client *s3.Client

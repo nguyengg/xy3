@@ -10,9 +10,8 @@ import (
 )
 
 type zipCompressor struct {
-	buf []byte
-	zw  *zip.Writer
-	fw  io.Writer // nil until NewFile is called at least once.
+	zw *zip.Writer
+	fw io.Writer // nil until NewFile is called at least once.
 }
 
 func (c *zipCompressor) NewFile(src, dst string) error {
@@ -46,16 +45,13 @@ func (c *zipCompressor) Close() error {
 	return c.zw.Close()
 }
 
-func newZIPCompressor(dst io.Writer, opts *Options) *zipCompressor {
+func newZipCompressor(dst io.Writer, opts *Options) *zipCompressor {
 	zw := zip.NewWriter(dst)
 	zw.RegisterCompressor(zip.Deflate, func(w io.Writer) (io.WriteCloser, error) {
 		return flate.NewWriter(w, flate.BestCompression)
 	})
 
-	return &zipCompressor{
-		buf: make([]byte, opts.BufferSize),
-		zw:  zw,
-	}
+	return &zipCompressor{zw: zw}
 }
 
 var _ compressor = &zipCompressor{}
