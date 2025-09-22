@@ -12,22 +12,6 @@ import (
 type sevenZipCodec struct {
 }
 
-// compressor.
-var _ compressor = &sevenZipCodec{}
-
-func (s *sevenZipCodec) Write(p []byte) (n int, err error) {
-	panic("7z compression is not supported")
-}
-
-func (s *sevenZipCodec) Close() error {
-	panic("7z compression is not supported")
-
-}
-
-func (s *sevenZipCodec) AddFile(src, dst string) error {
-	panic("7z compression is not supported")
-}
-
 // extractor.
 var _ extractor = &sevenZipCodec{}
 
