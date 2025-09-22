@@ -9,9 +9,9 @@ import (
 
 	"github.com/jessevdk/go-flags"
 	"github.com/nguyengg/xy3/internal/cmd"
-	"github.com/nguyengg/xy3/internal/download"
-	"github.com/nguyengg/xy3/internal/recompress"
-	"github.com/nguyengg/xy3/internal/upload"
+	"github.com/nguyengg/xy3/internal/cmd/download"
+	"github.com/nguyengg/xy3/internal/cmd/recompress"
+	"github.com/nguyengg/xy3/internal/cmd/upload"
 )
 
 var opts struct {

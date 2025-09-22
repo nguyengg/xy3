@@ -1,4 +1,4 @@
-package download
+package internal
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	"github.com/schollz/progressbar/v3"
 )
 
-// Download downloads S3 object to a new file created in the given directory.
+// Download downloads S3 object and writes to the given io.Writer.
 //
 // If the checksum mismatches, ErrChecksumMismatch will be returned.
 func Download(ctx context.Context, client *s3.Client, bucket, key string, dst io.Writer) error {

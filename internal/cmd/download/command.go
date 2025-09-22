@@ -88,8 +88,8 @@ func (c *Command) download(ctx context.Context, manifestName string) error {
 	}
 	name := f.Name()
 
-	if err, _ = Download(ctx, c.client, man.Bucket, man.Key, f), f.Close(); err != nil {
-		if errors.Is(err, ErrChecksumMismatch{}) {
+	if err, _ = internal.Download(ctx, c.client, man.Bucket, man.Key, f), f.Close(); err != nil {
+		if errors.Is(err, internal.ErrChecksumMismatch{}) {
 			c.logger.Print(err)
 		} else {
 			_ = os.Remove(name)

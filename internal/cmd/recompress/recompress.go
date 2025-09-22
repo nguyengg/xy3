@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 
 	"github.com/nguyengg/xy3/internal"
-	"github.com/nguyengg/xy3/internal/download"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/nguyengg/xy3/util"
 )
@@ -43,8 +42,8 @@ func (c *Command) recompress(ctx context.Context, manifestName string) error {
 		return fmt.Errorf("create file error: %w", err)
 	}
 
-	if err, _ = download.Download(ctx, c.client, man.Bucket, man.Key, f), f.Close(); err != nil {
-		if errors.Is(err, download.ErrChecksumMismatch{}) {
+	if err, _ = internal.Download(ctx, c.client, man.Bucket, man.Key, f), f.Close(); err != nil {
+		if errors.Is(err, internal.ErrChecksumMismatch{}) {
 			c.logger.Print(err)
 		} else {
 			return err
