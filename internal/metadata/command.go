@@ -70,13 +70,22 @@ func (c *Command) Execute(args []string) error {
 		}
 
 		for _, obj := range page.Contents {
+			// HeadObject to get metadata.
+			headObjectResult, err := c.client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket:              aws.String(bucket),
+				Key:                 obj.Key,
+				ExpectedBucketOwner: c.ExpectedBucketOwner,
+			})
+			if err != nil {
+				return fmt.Errorf(`get metadata about "%s" error: %w`, aws.ToString(obj.Key), err)
+			}
+
 			m := manifest.Manifest{
 				Bucket:              bucket,
 				Key:                 aws.ToString(obj.Key),
 				ExpectedBucketOwner: c.ExpectedBucketOwner,
 				Size:                aws.ToInt64(obj.Size),
-				// TODO include checksum in response.
-				Checksum: "",
+				Checksum:            headObjectResult.Metadata["checksum"],
 			}
 
 			stem, ext := util.StemAndExt(m.Key)
