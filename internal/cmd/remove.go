@@ -1,13 +1,18 @@
-package remove
+package cmd
 
 import (
 	"bufio"
 	"context"
 	"errors"
 	"fmt"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jessevdk/go-flags"
+	"github.com/nguyengg/xy3/internal/manifest"
+
 	"io"
 	"log"
 	"os"
@@ -16,7 +21,7 @@ import (
 	"strings"
 )
 
-type Command struct {
+type Remove struct {
 	KeepLocal bool `long:"keep-local" description:"by default, the local files will be deleted upon successfully deleted in S3; specify this to keep the local files intact"`
 	Args      struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the local files each containing a single S3 URI" required:"yes"`
@@ -25,7 +30,7 @@ type Command struct {
 	client *s3.Client
 }
 
-func (c *Command) Execute(args []string) error {
+func (c *Remove) Execute(args []string) error {
 	if len(args) != 0 {
 		return fmt.Errorf("unknown positional arguments: %s", strings.Join(args, " "))
 	}
@@ -89,5 +94,46 @@ fileLoop:
 	}
 
 	log.Printf("successfully deleted %d/%d files", success, n)
+	return nil
+}
+
+func (c *Remove) remove(ctx context.Context, name string) error {
+	basename := filepath.Base(name)
+	logger := log.New(os.Stderr, `"`+basename+`" `, log.LstdFlags)
+
+	file, err := os.Open(name)
+	if err != nil {
+		return fmt.Errorf("open file error: %w", err)
+	}
+	man, err := manifest.UnmarshalFromReader(file)
+	if _ = file.Close(); err != nil {
+		return err
+	}
+
+	logger.Printf(`deleting "s3://%s/%s"`, man.Bucket, man.Key)
+	if _, err = c.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket:              aws.String(man.Bucket),
+		Key:                 aws.String(man.Key),
+		ExpectedBucketOwner: man.ExpectedBucketOwner,
+	}); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return err
+		}
+
+		var re *http.ResponseError
+		if errors.As(err, &re) && re.HTTPStatusCode() != 404 {
+			return fmt.Errorf("remove S3 object error: %w", err)
+		}
+	}
+
+	if !c.KeepLocal {
+		if err = os.Remove(name); err != nil {
+			logger.Printf(`deleting file "%s"`, name)
+			if err = os.Remove(name); err != nil {
+				logger.Printf("remove file error: %v", err)
+			}
+		}
+	}
+
 	return nil
 }

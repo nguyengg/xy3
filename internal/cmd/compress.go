@@ -15,7 +15,7 @@ import (
 	"github.com/nguyengg/xy3/util"
 )
 
-type CompressCommand struct {
+type Compress struct {
 	Algorithm      string `short:"a" long:"algorithm" choice:"zstd" choice:"zip" choice:"gzip" choice:"xz" default:"zstd"`
 	MaxConcurrency int    `short:"P" long:"max-concurrency"`
 	Args           struct {
@@ -25,7 +25,7 @@ type CompressCommand struct {
 	logger *log.Logger
 }
 
-func (c *CompressCommand) Execute(args []string) (err error) {
+func (c *Compress) Execute(args []string) (err error) {
 	if len(args) != 0 {
 		return fmt.Errorf("unknown positional arguments: %s", strings.Join(args, " "))
 	}
@@ -86,7 +86,7 @@ func (c *CompressCommand) Execute(args []string) (err error) {
 	return nil
 }
 
-func (c *CompressCommand) compressDir(ctx context.Context, algorithm internal.Algorithm, name string) error {
+func (c *Compress) compressDir(ctx context.Context, algorithm internal.Algorithm, name string) error {
 	ext := algorithm.Ext()
 	if algorithm.ShouldTar() {
 		ext = ".tar" + ext
@@ -108,7 +108,7 @@ func (c *CompressCommand) compressDir(ctx context.Context, algorithm internal.Al
 	return nil
 }
 
-func (c *CompressCommand) compressFile(ctx context.Context, algorithm internal.Algorithm, name string) error {
+func (c *Compress) compressFile(ctx context.Context, algorithm internal.Algorithm, name string) error {
 	src, err := os.Open(name)
 	if err != nil {
 		return fmt.Errorf(`open file "%s" error: %w`, name, err)

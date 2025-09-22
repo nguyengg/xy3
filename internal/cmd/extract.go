@@ -13,7 +13,7 @@ import (
 	"github.com/nguyengg/xy3/internal"
 )
 
-type ExtractCommand struct {
+type Extract struct {
 	Args struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the local files to be extracted" required:"yes"`
 	} `positional-args:"yes"`
@@ -21,7 +21,7 @@ type ExtractCommand struct {
 	logger *log.Logger
 }
 
-func (c *ExtractCommand) Execute(args []string) (err error) {
+func (c *Extract) Execute(args []string) (err error) {
 	if len(args) != 0 {
 		return fmt.Errorf("unknown positional arguments: %s", strings.Join(args, " "))
 	}

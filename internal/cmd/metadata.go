@@ -1,4 +1,4 @@
-package metadata
+package cmd
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 	"github.com/nguyengg/xy3/util"
 )
 
-type Command struct {
+type Metadata struct {
 	ExpectedBucketOwner *string `long:"expected-bucket-owner" description:"optional ExpectedBucketOwner field to apply when the manifest does not have its own expectedBucketOwner"`
 
 	Args struct {
@@ -26,7 +26,7 @@ type Command struct {
 	logger *log.Logger
 }
 
-func (c *Command) Execute(args []string) error {
+func (c *Metadata) Execute(args []string) error {
 	if len(args) != 0 {
 		return fmt.Errorf("unknown positional arguments: %s", strings.Join(args, " "))
 	}
