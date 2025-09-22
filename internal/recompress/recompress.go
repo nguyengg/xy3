@@ -9,7 +9,6 @@ import (
 
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/download"
-	"github.com/nguyengg/xy3/internal/extract"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/nguyengg/xy3/util"
 )
@@ -52,27 +51,9 @@ func (c *Command) recompress(ctx context.Context, manifestName string) error {
 		}
 	}
 
-	// reopen file to extract.
-	name := f.Name()
-	if f, err = os.Open(name); err != nil {
-		return fmt.Errorf(`open file "%s" error: %w`, name, err)
-	}
-
-	ex := extract.DetectExtractorFromExt(ext)
-	if ex == nil {
-		return fmt.Errorf(`file "%s" is not a supported archive`, filepath.Base(name))
-	}
-
-	uncompressedDir, err := util.MkExclDir(dir, stem, 0755)
+	uncompressedDir, err := internal.Decompress(ctx, f.Name(), dir)
 	if err != nil {
-		return fmt.Errorf("create directory error: %w", err)
-	}
-
-	bar := internal.DefaultBytes(-1, "extracting")
-	if err, _, _ = ex.Extract(ctx, f, uncompressedDir, func(opts *extract.Options) {
-		opts.ProgressBar = bar
-	}), f.Close(), bar.Close(); err != nil {
-		return fmt.Errorf(`extract "%s" error: %w`, name, err)
+		return err
 	}
 
 	// now compress the extracted contents.
@@ -81,7 +62,7 @@ func (c *Command) recompress(ctx context.Context, manifestName string) error {
 		return fmt.Errorf("create archive error: %w", err)
 	}
 
-	if err, _ = internal.CompressDir(ctx, uncompressedDir, f, internal.WithCompressDirProgressBar(uncompressedDir)), f.Close(); err != nil {
+	if err, _ = internal.CompressDir(ctx, uncompressedDir, f), f.Close(); err != nil {
 		return fmt.Errorf(`compress "%s" error: %w`, filepath.Join(dir, "tmp"), err)
 	}
 

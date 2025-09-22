@@ -100,7 +100,7 @@ func (c *CompressCommand) compressDir(ctx context.Context, algorithm internal.Al
 	if err, _ = internal.CompressDir(ctx, name, dst, func(opts *internal.CompressOptions) {
 		opts.Algorithm = algorithm
 		opts.MaxConcurrency = c.MaxConcurrency
-	}, internal.WithCompressDirProgressBar(name)), dst.Close(); err != nil {
+	}), dst.Close(); err != nil {
 		_ = os.Remove(dst.Name())
 		return err
 	}
@@ -123,7 +123,7 @@ func (c *CompressCommand) compressFile(ctx context.Context, algorithm internal.A
 	if err, _, _ = internal.Compress(ctx, src, dst, func(opts *internal.CompressOptions) {
 		opts.Algorithm = algorithm
 		opts.MaxConcurrency = c.MaxConcurrency
-	}, internal.WithCompressProgressBar(name)), dst.Close(), src.Close(); err != nil {
+	}), dst.Close(), src.Close(); err != nil {
 		_ = os.Remove(dst.Name())
 		return err
 	}

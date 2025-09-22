@@ -24,8 +24,6 @@ type CompressOptions struct {
 	// Applicable only for compression libraries that support it (e.g. zstd). The zero value indicates no specific
 	// setting and the encoder should use default.
 	MaxConcurrency int
-
-	progressBar *progressbar.ProgressBar
 }
 
 // DefaultAlgorithm is the default compression algorithm.
@@ -42,9 +40,12 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 		fn(opts)
 	}
 
-	if opts.progressBar != nil {
-		defer opts.progressBar.Close()
-	}
+	bar, _ := compressDirProgressBar(dir)
+	defer func() {
+		if bar != nil {
+			_ = bar.Close()
+		}
+	}()
 
 	comp, err := opts.Algorithm.createCompressor(dst, opts)
 	if err != nil {
@@ -91,8 +92,8 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 				return fmt.Errorf("compute file (path=%s) name in archive error: %w", dstPath, err)
 			}
 
-			if opts.progressBar != nil {
-				if _, err = util.CopyBufferWithContext(ctx, comp, io.TeeReader(src, opts.progressBar), buf); err != nil {
+			if bar != nil {
+				if _, err = util.CopyBufferWithContext(ctx, comp, io.TeeReader(src, bar), buf); err != nil {
 					return fmt.Errorf("add file (path=%s) to archive file (name=%s) error: %w", srcPath, dstPath, err)
 				}
 			} else if _, err = util.CopyBufferWithContext(ctx, comp, src, buf); err != nil {
@@ -124,13 +125,20 @@ func Compress(ctx context.Context, src io.Reader, dst io.Writer, optFns ...func(
 		fn(opts)
 	}
 
+	bar, _ := compressFileProgressBar(src)
+	defer func() {
+		if bar != nil {
+			_ = bar.Close()
+		}
+	}()
+
 	comp, err := opts.Algorithm.createCompressor(dst, opts)
 	if err != nil {
 		return fmt.Errorf("create compressor error: %w", err)
 	}
 
-	if opts.progressBar != nil {
-		if _, err = util.CopyBufferWithContext(ctx, comp, io.TeeReader(src, opts.progressBar), nil); err != nil {
+	if bar != nil {
+		if _, err = util.CopyBufferWithContext(ctx, comp, io.TeeReader(src, bar), nil); err != nil {
 			return fmt.Errorf("compress error: %w", err)
 		}
 	} else if _, err = util.CopyBufferWithContext(ctx, comp, src, nil); err != nil {
@@ -144,12 +152,8 @@ func Compress(ctx context.Context, src io.Reader, dst io.Writer, optFns ...func(
 	return nil
 }
 
-// WithCompressDirProgressBar creates a progress bar for CompressDir.
-func WithCompressDirProgressBar(dir string) func(*CompressOptions) {
-	var (
-		n    int
-		size int64
-	)
+func compressDirProgressBar(dir string) (*progressbar.ProgressBar, error) {
+	var size int64
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		switch {
 		case err != nil, d.IsDir(), !d.Type().IsRegular():
@@ -160,31 +164,28 @@ func WithCompressDirProgressBar(dir string) func(*CompressOptions) {
 				return err
 			}
 
-			n++
 			size += fi.Size()
 			return nil
 		}
 	})
-
-	return func(opts *CompressOptions) {
-		if err == nil {
-			opts.progressBar = DefaultBytes(size, fmt.Sprintf(`compressing "%s"`, filepath.Base(dir)))
-		}
+	if err == nil {
+		return DefaultBytes(size, fmt.Sprintf(`compressing "%s"`, filepath.Base(dir))), nil
 	}
+
+	return nil, err
 }
 
-// WithCompressProgressBar creates a progress bar for Compress.
-func WithCompressProgressBar(name string) func(*CompressOptions) {
-	var size int64
-	if fi, err := os.Stat(name); err == nil {
-		size = fi.Size()
+func compressFileProgressBar(r io.Reader) (*progressbar.ProgressBar, error) {
+	if f, ok := r.(*os.File); ok {
+		fi, err := f.Stat()
+		if err == nil {
+			return DefaultBytes(fi.Size(), fmt.Sprintf(`compressing "%s"`, filepath.Base(f.Name()))), nil
+		}
+
+		return nil, err
 	}
 
-	return func(opts *CompressOptions) {
-		if size > 0 {
-			opts.progressBar = DefaultBytes(size, fmt.Sprintf(`compressing "%s"`, filepath.Base(name)))
-		}
-	}
+	return nil, nil
 }
 
 // compressor can be used for both compressing a single file or a directory.

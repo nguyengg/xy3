@@ -7,14 +7,12 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jessevdk/go-flags"
 	"github.com/nguyengg/xy3/internal"
-	"github.com/nguyengg/xy3/internal/extract"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/nguyengg/xy3/util"
 )
@@ -99,33 +97,10 @@ func (c *Command) download(ctx context.Context, manifestName string) error {
 		}
 	}
 
-	if !c.Extract {
-		return nil
-	}
-
-	f, err = os.Open(name)
-	if err != nil {
-		return fmt.Errorf(`open file "%s" error: %w`, name, err)
-	}
-
-	ex := extract.DetectExtractorFromExt(ext)
-	if ex == nil {
-		c.logger.Printf(`file "%s" is not a supported archive`, filepath.Base(name))
-		return nil
-	}
-
-	dir, err := util.MkExclDir(".", stem, 0755)
-	if err != nil {
-		return fmt.Errorf("create directory error: %w", err)
-	}
-
-	bar := internal.DefaultBytes(-1, "extracting")
-	if err, _, _ = ex.Extract(ctx, f, dir, func(opts *extract.Options) {
-		opts.ProgressBar = bar
-	}), f.Close(), bar.Close(); err != nil {
-		_ = os.RemoveAll(dir)
-	} else {
-		_ = os.Remove(name)
+	if c.Extract {
+		if _, err = internal.Decompress(ctx, name, "."); err == nil {
+			_ = os.Remove(name)
+		}
 	}
 
 	return err

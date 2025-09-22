@@ -1,19 +1,72 @@
-package extract
+package internal
 
 import (
 	"archive/zip"
+	"compress/flate"
 	"fmt"
 	"io"
 	"iter"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/krolaw/zipstream"
 )
 
-type zipExtractor struct {
+type zipCodec struct {
+	zw *zip.Writer
+	fw io.Writer // nil until NewFile is called at least once.
 }
 
-func (z zipExtractor) Entries(src io.Reader, open bool) (iter.Seq2[Entry, error], error) {
+// compressor.
+var _ compressor = &zipCodec{}
+
+func (c *zipCodec) AddFile(src, dst string) error {
+	dst = filepath.ToSlash(dst)
+
+	fi, err := os.Stat(src)
+	if err != nil {
+		return fmt.Errorf(`stat file "%s" error: %w`, src, err)
+	}
+
+	fh := &zip.FileHeader{
+		Name:     strings.ReplaceAll(dst, "\\", "/"),
+		Modified: fi.ModTime(),
+	}
+	fh.SetMode(fi.Mode())
+
+	if c.fw, err = c.zw.CreateHeader(fh); err != nil {
+		return fmt.Errorf(`create zip header for "%s" error: %w`, src, err)
+	}
+
+	return nil
+}
+
+func (c *zipCodec) Write(p []byte) (n int, err error) {
+	if c.fw == nil {
+		return 0, fmt.Errorf("NewFile has not been called")
+	}
+
+	return c.fw.Write(p)
+}
+
+func (c *zipCodec) Close() error {
+	return c.zw.Close()
+}
+
+func newZipCompressor(dst io.Writer, opts *CompressOptions) *zipCodec {
+	zw := zip.NewWriter(dst)
+	zw.RegisterCompressor(zip.Deflate, func(w io.Writer) (io.WriteCloser, error) {
+		return flate.NewWriter(w, flate.BestCompression)
+	})
+
+	return &zipCodec{zw: zw}
+}
+
+// extractor.
+var _ extractor = &zipCodec{}
+
+func (c *zipCodec) Files(src io.Reader, open bool) (iter.Seq2[ArchiveFile, error], error) {
 	if f, ok := src.(*os.File); ok {
 		return fromZipFile(f), nil
 	}
@@ -21,8 +74,8 @@ func (z zipExtractor) Entries(src io.Reader, open bool) (iter.Seq2[Entry, error]
 	return fromZipReader(src), nil
 }
 
-func fromZipReader(src io.Reader) iter.Seq2[Entry, error] {
-	return func(yield func(Entry, error) bool) {
+func fromZipReader(src io.Reader) iter.Seq2[ArchiveFile, error] {
+	return func(yield func(ArchiveFile, error) bool) {
 		zr := zipstream.NewReader(src)
 
 		for {
@@ -47,8 +100,8 @@ func fromZipReader(src io.Reader) iter.Seq2[Entry, error] {
 	}
 }
 
-func fromZipFile(src *os.File) iter.Seq2[Entry, error] {
-	return func(yield func(Entry, error) bool) {
+func fromZipFile(src *os.File) iter.Seq2[ArchiveFile, error] {
+	return func(yield func(ArchiveFile, error) bool) {
 		fi, err := src.Stat()
 		if err != nil {
 			yield(nil, fmt.Errorf(`stat file "%s" error: %w`, src.Name(), err))
@@ -85,6 +138,8 @@ type zipEntry struct {
 	fh *zip.FileHeader
 	io.ReadCloser
 }
+
+var _ ArchiveFile = &zipEntry{}
 
 func (e *zipEntry) Name() string {
 	return e.fh.Name

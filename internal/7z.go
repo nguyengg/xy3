@@ -1,4 +1,4 @@
-package extract
+package internal
 
 import (
 	"fmt"
@@ -9,10 +9,29 @@ import (
 	"github.com/bodgit/sevenzip"
 )
 
-type sevenZipExtractor struct {
+type sevenZipCodec struct {
 }
 
-func (s sevenZipExtractor) Entries(src io.Reader, open bool) (iter.Seq2[Entry, error], error) {
+// compressor.
+var _ compressor = &sevenZipCodec{}
+
+func (s *sevenZipCodec) Write(p []byte) (n int, err error) {
+	panic("7z compression is not supported")
+}
+
+func (s *sevenZipCodec) Close() error {
+	panic("7z compression is not supported")
+
+}
+
+func (s *sevenZipCodec) AddFile(src, dst string) error {
+	panic("7z compression is not supported")
+}
+
+// extractor.
+var _ extractor = &sevenZipCodec{}
+
+func (s *sevenZipCodec) Files(src io.Reader, open bool) (iter.Seq2[ArchiveFile, error], error) {
 	if f, ok := src.(*os.File); ok {
 		return from7zFile(f, open), nil
 	}
@@ -21,8 +40,8 @@ func (s sevenZipExtractor) Entries(src io.Reader, open bool) (iter.Seq2[Entry, e
 	return nil, fmt.Errorf("7z archives must be opened as os.File")
 }
 
-func from7zFile(src *os.File, open bool) iter.Seq2[Entry, error] {
-	return func(yield func(Entry, error) bool) {
+func from7zFile(src *os.File, open bool) iter.Seq2[ArchiveFile, error] {
+	return func(yield func(ArchiveFile, error) bool) {
 		fi, err := src.Stat()
 		if err != nil {
 			yield(nil, fmt.Errorf(`stat file "%s" error: %w`, src.Name(), err))
@@ -62,6 +81,8 @@ type sevenZipEntry struct {
 	fh *sevenzip.FileHeader
 	io.ReadCloser
 }
+
+var _ ArchiveFile = &sevenZipEntry{}
 
 func (e *sevenZipEntry) Name() string {
 	return e.fh.Name

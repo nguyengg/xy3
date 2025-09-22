@@ -10,7 +10,6 @@ import (
 	"github.com/jessevdk/go-flags"
 	"github.com/nguyengg/xy3/internal/cmd"
 	"github.com/nguyengg/xy3/internal/download"
-	"github.com/nguyengg/xy3/internal/extract"
 	"github.com/nguyengg/xy3/internal/metadata"
 	"github.com/nguyengg/xy3/internal/recompress"
 	"github.com/nguyengg/xy3/internal/remove"
@@ -20,7 +19,7 @@ import (
 var opts struct {
 	Profile    string              `short:"p" long:"profile" description:"override AWS_PROFILE if given" default:"nguyen-gg" default-mask:"-"`
 	Compress   cmd.CompressCommand `command:"compress" alias:"c" description:"compress files"`
-	Extract    extract.Command     `command:"extract" alias:"x" description:"extract archives"`
+	Extract    cmd.ExtractCommand  `command:"extract" alias:"x" description:"extract archives"`
 	Recompress recompress.Command  `command:"recompress" alias:"rc" description:"recompress archives"`
 	Download   download.Command    `command:"download" alias:"down" description:"download from S3 with possible extract options"`
 	Upload     upload.Command      `command:"upload" alias:"up" description:"upload files to S3"`
