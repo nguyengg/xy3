@@ -48,9 +48,8 @@ func (c *Command) upload(ctx context.Context, name string) error {
 		defer f.Close()
 	}
 
-	// the original name will produce the key (with added optional prefix).
-	// the S3 bucket should enable versioning as a result.
-	stem, ext := util.StemAndExt(name)
+	// use the name of the archive (in the case of directory) to have meaningful extensions.
+	stem, ext := util.StemAndExt(f.Name())
 	key := c.Prefix + stem + ext
 	m := manifest.Manifest{
 		Bucket:              c.Bucket,
