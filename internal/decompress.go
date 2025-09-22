@@ -45,19 +45,28 @@ func Decompress(ctx context.Context, name, dir string, optFns ...func(*Decompres
 		fn(opts)
 	}
 
-	stem, ext := util.StemAndExt(name)
+	// open and stat file for the size which is used for progress reporting.
 	src, err := os.Open(name)
 	if err != nil {
 		return "", fmt.Errorf(`open file "%s" error: %w`, name, err)
 	}
 	defer src.Close()
 
+	fi, err := src.Stat()
+	if err != nil {
+		return "", fmt.Errorf(`stat file "%s" error: %w`, name, err)
+	}
+
+	bar := DefaultBytes(fi.Size(), fmt.Sprintf(`decompressing "%s"`, filepath.Base(name)))
+	defer bar.Close()
+
 	var (
-		// only one of these values will be non-nil.
+		// only one of ex or dec will be non-nil.
 		ex  extractor
 		dec io.ReadCloser
 	)
 
+	stem, ext := util.StemAndExt(name)
 	switch ext {
 	case ".tar.gz":
 		ex = &tarCodec{ex: fromTarGzipReader}
@@ -70,7 +79,7 @@ func Decompress(ctx context.Context, name, dir string, optFns ...func(*Decompres
 	case ".zip":
 		ex = &zipCodec{}
 	case ".zst":
-		r, err := zstd.NewReader(src)
+		r, err := zstd.NewReader(io.TeeReader(src, bar))
 		if err != nil {
 			return "", fmt.Errorf("create zstd reader error: %w", err)
 		}
@@ -78,12 +87,12 @@ func Decompress(ctx context.Context, name, dir string, optFns ...func(*Decompres
 
 		dec = io.NopCloser(r)
 	case ".gz":
-		dec, err = gzip.NewReader(src)
+		dec, err = gzip.NewReader(io.TeeReader(src, bar))
 		if err != nil {
 			return "", fmt.Errorf("create gzip reader error: %w", err)
 		}
 	case ".xz":
-		r, err := xz.NewReader(src)
+		r, err := xz.NewReader(io.TeeReader(src, bar))
 		if err != nil {
 			return "", fmt.Errorf("create xz reader error: %w", err)
 		}
@@ -100,9 +109,7 @@ func Decompress(ctx context.Context, name, dir string, optFns ...func(*Decompres
 			return "", fmt.Errorf("create output file error: %w", err)
 		}
 
-		bar := DefaultBytes(-1, fmt.Sprintf(`decompressing "%s"`, filepath.Base(name)))
-		_, err = util.CopyBufferWithContext(ctx, io.MultiWriter(dst, bar), dec, nil)
-		_ = bar.Close()
+		_, err = util.CopyBufferWithContext(ctx, dst, dec, nil)
 		if err == nil {
 			err = dec.Close()
 		}
@@ -113,6 +120,9 @@ func Decompress(ctx context.Context, name, dir string, optFns ...func(*Decompres
 
 		return dst.Name(), nil
 	}
+
+	// we're decompressing and extracting so change the progress bar's description to make it more meaningful.
+	bar.Describe(fmt.Sprintf(`extracting "%s"`, filepath.Base(name)))
 
 	// the contents of the archive will be extracted into a unique directory.
 	// if unsuccessful, this output directory will be deleted.
@@ -146,9 +156,6 @@ func Decompress(ctx context.Context, name, dir string, optFns ...func(*Decompres
 		return "", err
 	}
 
-	bar := DefaultBytes(-1, fmt.Sprintf(`decompressing "%s"`, filepath.Base(name)))
-	defer bar.Close()
-
 	buf := make([]byte, defaultBufferSize)
 
 	for f, err := range files {
@@ -171,8 +178,7 @@ func Decompress(ctx context.Context, name, dir string, optFns ...func(*Decompres
 			return "", fmt.Errorf(`create file "%s" error: %w`, path, err)
 		}
 
-		_, err = util.CopyBufferWithContext(ctx, io.MultiWriter(w, bar), f, buf)
-
+		_, err = util.CopyBufferWithContext(ctx, w, io.TeeReader(f, bar), buf)
 		_, _ = w.Close(), f.Close()
 		if err != nil {
 			return "", fmt.Errorf(`write to file "%s" error: %w`, path, err)

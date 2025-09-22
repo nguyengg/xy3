@@ -9,8 +9,7 @@ import (
 type Algorithm int
 
 const (
-	UNKNOWN Algorithm = iota
-	AlgorithmZstd
+	AlgorithmZstd Algorithm = iota
 	AlgorithmZip
 	AlgorithmGzip
 	AlgorithmXz
