@@ -13,7 +13,7 @@ import (
 type zipExtractor struct {
 }
 
-func (z zipExtractor) Entries(src io.Reader) (iter.Seq2[Entry, error], error) {
+func (z zipExtractor) Entries(src io.Reader, open bool) (iter.Seq2[Entry, error], error) {
 	if f, ok := src.(*os.File); ok {
 		return fromZipFile(f), nil
 	}

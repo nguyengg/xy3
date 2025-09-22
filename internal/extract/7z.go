@@ -12,16 +12,16 @@ import (
 type sevenZipExtractor struct {
 }
 
-func (s sevenZipExtractor) Entries(src io.Reader) (iter.Seq2[Entry, error], error) {
+func (s sevenZipExtractor) Entries(src io.Reader, open bool) (iter.Seq2[Entry, error], error) {
 	if f, ok := src.(*os.File); ok {
-		return from7zFile(f), nil
+		return from7zFile(f, open), nil
 	}
 
 	// TODO find an implementation of 7z reader that receives just io.Reader
 	return nil, fmt.Errorf("7z archives must be opened as os.File")
 }
 
-func from7zFile(src *os.File) iter.Seq2[Entry, error] {
+func from7zFile(src *os.File, open bool) iter.Seq2[Entry, error] {
 	return func(yield func(Entry, error) bool) {
 		fi, err := src.Stat()
 		if err != nil {
@@ -42,10 +42,13 @@ func from7zFile(src *os.File) iter.Seq2[Entry, error] {
 			}
 
 			// we'll always open the file for reading for now. caller is responsible for closing it.
-			rc, err := f.Open()
-			if err != nil {
-				yield(nil, fmt.Errorf(`open entry "%s" error: %w`, f.Name, err))
-				return
+			var rc io.ReadCloser
+			if open {
+				rc, err = f.Open()
+				if err != nil {
+					yield(nil, fmt.Errorf(`open entry "%s" error: %w`, f.Name, err))
+					return
+				}
 			}
 
 			if !yield(&sevenZipEntry{fh: &f.FileHeader, ReadCloser: rc}, nil) {

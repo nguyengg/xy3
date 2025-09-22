@@ -30,10 +30,21 @@ type Extractor interface {
 	Entries(src io.Reader) (iter.Seq2[Entry, error], error)
 	// Extract extracts contents of the archive to the dir directory.
 	Extract(ctx context.Context, src io.Reader, dir string, optFns ...func(*Options)) error
+	// FindRootDir parses the file headers and returns root directory if exists.
+	FindRootDir(ctx context.Context, src io.Reader) (internal.RootDir, error)
+}
+
+// Entry represents an opened file in the archive to be extracted.
+// TODO make it so that Entry can be opened on demand.
+type Entry interface {
+	Name() string
+	FileInfo() os.FileInfo
+	FileMode() os.FileMode
+	io.ReadCloser
 }
 
 type entriesExtractor interface {
-	Entries(src io.Reader) (iter.Seq2[Entry, error], error)
+	Entries(src io.Reader, open bool) (iter.Seq2[Entry, error], error)
 }
 
 // DetectExtractorFromExt uses the extension of the file's name to determine decompression algorithm.
@@ -58,7 +69,41 @@ type baseExtractor struct {
 	entriesExtractor
 }
 
-func (e *baseExtractor) Extract(ctx context.Context, src io.Reader, dir string, optFns ...func(*Options)) error {
+func (e *baseExtractor) FindRootDir(ctx context.Context, src io.Reader) (rootDir internal.RootDir, err error) {
+	files, err := e.entriesExtractor.Entries(src, false)
+	if err != nil {
+		return "", err
+	}
+
+	var (
+		rootFinder = internal.NewZipRootDirFinder()
+		ok         bool
+	)
+
+	for f, err := range files {
+		if err != nil {
+			return "", err
+		}
+
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		default:
+			if rootDir, ok = rootFinder(f.Name()); !ok {
+				return rootDir, nil
+			}
+		}
+
+	}
+
+	return
+}
+
+func (e *baseExtractor) Entries(src io.Reader) (iter.Seq2[Entry, error], error) {
+	return e.entriesExtractor.Entries(src, true)
+}
+
+func (e *baseExtractor) Extract(ctx context.Context, src io.Reader, dir string, optFns ...func(*Options)) (err error) {
 	opts := &Options{}
 	for _, fn := range optFns {
 		fn(opts)
@@ -66,21 +111,8 @@ func (e *baseExtractor) Extract(ctx context.Context, src io.Reader, dir string, 
 
 	var rootDir internal.RootDir
 	if rs, ok := src.(io.ReadSeeker); ok {
-		files, err := e.entriesExtractor.Entries(rs)
-		if err != nil {
+		if rootDir, err = e.FindRootDir(ctx, rs); err != nil {
 			return err
-		}
-
-		rootFinder := internal.NewZipRootDirFinder()
-
-		for f, err := range files {
-			if err != nil {
-				return err
-			}
-
-			if rootDir, ok = rootFinder(f.Name()); !ok {
-				break
-			}
 		}
 
 		if _, err = rs.Seek(0, io.SeekStart); err != nil {
@@ -88,7 +120,7 @@ func (e *baseExtractor) Extract(ctx context.Context, src io.Reader, dir string, 
 		}
 	}
 
-	files, err := e.entriesExtractor.Entries(src)
+	files, err := e.entriesExtractor.Entries(src, true)
 	if err != nil {
 		return err
 	}
@@ -132,12 +164,4 @@ func (e *baseExtractor) Extract(ctx context.Context, src io.Reader, dir string, 
 	}
 
 	return nil
-}
-
-// Entry represents an opened file in the archive to be extracted.
-type Entry interface {
-	Name() string
-	FileInfo() os.FileInfo
-	FileMode() os.FileMode
-	io.ReadCloser
 }

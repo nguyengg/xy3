@@ -65,13 +65,13 @@ func (c *Command) recompress(ctx context.Context, manifestName string) error {
 		return fmt.Errorf(`file "%s" is not a supported archive`, filepath.Base(name))
 	}
 
-	tmpDir, err := util.MkExclDir(".", stem, 0755)
+	uncompressedDir, err := util.MkExclDir(dir, stem, 0755)
 	if err != nil {
 		return fmt.Errorf("create directory error: %w", err)
 	}
 
 	bar := internal.DefaultBytes(-1, "extracting")
-	if err, _, _ = ex.Extract(ctx, f, filepath.Join(dir, tmpDir), func(opts *extract.Options) {
+	if err, _, _ = ex.Extract(ctx, f, uncompressedDir, func(opts *extract.Options) {
 		opts.ProgressBar = bar
 	}), f.Close(), bar.Close(); err != nil {
 		return fmt.Errorf(`extract "%s" error: %w`, name, err)
@@ -84,7 +84,7 @@ func (c *Command) recompress(ctx context.Context, manifestName string) error {
 	}
 
 	bar = internal.DefaultBytes(-1, "compressing")
-	if err, _, _ = compress.Compress(ctx, filepath.Join(dir, tmpDir), io.MultiWriter(f, bar)), f.Close(), bar.Close(); err != nil {
+	if err, _, _ = compress.Compress(ctx, uncompressedDir, io.MultiWriter(f, bar)), f.Close(), bar.Close(); err != nil {
 		return fmt.Errorf(`compress "%s" error: %w`, filepath.Join(dir, "tmp"), err)
 	}
 

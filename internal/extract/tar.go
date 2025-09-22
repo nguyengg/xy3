@@ -15,7 +15,7 @@ type tarExtractor struct {
 	f func(io.Reader) iter.Seq2[Entry, error]
 }
 
-func (t tarExtractor) Entries(src io.Reader) (iter.Seq2[Entry, error], error) {
+func (t tarExtractor) Entries(src io.Reader, _ bool) (iter.Seq2[Entry, error], error) {
 	return t.f(src), nil
 }
 
