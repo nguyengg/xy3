@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/klauspost/compress/zstd"
+	"github.com/ulikunitz/xz"
 )
 
 type tarExtractor struct {
@@ -21,15 +22,15 @@ func (t tarExtractor) Entries(src io.Reader, _ bool) (iter.Seq2[Entry, error], e
 
 func fromTarZstReader(src io.Reader) iter.Seq2[Entry, error] {
 	return func(yield func(Entry, error) bool) {
-		zr, err := zstd.NewReader(src)
+		r, err := zstd.NewReader(src)
 		if err != nil {
 			yield(nil, fmt.Errorf("open zstd reader error: %w", err))
 			return
 		}
 
-		defer zr.Close()
+		defer r.Close()
 
-		for e, err := range untar(zr) {
+		for e, err := range untar(r) {
 			if !yield(e, err) || err != nil {
 				return
 			}
@@ -39,20 +40,36 @@ func fromTarZstReader(src io.Reader) iter.Seq2[Entry, error] {
 
 func fromTarGzipReader(src io.Reader) iter.Seq2[Entry, error] {
 	return func(yield func(Entry, error) bool) {
-		gr, err := gzip.NewReader(src)
+		r, err := gzip.NewReader(src)
 		if err != nil {
 			yield(nil, fmt.Errorf("open gzip reader error: %w", err))
 			return
 		}
 
-		for e, err := range untar(gr) {
+		for e, err := range untar(r) {
 			if !yield(e, err) || err != nil {
 				return
 			}
 		}
 
-		if err = gr.Close(); err != nil {
+		if err = r.Close(); err != nil {
 			yield(nil, err)
+		}
+	}
+}
+
+func fromTarXzReader(src io.Reader) iter.Seq2[Entry, error] {
+	return func(yield func(Entry, error) bool) {
+		r, err := xz.NewReader(src)
+		if err != nil {
+			yield(nil, fmt.Errorf("open xz reader error: %w", err))
+			return
+		}
+
+		for e, err := range untar(r) {
+			if !yield(e, err) || err != nil {
+				return
+			}
 		}
 	}
 }

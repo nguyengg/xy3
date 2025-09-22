@@ -10,12 +10,14 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.78.2
 	github.com/bodgit/sevenzip v1.6.1
 	github.com/jessevdk/go-flags v1.6.1
+	github.com/klauspost/compress v1.17.11
 	github.com/krolaw/zipstream v0.0.0-20180621105154-0a2661891f94
 	github.com/nguyengg/go-aws-commons/s3reader v0.1.2
 	github.com/nguyengg/go-aws-commons/s3writer v0.1.2
 	github.com/nguyengg/go-aws-commons/sri v0.1.0
 	github.com/schollz/progressbar/v3 v3.18.0
 	github.com/stretchr/testify v1.10.0
+	github.com/ulikunitz/xz v0.5.15
 	github.com/valyala/bytebufferpool v1.0.0
 )
 
@@ -41,13 +43,11 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
-	github.com/klauspost/compress v1.17.11 // indirect
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/spf13/afero v1.11.0 // indirect
-	github.com/ulikunitz/xz v0.5.12 // indirect
 	go4.org v0.0.0-20200411211856-f5505b9728dd // indirect
 	golang.org/x/sys v0.31.0 // indirect
 	golang.org/x/term v0.30.0 // indirect

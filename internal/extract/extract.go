@@ -60,6 +60,8 @@ func DetectExtractorFromExt(ext string) Extractor {
 		return &baseExtractor{tarExtractor{fromTarZstReader}}
 	case ".tar.gz":
 		return &baseExtractor{tarExtractor{fromTarGzipReader}}
+	case ".tar.xz":
+		return &baseExtractor{tarExtractor{fromTarXzReader}}
 	default:
 		return nil
 	}
