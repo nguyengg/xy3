@@ -21,6 +21,8 @@ type Options struct {
 	MaxConcurrency int
 }
 
+const DefaultMode = ZSTD
+
 // Compress recursively compresses the given named file or directory.
 //
 // If name is a directory, the resulting archive will have a single root directory that is the basename of the name
@@ -29,8 +31,7 @@ type Options struct {
 // If name is a file, it will still be tar-ed if the mode does not support metadata out of the box.
 func Compress(ctx context.Context, name string, dst io.Writer, optFns ...func(options *Options)) error {
 	opts := &Options{
-		Mode:           ZSTD,
-		MaxConcurrency: 5,
+		Mode: DefaultMode,
 	}
 	for _, fn := range optFns {
 		fn(opts)

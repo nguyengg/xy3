@@ -37,7 +37,7 @@ func UnmarshalFromReader(r io.Reader) (m Manifest, err error) {
 	return
 }
 
-func (m Manifest) MarshalTo(w io.Writer) error {
+func (m *Manifest) MarshalTo(w io.Writer) error {
 	data, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal manifest error: %w", err)

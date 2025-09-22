@@ -46,7 +46,7 @@ func (c *Command) Execute(args []string) error {
 		}
 
 		bar := internal.DefaultBytes(-1, filepath.Base(path))
-		if err, _, _ = Extract(ctx, f, ext, func(opts *Options) {
+		if err, _, _ = Extract(ctx, f, ext, ".", func(opts *Options) {
 			opts.ProgressBar = bar
 		}), f.Close(), bar.Close(); err == nil {
 			success++

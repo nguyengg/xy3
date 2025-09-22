@@ -21,6 +21,7 @@ var ErrUnknownArchiveExtension = errors.New("unknown archive extension")
 // EntriesFromExt uses the extension of the file's name to determine decompression algorithm.
 //
 // TODO use http.DetectContentType() instead of relying on file extension.
+// TODO implement unwrap root by using two passes.
 //
 // Returns ErrUnknownArchiveExtension if the extension is not supported.
 func EntriesFromExt(src io.Reader, ext string) (iter.Seq2[Entry, error], error) {
@@ -55,8 +56,10 @@ type Options struct {
 
 // Extract uses the extension of the file's name to determine decompression algorithm (see EntriesFromExt).
 //
+// The dir argument is the parent directory to create extracted files.
+//
 // Returns ErrUnknownArchiveExtension if the extension is not supported.
-func Extract(ctx context.Context, src io.Reader, ext string, optFns ...func(*Options)) error {
+func Extract(ctx context.Context, src io.Reader, ext, dir string, optFns ...func(*Options)) error {
 	opts := &Options{}
 	for _, fn := range optFns {
 		fn(opts)
@@ -76,7 +79,7 @@ func Extract(ctx context.Context, src io.Reader, ext string, optFns ...func(*Opt
 
 		// TODO support creating directories as well
 
-		path, fi := f.Name(), f.FileInfo()
+		path, fi := filepath.Join(dir, f.Name()), f.FileInfo()
 
 		if err = os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 			_ = f.Close()

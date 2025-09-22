@@ -7,12 +7,16 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jessevdk/go-flags"
 	"github.com/nguyengg/xy3/internal"
+	"github.com/nguyengg/xy3/internal/extract"
+	"github.com/nguyengg/xy3/internal/manifest"
+	"github.com/nguyengg/xy3/util"
 )
 
 type Command struct {
@@ -68,5 +72,62 @@ func (c *Command) Execute(args []string) error {
 	}
 
 	log.Printf("successfully downloaded %d/%d files", success, n)
+	return nil
+}
+
+func (c *Command) download(ctx context.Context, manifestName string) error {
+	man, err := manifest.UnmarshalFromFile(manifestName)
+	if err != nil {
+		return fmt.Errorf("read manifest error: %w", err)
+	}
+
+	// attempt to create the local file that will store the downloaded artifact.
+	// if we fail to download the file successfully, clean up by deleting the local file.
+	stem, ext := util.StemAndExt(man.Key)
+	f, err := util.OpenExclFile(".", stem, ext, 0666)
+	if err != nil {
+		return fmt.Errorf("create file error: %w", err)
+	}
+	name := f.Name()
+
+	if err, _ = Download(ctx, c.client, man.Bucket, man.Key, f), f.Close(); err != nil {
+		if errors.Is(err, ErrChecksumMismatch{}) {
+			c.logger.Print(err)
+		} else {
+			_ = os.Remove(name)
+			return err
+		}
+	}
+
+	if c.Extract {
+		if err = c.extract(ctx, name); err != nil {
+			return fmt.Errorf("extract error: %w", err)
+		}
+
+		_ = os.Remove(name)
+	}
+
+	return nil
+}
+
+func (c *Command) extract(ctx context.Context, name string) error {
+	f, err := os.Open(name)
+	if err != nil {
+		return fmt.Errorf(`open file "%s" error: %w`, name, err)
+	}
+
+	_, ext := util.StemAndExt(name)
+	bar := internal.DefaultBytes(-1, fmt.Sprintf(`extracting "%s"`, filepath.Base(name)))
+	if err, _, _ := extract.Extract(ctx, f, ext, ".", func(opts *extract.Options) {
+		opts.ProgressBar = bar
+	}), f.Close(), bar.Close(); err != nil {
+		if errors.Is(err, extract.ErrUnknownArchiveExtension) {
+			c.logger.Printf("file is not eligible for auto-extracting: %v", err)
+			return nil
+		}
+
+		return err
+	}
+
 	return nil
 }

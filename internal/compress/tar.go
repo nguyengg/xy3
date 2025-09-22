@@ -65,10 +65,7 @@ func (tc *tarCompressor) Close() (err error) {
 }
 
 func newZstdCompressor(dst io.Writer, opts *Options) (compressor, error) {
-	w, err := zstd.NewWriter(
-		dst,
-		zstd.WithEncoderLevel(zstd.SpeedBestCompression),
-		zstd.WithEncoderConcurrency(opts.MaxConcurrency))
+	w, err := zstd.NewWriter(dst, zstd.WithEncoderLevel(zstd.SpeedBestCompression))
 	if err != nil {
 		return nil, fmt.Errorf("create zstd writer error: %w", err)
 	}

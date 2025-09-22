@@ -2,112 +2,67 @@ package download
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
+	"path"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/nguyengg/go-aws-commons/s3reader"
 	"github.com/nguyengg/go-aws-commons/sri"
-	"github.com/nguyengg/xy3/internal"
-	"github.com/nguyengg/xy3/internal/extract"
-	"github.com/nguyengg/xy3/internal/manifest"
-	"github.com/nguyengg/xy3/util"
+	"github.com/schollz/progressbar/v3"
 )
 
-func (c *Command) download(ctx context.Context, name string) error {
-	man, err := manifest.UnmarshalFromFile(name)
+// Download downloads S3 object to a new file created in the given directory.
+//
+// If the checksum mismatches, ErrChecksumMismatch will be returned.
+func Download(ctx context.Context, client *s3.Client, bucket, key string, dst io.Writer) error {
+	// headObject to see if there's a checksum to be used. the response's size is also used.
+	headObjectResult, err := client.HeadObject(ctx, &s3.HeadObjectInput{Bucket: &bucket, Key: &key})
 	if err != nil {
-		return fmt.Errorf("read mannifest error: %w", err)
+		return fmt.Errorf("head object error: %w", err)
 	}
 
-	stem, ext := util.StemAndExt(man.Key)
-	verifier, _ := sri.NewVerifier(man.Checksum)
-
-	// attempt to create the local file that will store the downloaded artifact.
-	// if we fail to download the file complete, clean up by deleting the local file.
-	file, err := util.OpenExclFile(".", stem, ext, 0666)
-	if err != nil {
-		return fmt.Errorf("create output file error: %w", err)
-	}
-
-	c.logger.Printf(`downloading to "%s"`, file.Name())
-
-	success := false
-	defer func() {
-		if name, _ = file.Name(), file.Close(); !success {
-			c.logger.Printf(`deleting file "%s"`, name)
-			if err = os.Remove(name); err != nil {
-				c.logger.Printf("delete file error: %v", err)
-			}
-		}
-	}()
-
-	r, err := s3reader.New(ctx, c.client, &s3.GetObjectInput{
-		Bucket:              aws.String(man.Bucket),
-		Key:                 aws.String(man.Key),
-		ExpectedBucketOwner: man.ExpectedBucketOwner,
-	}, func(options *s3reader.Options) {
-		options.Concurrency = c.MaxConcurrency
-	}, s3reader.WithProgressBar())
+	r, err := s3reader.NewReaderWithSize(
+		ctx,
+		client,
+		&s3.GetObjectInput{Bucket: &bucket, Key: &key},
+		aws.ToInt64(headObjectResult.ContentLength),
+		s3reader.WithProgressBar(progressbar.OptionSetDescription(fmt.Sprintf(`downloading "%s"`, path.Base(key)))))
 	if err != nil {
 		return fmt.Errorf("create s3 reader error: %w", err)
 	}
-	defer r.Close()
 
+	// if the object's metadata contains a checksum, use it during download and writing to file.
+	var (
+		checksum = headObjectResult.Metadata["checksum"]
+		verifier sri.Verifier
+	)
+	if checksum != "" {
+		verifier, _ = sri.NewVerifier(checksum)
+	}
 	if verifier != nil {
-		_, err = r.WriteTo(io.MultiWriter(file, verifier))
+		_, err = r.WriteTo(io.MultiWriter(dst, verifier))
 	} else {
-		_, err = r.WriteTo(file)
+		_, err = r.WriteTo(dst)
 	}
 
-	if err != nil {
-		return err
+	if _ = r.Close(); err != nil {
+		return fmt.Errorf("download error: %w", err)
 	}
 
-	success = true
-
-	if verifier == nil {
-		c.logger.Printf("done downloading; no checksum to verify")
-	} else if verifier.SumAndVerify(nil) {
-		c.logger.Printf("done downloading; checksum matches")
-	} else {
-		c.logger.Printf("done downloading; checksum does not match: expect %s, got %s", man.Checksum, verifier.SumToString(nil))
-	}
-
-	if c.Extract {
-		return c.extract(ctx, file, ext)
+	if verifier != nil && !verifier.SumAndVerify(nil) {
+		return ErrChecksumMismatch{Expected: checksum, Actual: verifier.SumToString(nil)}
 	}
 
 	return nil
 }
 
-func (c *Command) extract(ctx context.Context, file *os.File, ext string) (err error) {
-	if _, err = file.Seek(0, io.SeekStart); err != nil {
-		c.logger.Printf("seek start file error, will not extract: %v", err)
-		return nil
-	}
+type ErrChecksumMismatch struct {
+	Expected string
+	Actual   string
+}
 
-	bar := internal.DefaultBytes(-1, fmt.Sprintf(`extracting "%s"`, filepath.Base(file.Name())))
-	if err, _ = extract.Extract(ctx, file, ext, func(opts *extract.Options) {
-		opts.ProgressBar = bar
-	}), bar.Close(); err != nil {
-		if errors.Is(err, extract.ErrUnknownArchiveExtension) {
-			c.logger.Printf("file is not eligible for auto-extracting: %v", err)
-			return nil
-		}
-
-		return err
-	}
-
-	// if extraction is successful, delete the archive.
-	c.logger.Printf("extract success, deleting archive")
-	if _, err = file.Close(), os.Remove(file.Name()); err != nil {
-		c.logger.Printf("delete file error: %v", err)
-	}
-
-	return nil
+func (e ErrChecksumMismatch) Error() string {
+	return fmt.Sprintf("checksum does not match: expect %s, got %s", e.Expected, e.Actual)
 }

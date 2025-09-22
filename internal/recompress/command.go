@@ -17,7 +17,6 @@ import (
 
 type Command struct {
 	ExpectedBucketOwner *string `long:"expected-bucket-owner" description:"optional ExpectedBucketOwner field to apply when the manifest does not have its own expectedBucketOwner"`
-	StorageClass        string  `long:"storage-class" description:"the S3 storage class to use for uploading" default:"INTELLIGENT_TIERING"`
 	MaxConcurrency      int     `short:"P" long:"max-concurrency" description:"use up to max-concurrency number of goroutines at a time for range downloads and parallel uploads." default:"5"`
 	Args                struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the local files each containing a single S3 URI" required:"yes"`
@@ -55,7 +54,7 @@ func (c *Command) Execute(args []string) error {
 	for i, file := range c.Args.Files {
 		c.logger = internal.NewLogger(i, n, file)
 
-		if err = c.recompressArchive(ctx, string(file)); err == nil {
+		if err = c.recompress(ctx, string(file)); err == nil {
 			success++
 			continue
 		}

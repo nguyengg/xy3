@@ -1,140 +1,84 @@
 package recompress
 
 import (
-	"archive/tar"
 	"context"
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"os"
 	"path/filepath"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/klauspost/compress/zstd"
 	"github.com/nguyengg/xy3/internal"
+	"github.com/nguyengg/xy3/internal/compress"
+	"github.com/nguyengg/xy3/internal/download"
 	"github.com/nguyengg/xy3/internal/extract"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/nguyengg/xy3/util"
 )
 
-func (c *Command) recompressArchive(ctx context.Context, manifestName string) error {
-	srcManifest, err := manifest.UnmarshalFromFile(manifestName)
+func (c *Command) recompress(ctx context.Context, manifestName string) error {
+	man, err := manifest.UnmarshalFromFile(manifestName)
 	if err != nil {
 		return fmt.Errorf("read manifest error: %w", err)
 	}
 
-	// 7z archives require local files anyway so let's just download the file.
-	src, err := c.download(ctx, srcManifest)
+	// we'll create a temp directory to store all intermediate artifacts.
+	// this temp directory is deleted only after complete success.
+	stem, ext := util.StemAndExt(man.Key)
+	dir, err := os.MkdirTemp(".", stem+"-*")
 	if err != nil {
-		return err
+		return fmt.Errorf("create temp dir error: %w", err)
 	}
 
-	// use the extension of the file to determine which kind of compression algorithm to use.
-	stem, ext := util.StemAndExt(srcManifest.Key)
-	files, err := extract.EntriesFromExt(src, ext)
+	success := false
+	defer func() {
+		// TODO change !success to success
+		if !success {
+			if err = os.RemoveAll(dir); err != nil {
+				c.logger.Printf(`clean up "%s" error: %v`, dir, err)
+			}
+		}
+	}()
+
+	// this is essentially download and extract mode.
+	f, err := os.CreateTemp(dir, stem+"-*"+ext)
 	if err != nil {
-		return err
+		return fmt.Errorf("create file error: %w", err)
 	}
 
-	// compute checksum to include in manifest.
-	checksummer := util.DefaultChecksum()
-
-	// right now, we'll recompress to a file on local system using tar and zstd at best compression.
-	// TODO re-upload the file right to S3 right away to keep the in-memory challenge.
-	dst, err := util.OpenExclFile(".", stem, ".tar.zst", 0666)
-	if err != nil {
-		return fmt.Errorf("create local file error: %w", err)
-	}
-	defer dst.Close()
-
-	// use an unknown length progress bar.
-	bar := internal.DefaultBytes(-1, fmt.Sprintf(`recompressing "%s"`, filepath.Base(src.Name())))
-	defer bar.Close()
-
-	zw, err := zstd.NewWriter(
-		io.MultiWriter(dst, checksummer, bar),
-		zstd.WithEncoderLevel(zstd.SpeedBestCompression),
-		zstd.WithEncoderConcurrency(c.MaxConcurrency))
-	if err != nil {
-		return fmt.Errorf("create zstd writer error: %w", err)
-	}
-
-	buf := make([]byte, 32*1024)
-	tw := tar.NewWriter(zw)
-	for f, err := range files {
-		if err != nil {
-			_ = f.Close()
+	if err, _ = download.Download(ctx, c.client, man.Bucket, man.Key, f), f.Close(); err != nil {
+		if errors.Is(err, download.ErrChecksumMismatch{}) {
+			c.logger.Print(err)
+		} else {
 			return err
 		}
-
-		name, fi := f.Name(), f.FileInfo()
-
-		hdr, err := tar.FileInfoHeader(fi, name)
-		if err != nil {
-			_ = f.Close()
-			return fmt.Errorf(`create tar header for "%s" error: %w`, name, err)
-		}
-		hdr.Name = name
-
-		if err = tw.WriteHeader(hdr); err != nil {
-			_ = f.Close()
-			return fmt.Errorf(`write tar header for "%s" error: %w`, name, err)
-		}
-
-		if _, err = util.CopyBufferWithContext(ctx, tw, f, buf); err != nil {
-			_ = f.Close()
-			return fmt.Errorf(`recompression file "%s" error: %w`, name, err)
-		}
-
-		if err = f.Close(); err != nil {
-			return fmt.Errorf(`close file "%s" error: %w`, name, err)
-		}
 	}
 
-	if err = tw.Close(); err != nil {
-		return fmt.Errorf("close tar writer error: %w", err)
+	// reopen file to extract.
+	name := f.Name()
+	if f, err = os.Open(name); err != nil {
+		return fmt.Errorf(`open file "%s" error: %w`, name, err)
 	}
 
-	if err = zw.Close(); err != nil {
-		return fmt.Errorf("close zstd writer error: %w", err)
+	bar := internal.DefaultBytes(-1, "extracting")
+	if err, _, _ = extract.Extract(ctx, f, ext, filepath.Join(dir, "tmp"), func(opts *extract.Options) {
+		opts.ProgressBar = bar
+	}), f.Close(), bar.Close(); err != nil {
+		return fmt.Errorf(`extract "%s" error: %w`, name, err)
 	}
 
-	log.Printf("new checksum: %v", checksummer.SumToString(nil))
+	// now compress the extracted contents.
+	f, err = os.OpenFile(filepath.Join(dir, stem+compress.DefaultMode.Ext()), os.O_RDWR|os.O_CREATE|os.O_EXCL, 0666)
+	if err != nil {
+		return fmt.Errorf("create archive error: %w", err)
+	}
+
+	bar = internal.DefaultBytes(-1, "compressing")
+	if err, _, _ = compress.Compress(ctx, filepath.Join(dir, "tmp"), io.MultiWriter(f, bar)), f.Close(), bar.Close(); err != nil {
+		return fmt.Errorf(`compress "%s" error: %w`, filepath.Join(dir, "tmp"), err)
+	}
+
+	// TODO upload file.
+	success = true
 	return nil
-}
-
-// findUnusedS3Key returns an S3 key pointing to a non-existing S3 object that can be used to upload file.
-func (c *Command) findUnusedS3Key(ctx context.Context, src manifest.Manifest, stem, ext string) (string, error) {
-	prefix := filepath.Dir(src.Key)
-	if prefix == "." {
-		prefix = ""
-	} else {
-		prefix = prefix + "/"
-	}
-
-	key := prefix + stem + ext
-	for i := 0; ; {
-		if _, err := c.client.HeadObject(ctx, &s3.HeadObjectInput{
-			Bucket:              aws.String(src.Bucket),
-			Key:                 aws.String(key),
-			ExpectedBucketOwner: c.ExpectedBucketOwner,
-		}); err != nil {
-			if errors.Is(err, context.Canceled) {
-				return "", err
-			}
-
-			var re *awshttp.ResponseError
-			if errors.As(err, &re) && re.HTTPStatusCode() == 404 {
-				break
-			}
-
-			return "", fmt.Errorf("find unused S3 key error: %w", err)
-		}
-		i++
-		key = fmt.Sprintf("%s%s-%d%s", prefix, stem, i, ext)
-	}
-
-	return key, nil
 }
