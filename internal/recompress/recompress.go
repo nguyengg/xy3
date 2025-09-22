@@ -4,12 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 
 	"github.com/nguyengg/xy3/internal"
-	"github.com/nguyengg/xy3/internal/compress"
 	"github.com/nguyengg/xy3/internal/download"
 	"github.com/nguyengg/xy3/internal/extract"
 	"github.com/nguyengg/xy3/internal/manifest"
@@ -78,13 +76,12 @@ func (c *Command) recompress(ctx context.Context, manifestName string) error {
 	}
 
 	// now compress the extracted contents.
-	f, err = os.OpenFile(filepath.Join(dir, stem+compress.DefaultMode.Ext()), os.O_RDWR|os.O_CREATE|os.O_EXCL, 0666)
+	f, err = os.OpenFile(filepath.Join(dir, stem+internal.DefaultAlgorithm.Ext()), os.O_RDWR|os.O_CREATE|os.O_EXCL, 0666)
 	if err != nil {
 		return fmt.Errorf("create archive error: %w", err)
 	}
 
-	bar = internal.DefaultBytes(-1, "compressing")
-	if err, _, _ = compress.Compress(ctx, uncompressedDir, io.MultiWriter(f, bar)), f.Close(), bar.Close(); err != nil {
+	if err, _ = internal.CompressDir(ctx, uncompressedDir, f, internal.WithCompressDirProgressBar(uncompressedDir)), f.Close(); err != nil {
 		return fmt.Errorf(`compress "%s" error: %w`, filepath.Join(dir, "tmp"), err)
 	}
 

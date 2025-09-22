@@ -1,4 +1,4 @@
-package compress
+package internal
 
 import (
 	"archive/tar"
@@ -17,7 +17,7 @@ type tarCompressor struct {
 	tw *tar.Writer // nil until NewFile is called at least once.
 }
 
-func (tc *tarCompressor) NewFile(src, dst string) error {
+func (tc *tarCompressor) AddFile(src, dst string) error {
 	dst = filepath.ToSlash(dst)
 
 	if tc.tw == nil {
@@ -64,8 +64,13 @@ func (tc *tarCompressor) Close() (err error) {
 	return nil
 }
 
-func newZstdCompressor(dst io.Writer, opts *Options) (compressor, error) {
-	w, err := zstd.NewWriter(dst, zstd.WithEncoderLevel(zstd.SpeedBestCompression))
+func newZstdCompressor(dst io.Writer, opts *CompressOptions) (compressor, error) {
+	zopts := []zstd.EOption{zstd.WithEncoderLevel(zstd.SpeedBestCompression)}
+	if opts.MaxConcurrency > 0 {
+		zopts = append(zopts, zstd.WithEncoderConcurrency(opts.MaxConcurrency))
+	}
+
+	w, err := zstd.NewWriter(dst, zopts...)
 	if err != nil {
 		return nil, fmt.Errorf("create zstd writer error: %w", err)
 	}
@@ -73,7 +78,7 @@ func newZstdCompressor(dst io.Writer, opts *Options) (compressor, error) {
 	return &tarCompressor{wc: w}, nil
 }
 
-func newGzipCompressor(dst io.Writer, opts *Options) (compressor, error) {
+func newGzipCompressor(dst io.Writer, opts *CompressOptions) (compressor, error) {
 	w, err := gzip.NewWriterLevel(dst, gzip.BestCompression)
 	if err != nil {
 		return nil, fmt.Errorf("create gzip writer error: %w", err)
@@ -82,7 +87,7 @@ func newGzipCompressor(dst io.Writer, opts *Options) (compressor, error) {
 	return &tarCompressor{wc: w}, nil
 }
 
-func newXzCompressor(dst io.Writer, opts *Options) (compressor, error) {
+func newXzCompressor(dst io.Writer, opts *CompressOptions) (compressor, error) {
 	w, err := xz.NewWriter(dst)
 	if err != nil {
 		return nil, fmt.Errorf("create xz writer error: %w", err)

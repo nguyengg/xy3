@@ -16,9 +16,9 @@ func (r RootDir) Join(base, path string) string {
 	return filepath.Join(base, strings.TrimPrefix(path, string(r)))
 }
 
-// FindZipRootDir returns the common root directory of the given file names in a ZIP archive.
+// FindZipRootDir returns the common root directory of the given file names in an archive.
 //
-// Given these three names (ZIP file paths must always be relative and using `/` as separator):
+// Given these three names (archive file paths must always be relative and using `/` as separator):
 //
 //	test/a.txt
 //	test/path/b.txt

@@ -9,7 +9,6 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/nguyengg/xy3/internal"
-	"github.com/nguyengg/xy3/internal/compress"
 	"github.com/nguyengg/xy3/util"
 )
 
@@ -17,9 +16,13 @@ import (
 //
 // On success, the returned file is ready for read at offset 0.
 func (c *Command) compress(ctx context.Context, root string) (f *os.File, size int64, contentType *string, checksum string, err error) {
-	mode := compress.ZSTD
+	alg := internal.DefaultAlgorithm
+	ext := alg.Ext()
+	if alg.ShouldTar() {
+		ext = ".tar" + ext
+	}
 
-	f, err = util.OpenExclFile(".", filepath.Base(root), mode.Ext(), 0666)
+	f, err = util.OpenExclFile(".", filepath.Base(root), ext, 0666)
 	if err != nil {
 		err = fmt.Errorf("create archive error: %w", err)
 		return
@@ -27,12 +30,11 @@ func (c *Command) compress(ctx context.Context, root string) (f *os.File, size i
 
 	sizer := &sizer{}
 	checksummer := util.DefaultChecksum()
-	bar := internal.DefaultBytes(-1, fmt.Sprintf(`compressing "%s"`, filepath.Base(root)))
 
-	if err, _ = compress.Compress(ctx, root, io.MultiWriter(f, sizer, checksummer, bar), func(opts *compress.Options) {
-		opts.Mode = mode
+	if err = internal.CompressDir(ctx, root, io.MultiWriter(f, sizer, checksummer), func(opts *internal.CompressOptions) {
+		opts.Algorithm = alg
 		opts.MaxConcurrency = c.MaxConcurrency
-	}), bar.Close(); err == nil {
+	}, internal.WithCompressDirProgressBar(root)); err == nil {
 		_, err = f.Seek(0, io.SeekStart)
 	}
 	if err != nil {
@@ -40,7 +42,7 @@ func (c *Command) compress(ctx context.Context, root string) (f *os.File, size i
 		return nil, 0, nil, "", err
 	}
 
-	return f, sizer.size, aws.String(mode.ContentType()), checksummer.SumToString(nil), nil
+	return f, sizer.size, aws.String(alg.ContentType()), checksummer.SumToString(nil), nil
 }
 
 type sizer struct {

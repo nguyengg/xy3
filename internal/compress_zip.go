@@ -1,4 +1,4 @@
-package compress
+package internal
 
 import (
 	"archive/zip"
@@ -15,7 +15,7 @@ type zipCompressor struct {
 	fw io.Writer // nil until NewFile is called at least once.
 }
 
-func (c *zipCompressor) NewFile(src, dst string) error {
+func (c *zipCompressor) AddFile(src, dst string) error {
 	dst = filepath.ToSlash(dst)
 
 	fi, err := os.Stat(src)
@@ -48,7 +48,7 @@ func (c *zipCompressor) Close() error {
 	return c.zw.Close()
 }
 
-func newZipCompressor(dst io.Writer, opts *Options) *zipCompressor {
+func newZipCompressor(dst io.Writer, opts *CompressOptions) *zipCompressor {
 	zw := zip.NewWriter(dst)
 	zw.RegisterCompressor(zip.Deflate, func(w io.Writer) (io.WriteCloser, error) {
 		return flate.NewWriter(w, flate.BestCompression)
