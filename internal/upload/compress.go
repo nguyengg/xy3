@@ -35,5 +35,5 @@ func (c *Command) compress(ctx context.Context, root string) (f *os.File, conten
 		return nil, nil, err
 	}
 
-	return f, aws.String("application/zip"), nil
+	return f, aws.String(mode.ContentType()), nil
 }
