@@ -1,0 +1,97 @@
+package metadata
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"os"
+	"os/signal"
+	"strings"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/nguyengg/xy3/internal/manifest"
+	"github.com/nguyengg/xy3/util"
+)
+
+type Command struct {
+	ExpectedBucketOwner *string `long:"expected-bucket-owner" description:"optional ExpectedBucketOwner field to apply when the manifest does not have its own expectedBucketOwner"`
+
+	Args struct {
+		S3BucketAndPrefix string `positional-arg-name:"s3://bucket/prefix" description:"the S3 bucket name and optional prefix" required:"yes"`
+	} `positional-args:"yes"`
+
+	client *s3.Client
+	logger *log.Logger
+}
+
+func (c *Command) Execute(args []string) error {
+	if len(args) != 0 {
+		return fmt.Errorf("unknown positional arguments: %s", strings.Join(args, " "))
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
+	defer stop()
+
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("load default config error:%w", err)
+	}
+
+	c.client = s3.NewFromConfig(cfg, func(options *s3.Options) {
+		// without this, getting a bunch of WARN message below:
+		// WARN Response has no supported checksum. Not validating response payload.
+		options.DisableLogOutputChecksumValidationSkipped = true
+	})
+
+	// parse S3 URI with optional key prefix. don't bother validating valid bucket names.
+	if !strings.HasPrefix(c.Args.S3BucketAndPrefix, "s3://") {
+		return fmt.Errorf("expect positional argument to have s3:// prefix")
+	}
+
+	parts := strings.SplitN(strings.TrimPrefix(c.Args.S3BucketAndPrefix, "s3://"), "/", 2)
+	var (
+		bucket = parts[0]
+		prefix *string
+	)
+	if len(parts) > 1 {
+		prefix = &parts[1]
+	}
+
+	for paginator := s3.NewListObjectsV2Paginator(c.client, &s3.ListObjectsV2Input{
+		Bucket:              aws.String(bucket),
+		ExpectedBucketOwner: c.ExpectedBucketOwner,
+		Prefix:              prefix,
+	}); paginator.HasMorePages(); {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return fmt.Errorf("list objects error: %w", err)
+		}
+
+		for _, obj := range page.Contents {
+			m := manifest.Manifest{
+				Bucket:              bucket,
+				Key:                 aws.ToString(obj.Key),
+				ExpectedBucketOwner: c.ExpectedBucketOwner,
+				Size:                aws.ToInt64(obj.Size),
+				// TODO include checksum in response.
+				Checksum: "",
+			}
+
+			stem, ext := util.StemAndExt(m.Key)
+			f, err := util.OpenExclFile(".", stem, ext+".s3", 0666)
+			if err != nil {
+				return fmt.Errorf("create file error: %w", err)
+			}
+
+			if err, _ = m.MarshalTo(f), f.Close(); err != nil {
+				return fmt.Errorf("write manifest error: %w", err)
+			}
+
+			log.Printf("wrote %s", f.Name())
+		}
+	}
+
+	return nil
+}
