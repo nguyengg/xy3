@@ -10,19 +10,18 @@ import (
 	"github.com/jessevdk/go-flags"
 	"github.com/nguyengg/xy3/internal/cmd"
 	"github.com/nguyengg/xy3/internal/cmd/download"
-	"github.com/nguyengg/xy3/internal/cmd/recompress"
 	"github.com/nguyengg/xy3/internal/cmd/upload"
 )
 
 var opts struct {
-	Profile    string             `short:"p" long:"profile" description:"override AWS_PROFILE if given" default:"nguyen-gg" default-mask:"-"`
-	Compress   cmd.Compress       `command:"compress" alias:"c" description:"compress files"`
-	Extract    cmd.Extract        `command:"extract" alias:"x" description:"extract archives"`
-	Recompress recompress.Command `command:"recompress" alias:"rc" description:"recompress archives"`
-	Download   download.Command   `command:"download" alias:"down" description:"download from S3 with possible extract options"`
-	Upload     upload.Command     `command:"upload" alias:"up" description:"upload files to S3"`
-	Remove     cmd.Remove         `command:"remove" alias:"rm" description:"remove both local and S3 files"`
-	Metadata   cmd.Metadata       `command:"metadata" alias:"md" description:"download manifests"`
+	Profile    string           `short:"p" long:"profile" description:"override AWS_PROFILE if given" default:"nguyen-gg" default-mask:"-"`
+	Compress   cmd.Compress     `command:"compress" alias:"c" description:"compress files"`
+	Extract    cmd.Extract      `command:"extract" alias:"x" description:"extract archives"`
+	Recompress cmd.Recompress   `command:"recompress" alias:"rc" description:"recompress archives"`
+	Download   download.Command `command:"download" alias:"down" description:"download from S3 with possible extract options"`
+	Upload     upload.Command   `command:"upload" alias:"up" description:"upload files to S3"`
+	Remove     cmd.Remove       `command:"remove" alias:"rm" description:"remove both local and S3 files"`
+	Metadata   cmd.Metadata     `command:"metadata" alias:"md" description:"download manifests"`
 }
 
 func main() {

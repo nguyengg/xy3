@@ -1,18 +1,73 @@
-package recompress
+package cmd
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/jessevdk/go-flags"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/nguyengg/xy3/util"
 )
 
-func (c *Command) recompress(ctx context.Context, manifestName string) error {
+type Recompress struct {
+	Args struct {
+		Files []flags.Filename `positional-arg-name:"file" description:"the local files each containing a single S3 URI" required:"yes"`
+	} `positional-args:"yes"`
+
+	client *s3.Client
+	logger *log.Logger
+}
+
+func (c *Recompress) Execute(args []string) error {
+	if len(args) != 0 {
+		return fmt.Errorf("unknown positional arguments: %s", strings.Join(args, " "))
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
+	defer stop()
+
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("load default config error:%w", err)
+	}
+
+	c.client = s3.NewFromConfig(cfg, func(options *s3.Options) {
+		// without this, getting a bunch of WARN message below:
+		// WARN Response has no supported checksum. Not validating response payload.
+		options.DisableLogOutputChecksumValidationSkipped = true
+	})
+
+	success := 0
+	n := len(c.Args.Files)
+	for i, file := range c.Args.Files {
+		c.logger = internal.NewLogger(i, n, file)
+
+		if err = c.recompress(ctx, string(file)); err == nil {
+			success++
+			continue
+		}
+
+		if errors.Is(err, context.Canceled) {
+			break
+		}
+
+		c.logger.Printf("recompress error: %v", err)
+	}
+
+	log.Printf("successfully recompressed %d/%d files", success, n)
+	return nil
+}
+
+func (c *Recompress) recompress(ctx context.Context, manifestName string) error {
 	man, err := manifest.UnmarshalFromFile(manifestName)
 	if err != nil {
 		return fmt.Errorf("read manifest error: %w", err)
