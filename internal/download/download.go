@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -90,7 +91,7 @@ func (c *Command) extract(ctx context.Context, file *os.File, ext string) (err e
 		return nil
 	}
 
-	bar := internal.DefaultBytes(-1, "extracting")
+	bar := internal.DefaultBytes(-1, fmt.Sprintf(`extracting "%s"`, filepath.Base(file.Name())))
 	if err, _ = extract.Extract(ctx, file, ext, func(opts *extract.Options) {
 		opts.ProgressBar = bar
 	}), bar.Close(); err != nil {

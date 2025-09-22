@@ -60,7 +60,7 @@ func (c *Command) Execute(args []string) (err error) {
 			return fmt.Errorf("create archive error: %w", err)
 		}
 
-		bar := internal.DefaultBytes(-1, basename)
+		bar := internal.DefaultBytes(-1, fmt.Sprintf(`compressing "%s"`, basename))
 		if err, _, _ = Compress(ctx, path, io.MultiWriter(dst, bar), func(opts *Options) {
 			opts.Mode = mode
 		}), dst.Close(), bar.Close(); err == nil {

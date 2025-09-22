@@ -14,7 +14,9 @@ import (
 )
 
 // compress creates a new archive and compresses all files recursively starting at root.
-func (c *Command) compress(ctx context.Context, root string) (f *os.File, contentType *string, err error) {
+//
+// On success, the returned file is ready for read at offset 0.
+func (c *Command) compress(ctx context.Context, root string) (f *os.File, size int64, contentType *string, checksum string, err error) {
 	mode := compress.ZSTD
 
 	f, err = util.OpenExclFile(".", filepath.Base(root), mode.Ext(), 0666)
@@ -23,8 +25,11 @@ func (c *Command) compress(ctx context.Context, root string) (f *os.File, conten
 		return
 	}
 
-	bar := internal.DefaultBytes(-1, filepath.Base(root))
-	if err, _ = compress.Compress(ctx, root, io.MultiWriter(f, bar), func(opts *compress.Options) {
+	sizer := &sizer{}
+	checksummer := util.DefaultChecksum()
+	bar := internal.DefaultBytes(-1, fmt.Sprintf(`compressing "%s"`, filepath.Base(root)))
+
+	if err, _ = compress.Compress(ctx, root, io.MultiWriter(f, sizer, checksummer, bar), func(opts *compress.Options) {
 		opts.Mode = mode
 		opts.MaxConcurrency = c.MaxConcurrency
 	}), bar.Close(); err == nil {
@@ -32,8 +37,18 @@ func (c *Command) compress(ctx context.Context, root string) (f *os.File, conten
 	}
 	if err != nil {
 		_, _ = f.Close(), os.Remove(f.Name())
-		return nil, nil, err
+		return nil, 0, nil, "", err
 	}
 
-	return f, aws.String(mode.ContentType()), nil
+	return f, sizer.size, aws.String(mode.ContentType()), checksummer.SumToString(nil), nil
+}
+
+type sizer struct {
+	size int64
+}
+
+func (s *sizer) Write(p []byte) (n int, err error) {
+	n = len(p)
+	s.size += int64(n)
+	return
 }

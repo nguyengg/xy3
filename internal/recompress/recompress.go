@@ -13,7 +13,6 @@ import (
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/klauspost/compress/zstd"
-	"github.com/nguyengg/go-aws-commons/sri"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/extract"
 	"github.com/nguyengg/xy3/internal/manifest"
@@ -40,7 +39,7 @@ func (c *Command) recompressArchive(ctx context.Context, manifestName string) er
 	}
 
 	// compute checksum to include in manifest.
-	lev := sri.NewSha256()
+	checksummer := util.DefaultChecksum()
 
 	// right now, we'll recompress to a file on local system using tar and zstd at best compression.
 	// TODO re-upload the file right to S3 right away to keep the in-memory challenge.
@@ -51,11 +50,11 @@ func (c *Command) recompressArchive(ctx context.Context, manifestName string) er
 	defer dst.Close()
 
 	// use an unknown length progress bar.
-	bar := internal.DefaultBytes(-1, "recompressing")
+	bar := internal.DefaultBytes(-1, fmt.Sprintf(`recompressing "%s"`, filepath.Base(src.Name())))
 	defer bar.Close()
 
 	zw, err := zstd.NewWriter(
-		io.MultiWriter(dst, lev, bar),
+		io.MultiWriter(dst, checksummer, bar),
 		zstd.WithEncoderLevel(zstd.SpeedBestCompression),
 		zstd.WithEncoderConcurrency(c.MaxConcurrency))
 	if err != nil {
@@ -102,7 +101,7 @@ func (c *Command) recompressArchive(ctx context.Context, manifestName string) er
 		return fmt.Errorf("close zstd writer error: %w", err)
 	}
 
-	log.Printf("new checksum: %v", lev.SumToString(nil))
+	log.Printf("new checksum: %v", checksummer.SumToString(nil))
 	return nil
 }
 

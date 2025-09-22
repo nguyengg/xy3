@@ -2,42 +2,62 @@ package upload
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"os"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/nguyengg/go-aws-commons/s3writer"
-	"github.com/nguyengg/go-aws-commons/sri"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/nguyengg/xy3/util"
 )
 
 func (c *Command) upload(ctx context.Context, name string) error {
-	// prepare validates and possibly performs compression to file if name is a directory.
-	f, size, contentType, err := c.prepare(ctx, name)
-	if err != nil {
-		return err
+	// f will be either name opened as-is, or a new archive created from compressing directory with that name.
+	// if the latter is the case, the file will be deleted upon return.
+	var (
+		f           *os.File
+		size        int64
+		contentType *string
+		checksum    string
+	)
+
+	// name can either be a file or a directory, so use stat to determine what to do.
+	// if it's a directory, compress it and the resulting archive will be deleted upon return.
+	switch fi, err := os.Stat(name); {
+	case err != nil:
+		return fmt.Errorf(`stat file "%s" error: %w`, name, err)
+
+	case fi.IsDir():
+		f, size, contentType, checksum, err = c.compress(ctx, name)
+		if err != nil {
+			return fmt.Errorf(`compress directory "%s" error: %w`, name, err)
+		}
+
+		defer func() {
+			_, _ = f.Close(), os.Remove(f.Name())
+		}()
+
+	default:
+		f, size, contentType, checksum, err = c.inspect(ctx, name)
+		if err != nil {
+			return fmt.Errorf(`inspect file "%s" error: %w`, name, err)
+		}
+
+		defer f.Close()
 	}
 
-	defer f.Close()
-
-	// find an unused S3 key that can be used for the CreateMultipartUpload call.
-	filename := f.Name()
-	stem, ext := util.StemAndExt(filename)
-	key, err := c.findUnusedS3Key(ctx, stem, ext)
-	if err != nil {
-		return err
-	}
+	// the original name will produce the key (with added optional prefix).
+	// the S3 bucket should enable versioning as a result.
+	stem, ext := util.StemAndExt(name)
+	key := c.Prefix + stem + ext
 	m := manifest.Manifest{
 		Bucket:              c.Bucket,
 		Key:                 key,
 		ExpectedBucketOwner: c.ExpectedBucketOwner,
 		Size:                size,
+		Checksum:            checksum,
 	}
 
 	c.logger.Printf(`uploading to "s3://%s/%s"`, c.Bucket, key)
@@ -47,71 +67,36 @@ func (c *Command) upload(ctx context.Context, name string) error {
 		Key:                 aws.String(key),
 		ExpectedBucketOwner: c.ExpectedBucketOwner,
 		ContentType:         contentType,
-		Metadata:            map[string]string{"name": filename},
-		StorageClass:        types.StorageClassIntelligentTiering,
+		StorageClass:        s3types.StorageClassIntelligentTiering,
+		Metadata:            map[string]string{"checksum": checksum},
 	}, func(options *s3writer.Options) {
 		options.Concurrency = c.MaxConcurrency
 	}, s3writer.WithProgressBar(size))
 	if err != nil {
 		return fmt.Errorf("create s3 writer error: %w", err)
 	}
-
-	hash := sri.NewSha256()
-	if _, err = f.WriteTo(io.MultiWriter(w, hash)); err != nil {
-		return fmt.Errorf("read from file error: %w", err)
+	if _, err = w.ReadFrom(f); err != nil {
+		return fmt.Errorf("upload to s3 error: %w", err)
 	}
 	if err = w.Close(); err != nil {
-		return fmt.Errorf("upload to s3 error: %w", err)
+		return fmt.Errorf("close s3 writer error: %w", err)
 	}
 
 	c.logger.Printf("done uploading")
 
 	// now generate the local .s3 file that contains the S3 URI. if writing to file fails, prints the JSON content
 	// to standard output so that they can be saved manually later.
-	m.Checksum = hash.SumToString(nil)
 	mf, err := util.OpenExclFile(".", stem, ext+".s3", 0666)
 	if err != nil {
-		return err
+		_ = m.MarshalTo(os.Stdout)
+		return fmt.Errorf("create manifest file error: %w", err)
 	}
 	if err, _ = m.MarshalTo(mf), mf.Close(); err != nil {
-		return err
+		_ = m.MarshalTo(os.Stdout)
+		return fmt.Errorf("write manifest error: %w", err)
 	}
 
 	c.logger.Printf(`wrote to manifest "%s"`, mf.Name())
 
-	if c.Delete {
-		c.logger.Printf(`deleting file "%s"`, filename)
-		if err = os.Remove(filename); err != nil {
-			c.logger.Printf("delete file error: %v", err)
-		}
-	}
-
 	return nil
-}
-
-// findUnusedS3Key returns an S3 key pointing to a non-existing S3 object that can be used to upload file.
-func (c *Command) findUnusedS3Key(ctx context.Context, stem, ext string) (string, error) {
-	key := c.Prefix + stem + ext
-	for i := 0; ; {
-		if _, err := c.client.HeadObject(ctx, &s3.HeadObjectInput{
-			Bucket:              aws.String(c.Bucket),
-			Key:                 aws.String(key),
-			ExpectedBucketOwner: c.ExpectedBucketOwner,
-		}); err != nil {
-			if errors.Is(err, context.Canceled) {
-				return "", err
-			}
-
-			var re *awshttp.ResponseError
-			if errors.As(err, &re) && re.HTTPStatusCode() == 404 {
-				break
-			}
-
-			return "", fmt.Errorf("find unused S3 key error: %w", err)
-		}
-		i++
-		key = fmt.Sprintf("%s%s-%d%s", c.Prefix, stem, i, ext)
-	}
-
-	return key, nil
 }
