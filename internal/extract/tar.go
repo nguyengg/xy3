@@ -11,8 +11,15 @@ import (
 	"github.com/klauspost/compress/zstd"
 )
 
-func FromTarZstReader(src io.Reader) iter.Seq2[Entry, error] {
+type tarExtractor struct {
+	f func(io.Reader) iter.Seq2[Entry, error]
+}
 
+func (t tarExtractor) Entries(src io.Reader) (iter.Seq2[Entry, error], error) {
+	return t.f(src), nil
+}
+
+func fromTarZstReader(src io.Reader) iter.Seq2[Entry, error] {
 	return func(yield func(Entry, error) bool) {
 		zr, err := zstd.NewReader(src)
 		if err != nil {
@@ -30,7 +37,7 @@ func FromTarZstReader(src io.Reader) iter.Seq2[Entry, error] {
 	}
 }
 
-func FromTarGzipReader(src io.Reader) iter.Seq2[Entry, error] {
+func fromTarGzipReader(src io.Reader) iter.Seq2[Entry, error] {
 	return func(yield func(Entry, error) bool) {
 		gr, err := gzip.NewReader(src)
 		if err != nil {

@@ -24,7 +24,7 @@ type Command struct {
 	logger *log.Logger
 }
 
-func (c *Command) Execute(args []string) error {
+func (c *Command) Execute(args []string) (err error) {
 	if len(args) != 0 {
 		return fmt.Errorf("unknown positional arguments: %s", strings.Join(args, " "))
 	}
@@ -37,18 +37,7 @@ func (c *Command) Execute(args []string) error {
 	for i, file := range c.Args.Files {
 		c.logger = internal.NewLogger(i, n, file)
 
-		path := string(file)
-		_, ext := util.StemAndExt(path)
-		f, err := os.Open(path)
-		if err != nil {
-			c.logger.Printf(`open file "%s" error: %v`, file, err)
-			continue
-		}
-
-		bar := internal.DefaultBytes(-1, filepath.Base(path))
-		if err, _, _ = Extract(ctx, f, ext, ".", func(opts *Options) {
-			opts.ProgressBar = bar
-		}), f.Close(), bar.Close(); err == nil {
+		if err = c.extract(ctx, string(file)); err == nil {
 			success++
 			continue
 		}
@@ -62,4 +51,34 @@ func (c *Command) Execute(args []string) error {
 
 	log.Printf("successfully extracted %d/%d files", success, n)
 	return nil
+}
+
+func (c *Command) extract(ctx context.Context, name string) error {
+	f, err := os.Open(name)
+	if err != nil {
+		return fmt.Errorf(`open file "%s" error: %w`, name, err)
+	}
+
+	defer f.Close()
+
+	stem, ext := util.StemAndExt(name)
+	ex := DetectExtractorFromExt(ext)
+	if ex == nil {
+		c.logger.Printf(`file "%s" is not a supported archive`, filepath.Base(name))
+		return nil
+	}
+
+	dir, err := util.MkExclDir(".", stem, 0755)
+	if err != nil {
+		return fmt.Errorf("create directory error: %w", err)
+	}
+
+	bar := internal.DefaultBytes(-1, filepath.Base(name))
+	if err, _ = ex.Extract(ctx, f, dir, func(opts *Options) {
+		opts.ProgressBar = bar
+	}), bar.Close(); err != nil {
+		_ = os.RemoveAll(dir)
+	}
+
+	return err
 }

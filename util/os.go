@@ -39,7 +39,7 @@ func OpenExclFile(parent, stem, ext string, perm os.FileMode) (file *os.File, er
 // Stem is the desired name of the directory. The actual directory that is created might have numeric suffixes such as
 // stem-1, stem-2, etc. The return value "name" is the actual path to the newly created directory.
 func MkExclDir(parent, stem string, perm os.FileMode) (name string, err error) {
-	name = filepath.Join(parent, name)
+	name = filepath.Join(parent, stem)
 	for i := 0; ; {
 		switch err = os.Mkdir(name, perm); {
 		case err == nil:

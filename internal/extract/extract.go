@@ -2,7 +2,6 @@ package extract
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"iter"
@@ -10,62 +9,86 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/util"
 	"github.com/schollz/progressbar/v3"
 )
 
 const defaultBufferSize = 32 * 1024
 
-var ErrUnknownArchiveExtension = errors.New("unknown archive extension")
-
-// EntriesFromExt uses the extension of the file's name to determine decompression algorithm.
-//
-// TODO use http.DetectContentType() instead of relying on file extension.
-// TODO implement unwrap root by using two passes.
-//
-// Returns ErrUnknownArchiveExtension if the extension is not supported.
-func EntriesFromExt(src io.Reader, ext string) (iter.Seq2[Entry, error], error) {
-	switch ext {
-	case ".7z":
-		if f, ok := src.(*os.File); ok {
-			return From7zFile(f), nil
-		}
-
-		// TODO find an implementation of 7z reader that receives just io.Reader
-		return nil, fmt.Errorf("7z archives must be opened as os.File")
-	case ".zip":
-		if f, ok := src.(*os.File); ok {
-			return FromZipFile(f), nil
-		}
-
-		return FromZipReader(src), nil
-	case ".tar.zst":
-		return FromTarZstReader(src), nil
-	case ".tar.gz":
-		return FromTarGzipReader(src), nil
-	default:
-		return nil, ErrUnknownArchiveExtension
-	}
-}
-
-// Options customises Extract.
+// Options customises Extractor.Extract.
 type Options struct {
 	// ProgressBar if given will be used to provide progress report.
 	ProgressBar *progressbar.ProgressBar
 }
 
-// Extract uses the extension of the file's name to determine decompression algorithm (see EntriesFromExt).
+// Extractor provides methods to extract contents from an archive using iterator.
+type Extractor interface {
+	// Entries produces an iterator returning the archive entries.
+	//
+	// The src io.Reader will be consumed by the end of the iterator.
+	Entries(src io.Reader) (iter.Seq2[Entry, error], error)
+	// Extract extracts contents of the archive to the dir directory.
+	Extract(ctx context.Context, src io.Reader, dir string, optFns ...func(*Options)) error
+}
+
+type entriesExtractor interface {
+	Entries(src io.Reader) (iter.Seq2[Entry, error], error)
+}
+
+// DetectExtractorFromExt uses the extension of the file's name to determine decompression algorithm.
 //
-// The dir argument is the parent directory to create extracted files.
-//
-// Returns ErrUnknownArchiveExtension if the extension is not supported.
-func Extract(ctx context.Context, src io.Reader, ext, dir string, optFns ...func(*Options)) error {
+// TODO use http.DetectContentType() instead of relying on file extension.
+func DetectExtractorFromExt(ext string) Extractor {
+	switch ext {
+	case ".7z":
+		return &baseExtractor{sevenZipExtractor{}}
+	case ".zip":
+		return &baseExtractor{zipExtractor{}}
+	case ".tar.zst":
+		return &baseExtractor{tarExtractor{fromTarZstReader}}
+	case ".tar.gz":
+		return &baseExtractor{tarExtractor{fromTarGzipReader}}
+	default:
+		return nil
+	}
+}
+
+type baseExtractor struct {
+	entriesExtractor
+}
+
+func (e *baseExtractor) Extract(ctx context.Context, src io.Reader, dir string, optFns ...func(*Options)) error {
 	opts := &Options{}
 	for _, fn := range optFns {
 		fn(opts)
 	}
 
-	files, err := EntriesFromExt(src, ext)
+	var rootDir internal.RootDir
+	if rs, ok := src.(io.ReadSeeker); ok {
+		files, err := e.entriesExtractor.Entries(rs)
+		if err != nil {
+			return err
+		}
+
+		rootFinder := internal.NewZipRootDirFinder()
+
+		for f, err := range files {
+			if err != nil {
+				return err
+			}
+
+			if rootDir, ok = rootFinder(f.Name()); !ok {
+				break
+			}
+		}
+
+		if _, err = rs.Seek(0, io.SeekStart); err != nil {
+			return fmt.Errorf("seek start error: %w", err)
+		}
+	}
+
+	files, err := e.entriesExtractor.Entries(src)
 	if err != nil {
 		return err
 	}
@@ -79,7 +102,7 @@ func Extract(ctx context.Context, src io.Reader, ext, dir string, optFns ...func
 
 		// TODO support creating directories as well
 
-		path, fi := filepath.Join(dir, f.Name()), f.FileInfo()
+		path, fi := rootDir.Join(dir, f.Name()), f.FileInfo()
 
 		if err = os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 			_ = f.Close()

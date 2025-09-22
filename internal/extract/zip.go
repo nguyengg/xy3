@@ -10,7 +10,18 @@ import (
 	"github.com/krolaw/zipstream"
 )
 
-func FromZipReader(src io.Reader) iter.Seq2[Entry, error] {
+type zipExtractor struct {
+}
+
+func (z zipExtractor) Entries(src io.Reader) (iter.Seq2[Entry, error], error) {
+	if f, ok := src.(*os.File); ok {
+		return fromZipFile(f), nil
+	}
+
+	return fromZipReader(src), nil
+}
+
+func fromZipReader(src io.Reader) iter.Seq2[Entry, error] {
 	return func(yield func(Entry, error) bool) {
 		zr := zipstream.NewReader(src)
 
@@ -36,7 +47,7 @@ func FromZipReader(src io.Reader) iter.Seq2[Entry, error] {
 	}
 }
 
-func FromZipFile(src *os.File) iter.Seq2[Entry, error] {
+func fromZipFile(src *os.File) iter.Seq2[Entry, error] {
 	return func(yield func(Entry, error) bool) {
 		fi, err := src.Stat()
 		if err != nil {

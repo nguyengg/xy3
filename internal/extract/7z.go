@@ -9,7 +9,19 @@ import (
 	"github.com/bodgit/sevenzip"
 )
 
-func From7zFile(src *os.File) iter.Seq2[Entry, error] {
+type sevenZipExtractor struct {
+}
+
+func (s sevenZipExtractor) Entries(src io.Reader) (iter.Seq2[Entry, error], error) {
+	if f, ok := src.(*os.File); ok {
+		return from7zFile(f), nil
+	}
+
+	// TODO find an implementation of 7z reader that receives just io.Reader
+	return nil, fmt.Errorf("7z archives must be opened as os.File")
+}
+
+func from7zFile(src *os.File) iter.Seq2[Entry, error] {
 	return func(yield func(Entry, error) bool) {
 		fi, err := src.Stat()
 		if err != nil {

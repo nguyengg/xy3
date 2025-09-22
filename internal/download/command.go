@@ -99,35 +99,34 @@ func (c *Command) download(ctx context.Context, manifestName string) error {
 		}
 	}
 
-	if c.Extract {
-		if err = c.extract(ctx, name); err != nil {
-			return fmt.Errorf("extract error: %w", err)
-		}
-
-		_ = os.Remove(name)
+	if !c.Extract {
+		return nil
 	}
 
-	return nil
-}
-
-func (c *Command) extract(ctx context.Context, name string) error {
-	f, err := os.Open(name)
+	f, err = os.Open(name)
 	if err != nil {
 		return fmt.Errorf(`open file "%s" error: %w`, name, err)
 	}
 
-	_, ext := util.StemAndExt(name)
-	bar := internal.DefaultBytes(-1, fmt.Sprintf(`extracting "%s"`, filepath.Base(name)))
-	if err, _, _ := extract.Extract(ctx, f, ext, ".", func(opts *extract.Options) {
-		opts.ProgressBar = bar
-	}), f.Close(), bar.Close(); err != nil {
-		if errors.Is(err, extract.ErrUnknownArchiveExtension) {
-			c.logger.Printf("file is not eligible for auto-extracting: %v", err)
-			return nil
-		}
-
-		return err
+	ex := extract.DetectExtractorFromExt(ext)
+	if ex == nil {
+		c.logger.Printf(`file "%s" is not a supported archive`, filepath.Base(name))
+		return nil
 	}
 
-	return nil
+	dir, err := util.MkExclDir(".", stem, 0755)
+	if err != nil {
+		return fmt.Errorf("create directory error: %w", err)
+	}
+
+	bar := internal.DefaultBytes(-1, "extracting")
+	if err, _, _ = ex.Extract(ctx, f, dir, func(opts *extract.Options) {
+		opts.ProgressBar = bar
+	}), f.Close(), bar.Close(); err != nil {
+		_ = os.RemoveAll(dir)
+	} else {
+		_ = os.Remove(name)
+	}
+
+	return err
 }
