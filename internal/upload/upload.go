@@ -56,7 +56,6 @@ func (c *Command) upload(ctx context.Context, name string) error {
 		Key:                 key,
 		ExpectedBucketOwner: c.ExpectedBucketOwner,
 		Size:                size,
-		Checksum:            checksum,
 	}
 
 	c.logger.Printf(`uploading to "s3://%s/%s"`, c.Bucket, key)
