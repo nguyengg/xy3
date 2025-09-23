@@ -8,9 +8,9 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/transport/http"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jessevdk/go-flags"
+	"github.com/nguyengg/xy3/internal/cmd/awsconfig"
 	"github.com/nguyengg/xy3/internal/manifest"
 
 	"io"
@@ -27,6 +27,8 @@ type Remove struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the local files each containing a single S3 URI" required:"yes"`
 	} `positional-args:"yes"`
 
+	awsconfig.ConfigLoaderMixin
+
 	client *s3.Client
 }
 
@@ -38,7 +40,7 @@ func (c *Remove) Execute(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer stop()
 
-	cfg, err := config.LoadDefaultConfig(ctx)
+	cfg, err := c.LoadDefaultConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("load default config error:%w", err)
 	}

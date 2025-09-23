@@ -9,11 +9,11 @@ import (
 	"os/signal"
 	"strings"
 
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jessevdk/go-flags"
 	"github.com/nguyengg/go-aws-commons/s3writer"
 	"github.com/nguyengg/xy3/internal"
+	"github.com/nguyengg/xy3/internal/cmd/awsconfig"
 )
 
 type Command struct {
@@ -22,6 +22,8 @@ type Command struct {
 	Args           struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the local directories to be uploaded to S3 as archives." required:"yes"`
 	} `positional-args:"yes"`
+
+	awsconfig.ConfigLoaderMixin
 
 	bucket, prefix string
 	client         *s3.Client
@@ -45,7 +47,7 @@ func (c *Command) Execute(args []string) (err error) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer stop()
 
-	cfg, err := config.LoadDefaultConfig(ctx)
+	cfg, err := c.LoadDefaultConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("load default config error:%w", err)
 	}

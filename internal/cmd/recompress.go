@@ -12,10 +12,10 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jessevdk/go-flags"
 	"github.com/nguyengg/xy3/internal"
+	"github.com/nguyengg/xy3/internal/cmd/awsconfig"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/nguyengg/xy3/util"
 )
@@ -25,6 +25,8 @@ type Recompress struct {
 	Args   struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the local files each containing a single S3 URI" required:"yes"`
 	} `positional-args:"yes"`
+
+	awsconfig.ConfigLoaderMixin
 
 	client *s3.Client
 	logger *log.Logger
@@ -46,7 +48,7 @@ func (c *Recompress) Execute(args []string) (err error) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer stop()
 
-	cfg, err := config.LoadDefaultConfig(ctx)
+	cfg, err := c.LoadDefaultConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("load default config error:%w", err)
 	}

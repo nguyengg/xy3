@@ -11,9 +11,9 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/nguyengg/xy3/internal"
+	"github.com/nguyengg/xy3/internal/cmd/awsconfig"
 	"github.com/nguyengg/xy3/internal/manifest"
 )
 
@@ -22,6 +22,7 @@ type Metadata struct {
 		S3Locations []string `positional-arg-name:"S3_LOCATION" description:"the S3 bucket names and optional key prefixes in format s3://bucket/prefix" required:"yes"`
 	} `positional-args:"yes"`
 
+	awsconfig.ConfigLoaderMixin
 	client *s3.Client
 	logger *log.Logger
 }
@@ -34,7 +35,7 @@ func (c *Metadata) Execute(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer stop()
 
-	cfg, err := config.LoadDefaultConfig(ctx)
+	cfg, err := c.LoadDefaultConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("load default config error:%w", err)
 	}
