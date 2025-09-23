@@ -56,8 +56,10 @@ func (c *Command) Execute(args []string) error {
 	n := len(c.Args.Files)
 	for i, file := range c.Args.Files {
 		c.logger = internal.NewLogger(i, n, file)
+		c.logger.Printf("start downloading")
 
 		if err = c.download(ctx, string(file)); err == nil {
+			c.logger.Printf("done downloading")
 			success++
 			continue
 		}

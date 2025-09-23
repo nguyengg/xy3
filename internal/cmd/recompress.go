@@ -61,8 +61,10 @@ func (c *Recompress) Execute(args []string) (err error) {
 	n := len(c.Args.Files)
 	for i, file := range c.Args.Files {
 		c.logger = internal.NewLogger(i, n, file)
+		c.logger.Printf("start recompressing")
 
 		if err = c.recompress(ctx, string(file), bucket, prefix); err == nil {
+			c.logger.Printf("done recompressing")
 			success++
 			continue
 		}
@@ -81,14 +83,14 @@ func (c *Recompress) Execute(args []string) (err error) {
 func (c *Recompress) recompress(ctx context.Context, originalManifestName, moveToBucket, moveToPrefix string) error {
 	algorithm := internal.AlgorithmZstd
 
-	man, err := manifest.UnmarshalFromFile(originalManifestName)
+	originalManifest, err := manifest.UnmarshalFromFile(originalManifestName)
 	if err != nil {
 		return fmt.Errorf("read manifest error: %w", err)
 	}
 
 	// we'll create a temp directory to store all intermediate artifacts.
 	// this temp directory is deleted only after complete success.
-	stem, ext := util.StemAndExt(man.Key)
+	stem, ext := util.StemAndExt(originalManifest.Key)
 
 	dir, err := os.MkdirTemp(".", stem+"-tmp-*")
 	if err != nil {
@@ -110,7 +112,7 @@ func (c *Recompress) recompress(ctx context.Context, originalManifestName, moveT
 		return fmt.Errorf("create original file error: %w", err)
 	}
 
-	if err, _ = internal.Download(ctx, c.client, man.Bucket, man.Key, f), f.Close(); err != nil {
+	if err, _ = internal.Download(ctx, c.client, originalManifest.Bucket, originalManifest.Key, f), f.Close(); err != nil {
 		if errors.Is(err, internal.ErrChecksumMismatch{}) {
 			c.logger.Print(err)
 		} else {
@@ -141,14 +143,14 @@ func (c *Recompress) recompress(ctx context.Context, originalManifestName, moveT
 	}
 
 	// bucket and key might be new values if we're moving to a different location.
-	bucket := man.Bucket
-	key := path.Dir(man.Key) + stem + ".tar" + algorithm.Ext()
+	bucket := originalManifest.Bucket
+	key := path.Dir(originalManifest.Key) + stem + ".tar" + algorithm.Ext()
 	if moveToBucket != "" {
 		bucket = moveToBucket
 		key = moveToPrefix + stem + ".tar" + algorithm.Ext()
 	}
 
-	man, err = internal.Upload(ctx, c.client, f, bucket, key, func(opts *internal.UploadOptions) {
+	newMan, err := internal.Upload(ctx, c.client, f, bucket, key, func(opts *internal.UploadOptions) {
 		opts.PutObjectInputOptions = func(input *s3.PutObjectInput) {
 			input.ContentType = aws.String(internal.DefaultAlgorithm.ContentType())
 		}
@@ -161,16 +163,28 @@ func (c *Recompress) recompress(ctx context.Context, originalManifestName, moveT
 	// write manifest to a unique local .s3 file.
 	f, err = util.OpenExclFile(".", stem, ".tar"+algorithm.Ext()+".s3", 0666)
 	if err == nil {
-		err = man.MarshalTo(f)
+		err = newMan.MarshalTo(f)
 	}
 	if _ = f.Close(); err != nil {
-		_ = man.MarshalTo(os.Stdout)
+		_ = newMan.MarshalTo(os.Stdout)
 		return fmt.Errorf("write manifest error: %w", err)
 	}
 
 	success = true
 
-	// TODO delete old file locally as well as in s3.
+	// delete old file locally as well as in s3.
+	c.logger.Printf(`deleting "s3://%s/%s"`, originalManifest.Bucket, originalManifest.Key)
+	if _, err = c.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: &originalManifest.Bucket,
+		Key:    &originalManifest.Key,
+	}); err != nil {
+		c.logger.Printf("delete old S3 file error: %v", err)
+	}
+
+	c.logger.Printf(`deleting "%s"`, originalManifestName)
+	if err = os.Remove(originalManifestName); err != nil {
+		c.logger.Printf("delete old manifest error: %v", err)
+	}
 
 	return nil
 }

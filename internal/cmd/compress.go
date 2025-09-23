@@ -51,6 +51,7 @@ func (c *Compress) Execute(args []string) (err error) {
 	n := len(c.Args.Files)
 	for i, file := range c.Args.Files {
 		c.logger = internal.NewLogger(i, n, file)
+		c.logger.Printf("start compressing")
 
 		// stat to determine if file or directory.
 		path := string(file)
@@ -62,9 +63,12 @@ func (c *Compress) Execute(args []string) (err error) {
 
 		if fi.IsDir() {
 			if err = c.compressDir(ctx, algorithm, path); err == nil {
+				c.logger.Printf("done compressing")
 				success++
 				continue
-			} else if errors.Is(err, context.Canceled) {
+			}
+
+			if errors.Is(err, context.Canceled) {
 				break
 			}
 
@@ -73,9 +77,12 @@ func (c *Compress) Execute(args []string) (err error) {
 		}
 
 		if err = c.compressFile(ctx, algorithm, path); err == nil {
+			c.logger.Printf("done compressing")
 			success++
 			continue
-		} else if errors.Is(err, context.Canceled) {
+		}
+
+		if errors.Is(err, context.Canceled) {
 			break
 		}
 

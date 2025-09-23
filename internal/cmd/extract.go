@@ -33,8 +33,10 @@ func (c *Extract) Execute(args []string) (err error) {
 	n := len(c.Args.Files)
 	for i, file := range c.Args.Files {
 		c.logger = internal.NewLogger(i, n, file)
+		c.logger.Printf("start decompresing")
 
 		if _, err = internal.Decompress(ctx, string(file), "."); err == nil {
+			c.logger.Printf("done decompresing")
 			success++
 			continue
 		}
@@ -43,9 +45,9 @@ func (c *Extract) Execute(args []string) (err error) {
 			break
 		}
 
-		c.logger.Printf("extract error: %v", err)
+		c.logger.Printf("decompress error: %v", err)
 	}
 
-	log.Printf("successfully extracted %d/%d files", success, n)
+	log.Printf("successfully decompressed %d/%d files", success, n)
 	return nil
 }
