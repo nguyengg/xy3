@@ -17,25 +17,29 @@ import (
 )
 
 type Command struct {
-	Bucket              string  `short:"b" long:"bucket" description:"name of the S3 bucket containing the files" required:"true"`
-	Prefix              string  `short:"k" long:"key-prefix" description:"key prefix to apply to all S3 uploads"`
-	ExpectedBucketOwner *string `long:"expected-bucket-owner" description:"optional ExpectedBucketOwner field to apply to all S3 uploads"`
-	MaxConcurrency      int     `short:"P" long:"max-concurrency" description:"use up to max-concurrency number of goroutines at a time for parallel uploads." default:"5"`
-	Args                struct {
+	S3Location     string `short:"u" long:"s3-location" description:"name of the S3 bucket and optional key prefix in format s3://bucket/prefix" value-name:"S3_LOCATION" required:"true"`
+	MaxConcurrency int    `short:"P" long:"max-concurrency" description:"use up to max-concurrency number of goroutines at a time for parallel uploads."`
+	Args           struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the local directories to be uploaded to S3 as archives." required:"yes"`
 	} `positional-args:"yes"`
 
-	client *s3.Client
-	logger *log.Logger
+	bucket, prefix string
+	client         *s3.Client
+	logger         *log.Logger
 }
 
-func (c *Command) Execute(args []string) error {
+func (c *Command) Execute(args []string) (err error) {
 	if len(args) != 0 {
 		return fmt.Errorf("unknown positional arguments: %s", strings.Join(args, " "))
 	}
 
-	if c.MaxConcurrency <= 0 {
-		return fmt.Errorf("max-concurrency must be positive")
+	if c.MaxConcurrency < 0 {
+		return fmt.Errorf("max-concurrency must be non-negative")
+	}
+
+	c.bucket, c.prefix, err = internal.ParseS3URI(c.S3Location)
+	if err != nil {
+		return fmt.Errorf(`invalid s3 uri "%s": %w`, c.S3Location, err)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)

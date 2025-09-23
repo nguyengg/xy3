@@ -50,25 +50,25 @@ func (c *Command) upload(ctx context.Context, name string) error {
 
 	// use the name of the archive (in the case of directory) to have meaningful extensions.
 	stem, ext := util.StemAndExt(f.Name())
-	key := c.Prefix + stem + ext
+	key := c.prefix + stem + ext
 	m := manifest.Manifest{
-		Bucket:              c.Bucket,
-		Key:                 key,
-		ExpectedBucketOwner: c.ExpectedBucketOwner,
-		Size:                size,
+		Bucket: c.bucket,
+		Key:    key,
+		Size:   size,
 	}
 
-	c.logger.Printf(`uploading to "s3://%s/%s"`, c.Bucket, key)
+	c.logger.Printf(`uploading to "s3://%s/%s"`, c.bucket, key)
 
 	w, err := s3writer.New(ctx, c.client, &s3.PutObjectInput{
-		Bucket:              aws.String(c.Bucket),
-		Key:                 aws.String(key),
-		ExpectedBucketOwner: c.ExpectedBucketOwner,
-		ContentType:         contentType,
-		StorageClass:        s3types.StorageClassIntelligentTiering,
-		Metadata:            map[string]string{"checksum": checksum},
-	}, func(options *s3writer.Options) {
-		options.Concurrency = c.MaxConcurrency
+		Bucket:       aws.String(c.bucket),
+		Key:          aws.String(key),
+		ContentType:  contentType,
+		StorageClass: s3types.StorageClassIntelligentTiering,
+		Metadata:     map[string]string{"checksum": checksum},
+	}, func(opts *s3writer.Options) {
+		if c.MaxConcurrency > 0 {
+			opts.Concurrency = c.MaxConcurrency
+		}
 	}, s3writer.WithProgressBar(size))
 	if err != nil {
 		return fmt.Errorf("create s3 writer error: %w", err)

@@ -33,7 +33,9 @@ func (c *Command) compress(ctx context.Context, root string) (f *os.File, size i
 
 	if err = internal.CompressDir(ctx, root, io.MultiWriter(f, sizer, checksummer), func(opts *internal.CompressOptions) {
 		opts.Algorithm = alg
-		opts.MaxConcurrency = c.MaxConcurrency
+		if c.MaxConcurrency > 0 {
+			opts.MaxConcurrency = c.MaxConcurrency
+		}
 	}); err == nil {
 		_, err = f.Seek(0, io.SeekStart)
 	}
