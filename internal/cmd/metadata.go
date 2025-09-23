@@ -18,10 +18,8 @@ import (
 )
 
 type Metadata struct {
-	ExpectedBucketOwner *string `long:"expected-bucket-owner" description:"optional ExpectedBucketOwner field to apply when the manifest does not have its own expectedBucketOwner"`
-
 	Args struct {
-		S3Locations []string `value-name:"s3://bucket/prefix" positional-arg-name:"s3location" description:"the S3 bucket names and optional prefix" required:"yes"`
+		S3Locations []string `positional-arg-name:"S3_LOCATION" description:"the S3 bucket names and optional key prefixes in format s3://bucket/prefix" required:"yes"`
 	} `positional-args:"yes"`
 
 	client *s3.Client
@@ -79,9 +77,8 @@ func (c *Metadata) Execute(args []string) error {
 
 func (c *Metadata) retrieve(ctx context.Context, bucket string, prefix *string) error {
 	for paginator := s3.NewListObjectsV2Paginator(c.client, &s3.ListObjectsV2Input{
-		Bucket:              aws.String(bucket),
-		ExpectedBucketOwner: c.ExpectedBucketOwner,
-		Prefix:              prefix,
+		Bucket: aws.String(bucket),
+		Prefix: prefix,
 	}); paginator.HasMorePages(); {
 		page, err := paginator.NextPage(ctx)
 		if err != nil {
@@ -91,20 +88,18 @@ func (c *Metadata) retrieve(ctx context.Context, bucket string, prefix *string) 
 		for _, obj := range page.Contents {
 			// HeadObject to get metadata.
 			headObjectResult, err := c.client.HeadObject(ctx, &s3.HeadObjectInput{
-				Bucket:              aws.String(bucket),
-				Key:                 obj.Key,
-				ExpectedBucketOwner: c.ExpectedBucketOwner,
+				Bucket: aws.String(bucket),
+				Key:    obj.Key,
 			})
 			if err != nil {
 				return fmt.Errorf(`get metadata about "%s" error: %w`, aws.ToString(obj.Key), err)
 			}
 
 			m := manifest.Manifest{
-				Bucket:              bucket,
-				Key:                 aws.ToString(obj.Key),
-				ExpectedBucketOwner: c.ExpectedBucketOwner,
-				Size:                aws.ToInt64(obj.Size),
-				Checksum:            headObjectResult.Metadata["checksum"],
+				Bucket:   bucket,
+				Key:      aws.ToString(obj.Key),
+				Size:     aws.ToInt64(obj.Size),
+				Checksum: headObjectResult.Metadata["checksum"],
 			}
 
 			f, err := os.OpenFile(path.Base(m.Key)+".s3", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)

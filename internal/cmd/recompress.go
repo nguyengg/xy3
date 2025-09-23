@@ -21,7 +21,7 @@ import (
 )
 
 type Recompress struct {
-	MoveTo string `value-name:"s3://bucket/prefix" long:"move-to" description:"if present, the new archive will be uploaded to this S3 bucket and key prefix instead"`
+	MoveTo string `long:"move-to" description:"if present in format s3://bucket/prefix, the new archive will be uploaded to this S3 bucket and optional key prefix instead" value-name:"S3_LOCATION"`
 	Args   struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the local files each containing a single S3 URI" required:"yes"`
 	} `positional-args:"yes"`

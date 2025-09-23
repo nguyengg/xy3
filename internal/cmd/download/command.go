@@ -18,10 +18,9 @@ import (
 )
 
 type Command struct {
-	Extract             bool    `long:"extract" description:"if specified, the downloaded file will automatically be decompressed and extracted if it's an archive'"`
-	ExpectedBucketOwner *string `long:"expected-bucket-owner" description:"optional ExpectedBucketOwner field to apply when the manifest does not have its own expectedBucketOwner"`
-	MaxConcurrency      int     `short:"P" long:"max-concurrency" description:"use up to max-concurrency number of goroutines at a time for range downloads." default:"5"`
-	Args                struct {
+	Extract        bool `long:"extract" description:"if specified, the downloaded file will automatically be decompressed and extracted if it's an archive'"`
+	MaxConcurrency int  `short:"P" long:"max-concurrency" description:"use up to max-concurrency number of goroutines at a time for range downloads."`
+	Args           struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the local files each containing a single S3 URI" required:"yes"`
 	} `positional-args:"yes"`
 
@@ -34,8 +33,8 @@ func (c *Command) Execute(args []string) error {
 		return fmt.Errorf("unknown positional arguments: %s", strings.Join(args, " "))
 	}
 
-	if c.MaxConcurrency <= 0 {
-		return fmt.Errorf("max-concurrency must be positive")
+	if c.MaxConcurrency < 0 {
+		return fmt.Errorf("max-concurrency must be non-negative")
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)

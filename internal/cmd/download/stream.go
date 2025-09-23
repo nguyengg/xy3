@@ -109,8 +109,10 @@ func (c *Command) stream(ctx context.Context, man manifest.Manifest) (bool, erro
 			Bucket:              aws.String(man.Bucket),
 			Key:                 aws.String(man.Key),
 			ExpectedBucketOwner: man.ExpectedBucketOwner,
-		}, func(options *s3reader.Options) {
-			options.Concurrency = c.MaxConcurrency
+		}, func(opts *s3reader.Options) {
+			if c.MaxConcurrency > 0 {
+				opts.Concurrency = c.MaxConcurrency
+			}
 		})
 		if err != nil {
 			cancel(fmt.Errorf("create s3 reader error: %w", err))

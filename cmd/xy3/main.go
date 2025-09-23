@@ -14,7 +14,7 @@ import (
 )
 
 var opts struct {
-	Profile    string           `short:"p" long:"profile" description:"override AWS_PROFILE if given" default:"nguyen-gg" default-mask:"-"`
+	Profile    string           `short:"p" long:"profile" description:"override AWS_PROFILE if given" value-name:"AWS_PROFILE"`
 	Compress   cmd.Compress     `command:"compress" alias:"c" description:"compress files"`
 	Extract    cmd.Extract      `command:"extract" alias:"x" description:"extract archives"`
 	Recompress cmd.Recompress   `command:"recompress" alias:"rc" description:"recompress archives"`
