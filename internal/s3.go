@@ -16,6 +16,8 @@ func ParseS3URI(text string) (bucket, key string, err error) {
 
 	parts := strings.SplitN(strings.TrimPrefix(text, "s3://"), "/", 2)
 	bucket = parts[0]
-	key = parts[1]
+	if len(parts) > 1 {
+		key = parts[1]
+	}
 	return
 }
