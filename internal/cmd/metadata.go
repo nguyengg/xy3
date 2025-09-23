@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"path"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -13,14 +15,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/manifest"
-	"github.com/nguyengg/xy3/util"
 )
 
 type Metadata struct {
 	ExpectedBucketOwner *string `long:"expected-bucket-owner" description:"optional ExpectedBucketOwner field to apply when the manifest does not have its own expectedBucketOwner"`
 
 	Args struct {
-		S3Location string `positional-arg-name:"s3://bucket/prefix" description:"the S3 bucket name and optional prefix" required:"yes"`
+		S3Locations []string `value-name:"s3://bucket/prefix" positional-arg-name:"s3location" description:"the S3 bucket names and optional prefix" required:"yes"`
 	} `positional-args:"yes"`
 
 	client *s3.Client
@@ -46,15 +47,37 @@ func (c *Metadata) Execute(args []string) error {
 		options.DisableLogOutputChecksumValidationSkipped = true
 	})
 
-	bucket, key, err := internal.ParseS3URI(c.Args.S3Location)
-	if err != nil {
-		return fmt.Errorf("invalid s3 uri: %w", err)
-	}
-	var prefix *string
-	if key != "" {
-		prefix = &key
+	success := 0
+	n := len(c.Args.S3Locations)
+	for i, s3location := range c.Args.S3Locations {
+		bucket, key, err := internal.ParseS3URI(s3location)
+		if err != nil {
+			return fmt.Errorf(`invalid s3 uri "%s": %w`, s3location, err)
+		}
+
+		var prefix *string
+		if key != "" {
+			prefix = &key
+		}
+
+		c.logger = log.New(os.Stderr, fmt.Sprintf(`[%d/%d] s3://%s - `, i+1, n, bucket), 0)
+
+		if err = c.retrieve(ctx, bucket, prefix); err == nil {
+			success++
+			continue
+		}
+
+		if errors.Is(err, context.Canceled) {
+			break
+		}
+
+		c.logger.Printf("retrieve manifests error: %v", err)
 	}
 
+	return nil
+}
+
+func (c *Metadata) retrieve(ctx context.Context, bucket string, prefix *string) error {
 	for paginator := s3.NewListObjectsV2Paginator(c.client, &s3.ListObjectsV2Input{
 		Bucket:              aws.String(bucket),
 		ExpectedBucketOwner: c.ExpectedBucketOwner,
@@ -84,8 +107,7 @@ func (c *Metadata) Execute(args []string) error {
 				Checksum:            headObjectResult.Metadata["checksum"],
 			}
 
-			stem, ext := util.StemAndExt(m.Key)
-			f, err := util.OpenExclFile(".", stem, ext+".s3", 0666)
+			f, err := os.OpenFile(path.Base(m.Key)+".s3", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
 			if err != nil {
 				return fmt.Errorf("create file error: %w", err)
 			}
@@ -94,7 +116,7 @@ func (c *Metadata) Execute(args []string) error {
 				return fmt.Errorf("write manifest error: %w", err)
 			}
 
-			log.Printf("wrote %s", f.Name())
+			c.logger.Printf("wrote %s", f.Name())
 		}
 	}
 
