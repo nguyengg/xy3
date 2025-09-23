@@ -43,18 +43,11 @@ func Upload(ctx context.Context, client *s3.Client, src io.Reader, bucket, key s
 			name = f.Name()
 		}
 
-		i, err := rs.Seek(0, io.SeekCurrent)
-		if err != nil {
-			return man, fmt.Errorf("seek current error: %w", err)
-		}
-
-		checksum, size, err = computeChecksum(ctx, rs)
-		if err != nil {
-			return man, err
-		}
-
-		if _, err = rs.Seek(i, io.SeekStart); err != nil {
-			return man, fmt.Errorf("seek start error: %w", err)
+		if err = ResettableReadSeeker(rs, func(r io.ReadSeeker) error {
+			checksum, size, err = computeChecksum(ctx, r)
+			return err
+		}); err != nil {
+			return
 		}
 	}
 

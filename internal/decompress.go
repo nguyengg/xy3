@@ -139,19 +139,21 @@ func Decompress(ctx context.Context, name, dir string, optFns ...func(*Decompres
 
 	// extracting will start with finding root dir.
 	var rootDir RootDir
-	files, err := ex.Files(src, false)
-	if err != nil {
-		return "", nil
-	}
-	if rootDir, err = findRootDir(ctx, files); err != nil {
-		return "", err
-	}
-	if _, err = src.Seek(0, io.SeekStart); err != nil {
-		return "", fmt.Errorf("seek start error: %w", err)
+	if err = ResettableReadSeeker(src, func(r io.ReadSeeker) error {
+		files, err := ex.Files(r, false)
+		if err != nil {
+			return err
+		}
+		if rootDir, err = findRootDir(ctx, files); err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return "", fmt.Errorf("find root dir error: %w", err)
 	}
 
 	// now go through the archive files again, this time opening each file for reading.
-	files, err = ex.Files(src, true)
+	files, err := ex.Files(src, true)
 	if err != nil {
 		return "", err
 	}

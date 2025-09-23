@@ -169,6 +169,10 @@ func untar(src io.Reader) iter.Seq2[ArchiveFile, error] {
 		for {
 			hdr, err := tr.Next()
 			if err != nil {
+				if err == io.EOF {
+					return
+				}
+
 				yield(nil, fmt.Errorf("read next tar entry error: %w", err))
 				return
 			}
