@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/nguyengg/xy3/util"
 )
@@ -19,7 +20,7 @@ type Metadata struct {
 	ExpectedBucketOwner *string `long:"expected-bucket-owner" description:"optional ExpectedBucketOwner field to apply when the manifest does not have its own expectedBucketOwner"`
 
 	Args struct {
-		S3BucketAndPrefix string `positional-arg-name:"s3://bucket/prefix" description:"the S3 bucket name and optional prefix" required:"yes"`
+		S3Location string `positional-arg-name:"s3://bucket/prefix" description:"the S3 bucket name and optional prefix" required:"yes"`
 	} `positional-args:"yes"`
 
 	client *s3.Client
@@ -45,18 +46,13 @@ func (c *Metadata) Execute(args []string) error {
 		options.DisableLogOutputChecksumValidationSkipped = true
 	})
 
-	// parse S3 URI with optional key prefix. don't bother validating valid bucket names.
-	if !strings.HasPrefix(c.Args.S3BucketAndPrefix, "s3://") {
-		return fmt.Errorf("expect positional argument to have s3:// prefix")
+	bucket, key, err := internal.ParseS3URI(c.Args.S3Location)
+	if err != nil {
+		return fmt.Errorf("invalid s3 uri: %w", err)
 	}
-
-	parts := strings.SplitN(strings.TrimPrefix(c.Args.S3BucketAndPrefix, "s3://"), "/", 2)
-	var (
-		bucket = parts[0]
-		prefix *string
-	)
-	if len(parts) > 1 {
-		prefix = &parts[1]
+	var prefix *string
+	if key != "" {
+		prefix = &key
 	}
 
 	for paginator := s3.NewListObjectsV2Paginator(c.client, &s3.ListObjectsV2Input{

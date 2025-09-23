@@ -28,7 +28,7 @@ func (c *Command) compress(ctx context.Context, root string) (f *os.File, size i
 		return
 	}
 
-	sizer := &sizer{}
+	sizer := &internal.Sizer{}
 	checksummer := util.DefaultChecksum()
 
 	if err = internal.CompressDir(ctx, root, io.MultiWriter(f, sizer, checksummer), func(opts *internal.CompressOptions) {
@@ -42,15 +42,5 @@ func (c *Command) compress(ctx context.Context, root string) (f *os.File, size i
 		return nil, 0, nil, "", err
 	}
 
-	return f, sizer.size, aws.String(alg.ContentType()), checksummer.SumToString(nil), nil
-}
-
-type sizer struct {
-	size int64
-}
-
-func (s *sizer) Write(p []byte) (n int, err error) {
-	n = len(p)
-	s.size += int64(n)
-	return
+	return f, sizer.Size, aws.String(alg.ContentType()), checksummer.SumToString(nil), nil
 }
