@@ -25,22 +25,13 @@ type Compress struct {
 	logger *log.Logger
 }
 
-func (c *Compress) Execute(args []string) (err error) {
+func (c *Compress) Execute(args []string) error {
 	if len(args) != 0 {
 		return fmt.Errorf("unknown positional arguments: %s", strings.Join(args, " "))
 	}
 
-	var algorithm internal.Algorithm
-	switch c.Algorithm {
-	case "zstd":
-		algorithm = internal.AlgorithmZstd
-	case "zip":
-		algorithm = internal.AlgorithmZip
-	case "gzip":
-		algorithm = internal.AlgorithmGzip
-	case "xz":
-		algorithm = internal.AlgorithmXz
-	default:
+	algorithm, err := internal.NewAlgorithmFromName(c.Algorithm)
+	if err != nil {
 		return fmt.Errorf("unknown algorithm: %v", c.Algorithm)
 	}
 

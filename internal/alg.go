@@ -1,8 +1,10 @@
 package internal
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"strings"
 )
 
 // Algorithm indicates which algorithm to use for compression and decompression.
@@ -14,6 +16,24 @@ const (
 	AlgorithmGzip
 	AlgorithmXz
 )
+
+// NewAlgorithmFromName returns the Algorithm parsed from the specified text.
+func NewAlgorithmFromName(name string) (Algorithm, error) {
+	switch strings.ToLower(name) {
+	case "zstd":
+		return AlgorithmZstd, nil
+	case "zip":
+		return AlgorithmZip, nil
+	case "gzip", "gz":
+		return AlgorithmGzip, nil
+	case "xz":
+		return AlgorithmXz, nil
+	default:
+		return AlgorithmZstd, ErrUnknownAlgorithm
+	}
+}
+
+var ErrUnknownAlgorithm = errors.New("unknown algorithm")
 
 func (m Algorithm) ContentType() string {
 	switch m {

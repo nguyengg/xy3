@@ -21,20 +21,27 @@ import (
 )
 
 type Recompress struct {
-	MoveTo string `long:"move-to" description:"if present in format s3://bucket/prefix, the new archive will be uploaded to this S3 bucket and optional key prefix instead" value-name:"S3_LOCATION"`
-	Args   struct {
+	Algorithm string `short:"a" long:"algorithm" choice:"zstd" choice:"zip" choice:"gzip" choice:"xz" default:"zstd"`
+	MoveTo    string `long:"move-to" description:"if present in format s3://bucket/prefix, the new archive will be uploaded to this S3 bucket and optional key prefix instead" value-name:"S3_LOCATION"`
+	Args      struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the local files each containing a single S3 URI" required:"yes"`
 	} `positional-args:"yes"`
 
 	awsconfig.ConfigLoaderMixin
 
-	client *s3.Client
-	logger *log.Logger
+	client    *s3.Client
+	logger    *log.Logger
+	algorithm internal.Algorithm
 }
 
-func (c *Recompress) Execute(args []string) (err error) {
+func (c *Recompress) Execute(args []string) error {
 	if len(args) != 0 {
 		return fmt.Errorf("unknown positional arguments: %s", strings.Join(args, " "))
+	}
+
+	algorithm, err := internal.NewAlgorithmFromName(c.Algorithm)
+	if err != nil {
+		return fmt.Errorf("unknown algorithm: %v", c.Algorithm)
 	}
 
 	// if MoveTo is specified, parse and validate them first.
@@ -65,7 +72,7 @@ func (c *Recompress) Execute(args []string) (err error) {
 		c.logger = internal.NewLogger(i, n, file)
 		c.logger.Printf("start recompressing")
 
-		if err = c.recompress(ctx, string(file), bucket, prefix); err == nil {
+		if err = c.recompress(ctx, algorithm, string(file), bucket, prefix); err == nil {
 			c.logger.Printf("done recompressing")
 			success++
 			continue
@@ -82,9 +89,7 @@ func (c *Recompress) Execute(args []string) (err error) {
 	return nil
 }
 
-func (c *Recompress) recompress(ctx context.Context, originalManifestName, moveToBucket, moveToPrefix string) error {
-	algorithm := internal.AlgorithmZstd
-
+func (c *Recompress) recompress(ctx context.Context, algorithm internal.Algorithm, originalManifestName, moveToBucket, moveToPrefix string) error {
 	originalManifest, err := manifest.UnmarshalFromFile(originalManifestName)
 	if err != nil {
 		return fmt.Errorf("read manifest error: %w", err)
