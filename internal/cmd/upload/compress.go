@@ -28,7 +28,7 @@ func (c *Command) compress(ctx context.Context, root string) (f *os.File, size i
 		return
 	}
 
-	sizer := &internal.Sizer{}
+	sizer := &util.Sizer{}
 	checksummer := util.DefaultChecksum()
 
 	if err = internal.CompressDir(ctx, root, io.MultiWriter(f, sizer, checksummer), func(opts *internal.CompressOptions) {

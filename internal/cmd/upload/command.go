@@ -14,6 +14,7 @@ import (
 	"github.com/nguyengg/go-aws-commons/s3writer"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/cmd/awsconfig"
+	"github.com/nguyengg/xy3/util"
 )
 
 type Command struct {
@@ -39,7 +40,7 @@ func (c *Command) Execute(args []string) (err error) {
 		return fmt.Errorf("max-concurrency must be non-negative")
 	}
 
-	c.bucket, c.prefix, err = internal.ParseS3URI(c.S3Location)
+	c.bucket, c.prefix, err = util.ParseS3URI(c.S3Location)
 	if err != nil {
 		return fmt.Errorf(`invalid s3 uri "%s": %w`, c.S3Location, err)
 	}

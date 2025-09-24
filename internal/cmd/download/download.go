@@ -44,7 +44,7 @@ func (c *Command) downloadFromManifest(ctx context.Context, manifestName string)
 }
 
 func (c *Command) downloadFromS3(ctx context.Context, s3Uri string) error {
-	bucket, key, err := internal.ParseS3URI(s3Uri)
+	bucket, key, err := util.ParseS3URI(s3Uri)
 	if err != nil {
 		return fmt.Errorf(`invalid s3 URI "%s": %w`, s3Uri, err)
 	}

@@ -10,12 +10,12 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/manifest"
+	"github.com/nguyengg/xy3/util"
 )
 
 func (c *Command) downloadManifests(ctx context.Context, s3Location string) (n int, err error) {
-	bucket, key, err := internal.ParseS3URI(s3Location)
+	bucket, key, err := util.ParseS3URI(s3Location)
 	if err != nil {
 		return 0, fmt.Errorf(`invalid s3 location "%s": %w`, s3Location, err)
 	}

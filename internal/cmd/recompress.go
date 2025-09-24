@@ -47,7 +47,7 @@ func (c *Recompress) Execute(args []string) error {
 	// if MoveTo is specified, parse and validate them first.
 	var bucket, prefix string
 	if c.MoveTo != "" {
-		if bucket, prefix, err = internal.ParseS3URI(c.MoveTo); err != nil {
+		if bucket, prefix, err = util.ParseS3URI(c.MoveTo); err != nil {
 			return fmt.Errorf("invalid MoveTo: %w", err)
 		}
 	}

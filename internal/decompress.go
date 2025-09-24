@@ -139,7 +139,7 @@ func Decompress(ctx context.Context, name, dir string, optFns ...func(*Decompres
 
 	// extracting will start with finding root dir.
 	var rootDir RootDir
-	if err = ResettableReadSeeker(src, func(r io.ReadSeeker) error {
+	if err = util.ResettableReadSeeker(src, func(r io.ReadSeeker) error {
 		files, err := ex.Files(r, false)
 		if err != nil {
 			return err

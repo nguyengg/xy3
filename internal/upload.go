@@ -43,7 +43,7 @@ func Upload(ctx context.Context, client *s3.Client, src io.Reader, bucket, key s
 			name = f.Name()
 		}
 
-		if err = ResettableReadSeeker(rs, func(r io.ReadSeeker) error {
+		if err = util.ResettableReadSeeker(rs, func(r io.ReadSeeker) error {
 			checksum, size, err = computeChecksum(ctx, r)
 			return err
 		}); err != nil {
@@ -66,7 +66,7 @@ func Upload(ctx context.Context, client *s3.Client, src io.Reader, bucket, key s
 
 	// the progress bar can have known size or not, as well as known name or not.
 	// if checksum and/or size weren't computed back then, let's compute them now too.
-	sizer := &Sizer{}
+	sizer := &util.Sizer{}
 	checksummer := util.DefaultChecksum()
 	bar := DefaultBytes(size, "uploading")
 	if name != "" {
@@ -102,7 +102,7 @@ func Upload(ctx context.Context, client *s3.Client, src io.Reader, bucket, key s
 }
 
 func computeChecksum(ctx context.Context, src io.Reader) (string, int64, error) {
-	sizer := &Sizer{}
+	sizer := &util.Sizer{}
 	checksummer := util.DefaultChecksum()
 
 	if f, ok := src.(*os.File); ok {
