@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -23,6 +24,7 @@ type Metadata struct {
 	} `positional-args:"yes"`
 
 	awsconfig.ConfigLoaderMixin
+
 	client *s3.Client
 	logger *log.Logger
 }
@@ -87,7 +89,6 @@ func (c *Metadata) retrieve(ctx context.Context, bucket string, prefix *string) 
 		}
 
 		for _, obj := range page.Contents {
-			// HeadObject to get metadata.
 			headObjectResult, err := c.client.HeadObject(ctx, &s3.HeadObjectInput{
 				Bucket: aws.String(bucket),
 				Key:    obj.Key,
@@ -105,14 +106,19 @@ func (c *Metadata) retrieve(ctx context.Context, bucket string, prefix *string) 
 
 			f, err := os.OpenFile(path.Base(m.Key)+".s3", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
 			if err != nil {
-				return fmt.Errorf("create file error: %w", err)
+				return fmt.Errorf("create manifest file error: %w", err)
 			}
+			name := f.Name()
 
 			if err, _ = m.MarshalTo(f), f.Close(); err != nil {
-				return fmt.Errorf("write manifest error: %w", err)
+				return fmt.Errorf(`write manifest to "%s" error: %w`, name, err)
 			}
 
-			c.logger.Printf("wrote %s", f.Name())
+			if err = os.Chtimes(f.Name(), time.Time{}, aws.ToTime(headObjectResult.LastModified)); err != nil {
+				c.logger.Printf(`wrote "%s"; change modify time error: %v`, name, err)
+			} else {
+				c.logger.Printf(`wrote "%s"`, name)
+			}
 		}
 	}
 
