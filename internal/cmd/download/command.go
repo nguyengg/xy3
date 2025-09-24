@@ -13,8 +13,6 @@ import (
 	"github.com/jessevdk/go-flags"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/cmd/awsconfig"
-	"github.com/nguyengg/xy3/internal/manifest"
-	"github.com/nguyengg/xy3/util"
 )
 
 type Command struct {
@@ -22,7 +20,7 @@ type Command struct {
 	Extract           bool `long:"extract" description:"if specified, the downloaded file will automatically be decompressed and extracted if it's an archive'"`
 	MaxConcurrency    int  `short:"P" long:"max-concurrency" description:"use up to max-concurrency number of goroutines at a time for range downloads."`
 	Args              struct {
-		Files []flags.Filename `positional-arg-name:"file" description:"the local files each containing a single S3 URI; or S3 locations in format s3://bucket/prefix to download manifests (with --manifests)"`
+		Files []flags.Filename `positional-arg-name:"file" description:"the local files each containing a single S3 URI; or S3 URI in format s3://bucket/key to download directly from S3; or S3 locations in format s3://bucket/prefix to download manifests (with --manifests)"`
 	} `positional-args:"yes"`
 
 	awsconfig.ConfigLoaderMixin
@@ -79,7 +77,14 @@ func (c *Command) Execute(args []string) error {
 		c.logger = internal.NewLogger(i, n, file)
 		c.logger.Printf("start downloading")
 
-		if err = c.download(ctx, string(file)); err == nil {
+		name := string(file)
+		if strings.HasPrefix(name, "s3://") {
+			if err = c.downloadFromS3(ctx, name); err == nil {
+				c.logger.Printf("done downloading")
+				success++
+				continue
+			}
+		} else if err = c.downloadFromManifest(ctx, name); err == nil {
 			c.logger.Printf("done downloading")
 			success++
 			continue
@@ -94,37 +99,4 @@ func (c *Command) Execute(args []string) error {
 
 	log.Printf("successfully downloaded %d/%d files", success, n)
 	return nil
-}
-
-func (c *Command) download(ctx context.Context, manifestName string) error {
-	man, err := manifest.UnmarshalFromFile(manifestName)
-	if err != nil {
-		return fmt.Errorf("read manifest error: %w", err)
-	}
-
-	// attempt to create the local file that will store the downloaded artifact.
-	// if we fail to download the file successfully, clean up by deleting the local file.
-	stem, ext := util.StemAndExt(man.Key)
-	f, err := util.OpenExclFile(".", stem, ext, 0666)
-	if err != nil {
-		return fmt.Errorf("create file error: %w", err)
-	}
-	name := f.Name()
-
-	if err, _ = internal.Download(ctx, c.client, man.Bucket, man.Key, f), f.Close(); err != nil {
-		if errors.Is(err, internal.ErrChecksumMismatch{}) {
-			c.logger.Print(err)
-		} else {
-			_ = os.Remove(name)
-			return err
-		}
-	}
-
-	if c.Extract {
-		if _, err = internal.Decompress(ctx, name, "."); err == nil {
-			_ = os.Remove(name)
-		}
-	}
-
-	return err
 }
