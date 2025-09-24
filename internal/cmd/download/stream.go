@@ -15,6 +15,7 @@ import (
 	"github.com/krolaw/zipstream"
 	"github.com/nguyengg/go-aws-commons/s3reader"
 	"github.com/nguyengg/go-aws-commons/sri"
+	"github.com/nguyengg/go-aws-commons/tspb"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/nguyengg/xy3/util"
@@ -124,7 +125,7 @@ func (c *Command) stream(ctx context.Context, man manifest.Manifest) (bool, erro
 		}
 	}()
 
-	bar := internal.DefaultBytes(int64(uncompressedSize), fmt.Sprintf("extracting %d files", len(headers)))
+	bar := tspb.DefaultBytes(int64(uncompressedSize), fmt.Sprintf("extracting %d files", len(headers)))
 	defer bar.Close()
 
 	var (

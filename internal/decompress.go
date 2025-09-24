@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
+	"github.com/nguyengg/go-aws-commons/tspb"
 	"github.com/nguyengg/xy3/util"
 	"github.com/ulikunitz/xz"
 )
@@ -52,14 +53,6 @@ func Decompress(ctx context.Context, name, dir string, optFns ...func(*Decompres
 	}
 	defer src.Close()
 
-	fi, err := src.Stat()
-	if err != nil {
-		return "", fmt.Errorf(`stat file "%s" error: %w`, name, err)
-	}
-
-	bar := DefaultBytes(fi.Size(), fmt.Sprintf(`decompressing "%s"`, filepath.Base(name)))
-	defer bar.Close()
-
 	var (
 		// only one of ex or dec will be non-nil.
 		ex  extractor
@@ -79,7 +72,10 @@ func Decompress(ctx context.Context, name, dir string, optFns ...func(*Decompres
 	case ".zip":
 		ex = &zipCodec{}
 	case ".zst":
-		r, err := zstd.NewReader(io.TeeReader(src, bar))
+		bar := tspb.FromReader(src, `decompressing "{basename}"`)
+		defer bar.Close()
+
+		r, err := zstd.NewReader(bar)
 		if err != nil {
 			return "", fmt.Errorf("create zstd reader error: %w", err)
 		}
@@ -87,12 +83,18 @@ func Decompress(ctx context.Context, name, dir string, optFns ...func(*Decompres
 
 		dec = io.NopCloser(r)
 	case ".gz":
-		dec, err = gzip.NewReader(io.TeeReader(src, bar))
+		bar := tspb.FromReader(src, `decompressing "{basename}"`)
+		defer bar.Close()
+
+		dec, err = gzip.NewReader(bar)
 		if err != nil {
 			return "", fmt.Errorf("create gzip reader error: %w", err)
 		}
 	case ".xz":
-		r, err := xz.NewReader(io.TeeReader(src, bar))
+		bar := tspb.FromReader(src, `decompressing "{basename}"`)
+		defer bar.Close()
+
+		r, err := xz.NewReader(bar)
 		if err != nil {
 			return "", fmt.Errorf("create xz reader error: %w", err)
 		}
@@ -121,8 +123,9 @@ func Decompress(ctx context.Context, name, dir string, optFns ...func(*Decompres
 		return dst.Name(), nil
 	}
 
-	// we're decompressing and extracting so change the progress bar's description to make it more meaningful.
-	bar.Describe(fmt.Sprintf(`extracting "%s"`, filepath.Base(name)))
+	// decompress and extracting at the same time.
+	bar := tspb.DefaultBytes(-1, fmt.Sprintf(`extracting "%s"`, filepath.Base(name)))
+	defer bar.Close()
 
 	// the contents of the archive will be extracted into a unique directory.
 	// if unsuccessful, this output directory will be deleted.

@@ -15,7 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/nguyengg/go-aws-commons/s3reader"
-	"github.com/nguyengg/xy3/internal"
+	"github.com/nguyengg/go-aws-commons/tspb"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/nguyengg/xy3/util"
 	"github.com/nguyengg/xy3/zipper"
@@ -73,7 +73,8 @@ func (c *Command) streamV2(ctx context.Context, man manifest.Manifest) (bool, er
 	defer r.Close()
 
 	inputs := make(chan zipper.CDFileHeader, len(headers))
-	bar := internal.DefaultBytes(int64(uncompressedSize), fmt.Sprintf("extracting %d files", len(headers)))
+
+	bar := tspb.DefaultBytes(int64(uncompressedSize), fmt.Sprintf("extracting %d files", len(headers)))
 	defer bar.Close()
 
 	var wg sync.WaitGroup

@@ -8,8 +8,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/nguyengg/go-aws-commons/tspb"
 	"github.com/nguyengg/xy3/util"
-	"github.com/schollz/progressbar/v3"
 )
 
 // CompressOptions customises Compress.
@@ -40,12 +40,10 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 		fn(opts)
 	}
 
-	bar, _ := compressDirProgressBar(dir)
-	defer func() {
-		if bar != nil {
-			_ = bar.Close()
-		}
-	}()
+	progressWriter, _ := compressDirProgressBar(dir)
+	if progressWriter != nil {
+		defer progressWriter.Close()
+	}
 
 	comp, err := opts.Algorithm.createCompressor(dst, opts)
 	if err != nil {
@@ -92,8 +90,8 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 				return fmt.Errorf("compute file (path=%s) name in archive error: %w", dstPath, err)
 			}
 
-			if bar != nil {
-				if _, err = util.CopyBufferWithContext(ctx, comp, io.TeeReader(src, bar), buf); err != nil {
+			if progressWriter != nil {
+				if _, err = util.CopyBufferWithContext(ctx, comp, io.TeeReader(src, progressWriter), buf); err != nil {
 					return fmt.Errorf("add file (path=%s) to archive file (name=%s) error: %w", srcPath, dstPath, err)
 				}
 			} else if _, err = util.CopyBufferWithContext(ctx, comp, src, buf); err != nil {
@@ -152,7 +150,7 @@ func Compress(ctx context.Context, src io.Reader, dst io.Writer, optFns ...func(
 	return nil
 }
 
-func compressDirProgressBar(dir string) (*progressbar.ProgressBar, error) {
+func compressDirProgressBar(dir string) (io.WriteCloser, error) {
 	var size int64
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		switch {
@@ -169,17 +167,17 @@ func compressDirProgressBar(dir string) (*progressbar.ProgressBar, error) {
 		}
 	})
 	if err == nil {
-		return DefaultBytes(size, fmt.Sprintf(`compressing "%s"`, filepath.Base(dir))), nil
+		return tspb.DefaultBytes(size, fmt.Sprintf(`compressing "%s"`, filepath.Base(dir))), nil
 	}
 
 	return nil, err
 }
 
-func compressFileProgressBar(r io.Reader) (*progressbar.ProgressBar, error) {
+func compressFileProgressBar(r io.Reader) (io.WriteCloser, error) {
 	if f, ok := r.(*os.File); ok {
 		fi, err := f.Stat()
 		if err == nil {
-			return DefaultBytes(fi.Size(), fmt.Sprintf(`compressing "%s"`, filepath.Base(f.Name()))), nil
+			return tspb.DefaultBytes(fi.Size(), fmt.Sprintf(`compressing "%s"`, filepath.Base(f.Name()))), nil
 		}
 
 		return nil, err

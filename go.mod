@@ -1,8 +1,6 @@
 module github.com/nguyengg/xy3
 
-go 1.23.0
-
-toolchain go1.24.0
+go 1.24.0
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.36.3
@@ -15,6 +13,7 @@ require (
 	github.com/nguyengg/go-aws-commons/s3reader v0.1.2
 	github.com/nguyengg/go-aws-commons/s3writer v0.1.2
 	github.com/nguyengg/go-aws-commons/sri v0.1.0
+	github.com/nguyengg/go-aws-commons/tspb v0.1.2
 	github.com/schollz/progressbar/v3 v3.18.0
 	github.com/stretchr/testify v1.10.0
 	github.com/ulikunitz/xz v0.5.15
@@ -49,9 +48,9 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/spf13/afero v1.11.0 // indirect
 	go4.org v0.0.0-20200411211856-f5505b9728dd // indirect
-	golang.org/x/sys v0.31.0 // indirect
-	golang.org/x/term v0.30.0 // indirect
+	golang.org/x/sys v0.36.0 // indirect
+	golang.org/x/term v0.35.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
-	golang.org/x/time v0.11.0 // indirect
+	golang.org/x/time v0.13.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

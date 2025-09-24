@@ -7,9 +7,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-
-	"github.com/nguyengg/xy3/internal"
-	"github.com/schollz/progressbar/v3"
 )
 
 // ProgressReporter is called to provide update on compressing individual files or extracting from an archive.
@@ -96,37 +93,6 @@ func NewDirectoryProgressReporter(ctx context.Context, root string, reporter fun
 			fc++
 			return nil
 		})
-}
-
-// NewProgressBarReporter creates a progress report that uses the specified progressbar.ProgressBar.
-//
-// If the given progress bar is nil, it will be created with progressbar.DefaultBytes.
-func NewProgressBarReporter(ctx context.Context, root string, bar *progressbar.ProgressBar) (ProgressReporter, error) {
-	n, size, err := CountDirContents(ctx, root)
-	if err != nil {
-		return nil, err
-	}
-
-	if bar == nil {
-		bar = internal.DefaultBytes(size, "compressing")
-	} else {
-		bar.ChangeMax64(size)
-	}
-
-	var totalWritten int64
-	var previousSrc string
-	return func(src, dst string, written int64, done bool) {
-		if previousSrc != src {
-			totalWritten = 0
-			previousSrc = src
-		}
-
-		if _, totalWritten = bar.Add64(written-totalWritten), written; done {
-			if n--; n == 0 {
-				_ = bar.Close()
-			}
-		}
-	}, nil
 }
 
 // CountDirContents uses WalkRegularFiles to count all regular files and returns the total size of those files as well.

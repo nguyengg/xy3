@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/nguyengg/go-aws-commons/s3writer"
+	"github.com/nguyengg/go-aws-commons/tspb"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/nguyengg/xy3/util"
 )
@@ -66,11 +67,16 @@ func Upload(ctx context.Context, client *s3.Client, src io.Reader, bucket, key s
 
 	// the progress bar can have known size or not, as well as known name or not.
 	// if checksum and/or size weren't computed back then, let's compute them now too.
-	sizer := &util.Sizer{}
-	checksummer := util.DefaultChecksum()
-	bar := DefaultBytes(size, "uploading")
+	var (
+		sizer       = &util.Sizer{}
+		checksummer = util.DefaultChecksum()
+		bar         io.WriteCloser
+	)
+
 	if name != "" {
-		bar.Describe(fmt.Sprintf(`uploading "%s"`, filepath.Base(name)))
+		bar = tspb.DefaultBytes(size, fmt.Sprintf(`uploading "%s"`, filepath.Base(name)))
+	} else {
+		bar = tspb.DefaultBytes(size, "uploading")
 	}
 
 	// now upload to s3.
@@ -111,7 +117,7 @@ func computeChecksum(ctx context.Context, src io.Reader) (string, int64, error) 
 			return "", 0, fmt.Errorf(`stat file "%s" error: %w`, f.Name(), err)
 		}
 
-		bar := DefaultBytes(fi.Size(), fmt.Sprintf(`computing checksum of "%s"`, filepath.Base(f.Name())))
+		bar := tspb.DefaultBytes(fi.Size(), fmt.Sprintf(`computing checksum of "%s"`, filepath.Base(f.Name())))
 		_, err = util.CopyBufferWithContext(ctx, io.MultiWriter(sizer, checksummer), io.TeeReader(f, bar), nil)
 		_ = bar.Close()
 		if err != nil {
@@ -121,7 +127,7 @@ func computeChecksum(ctx context.Context, src io.Reader) (string, int64, error) 
 		return checksummer.SumToString(nil), sizer.Size, nil
 	}
 
-	bar := DefaultBytes(-1, "computing checksum")
+	bar := tspb.DefaultBytes(-1, "computing checksum")
 	_, err := util.CopyBufferWithContext(ctx, io.MultiWriter(sizer, checksummer), io.TeeReader(src, bar), nil)
 	_ = bar.Close()
 	if err != nil {

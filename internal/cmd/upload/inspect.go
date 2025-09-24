@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/nguyengg/xy3/internal"
+	"github.com/nguyengg/go-aws-commons/tspb"
 	"github.com/nguyengg/xy3/util"
 )
 
@@ -27,7 +27,7 @@ func (c *Command) inspect(ctx context.Context, name string) (f *os.File, size in
 	}
 
 	checksummer := util.DefaultChecksum()
-	bar := internal.DefaultBytes(size, fmt.Sprintf(`computing checksum "%s"`, filepath.Base(name)))
+	bar := tspb.DefaultBytes(size, fmt.Sprintf(`computing checksum "%s"`, filepath.Base(name)))
 
 	// read first 512 bytes to detect content type.
 	// if this won't produce a usable content type then let S3 decides it (which is probably going to be "binary/octet-stream").

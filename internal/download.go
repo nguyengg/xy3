@@ -11,7 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/nguyengg/go-aws-commons/s3reader"
 	"github.com/nguyengg/go-aws-commons/sri"
-	"github.com/schollz/progressbar/v3"
+	"github.com/nguyengg/go-aws-commons/tspb"
 )
 
 // Download downloads S3 object and writes to the given io.Writer.
@@ -28,11 +28,13 @@ func Download(ctx context.Context, client *s3.Client, bucket, key string, dst io
 		ctx,
 		client,
 		&s3.GetObjectInput{Bucket: &bucket, Key: &key},
-		aws.ToInt64(headObjectResult.ContentLength),
-		s3reader.WithProgressBar(progressbar.OptionSetDescription(fmt.Sprintf(`downloading "%s"`, path.Base(key)))))
+		aws.ToInt64(headObjectResult.ContentLength))
 	if err != nil {
 		return fmt.Errorf("create s3 reader error: %w", err)
 	}
+
+	bar := tspb.DefaultBytes(aws.ToInt64(headObjectResult.ContentLength), fmt.Sprintf(`downloading "%s"`, path.Base(key)))
+	defer bar.Close()
 
 	// if the object's metadata contains a checksum, use it during download and writing to file.
 	var (
@@ -43,9 +45,9 @@ func Download(ctx context.Context, client *s3.Client, bucket, key string, dst io
 		verifier, _ = sri.NewVerifier(checksum)
 	}
 	if verifier != nil {
-		_, err = r.WriteTo(io.MultiWriter(dst, verifier))
+		_, err = r.WriteTo(io.MultiWriter(dst, bar, verifier))
 	} else {
-		_, err = r.WriteTo(dst)
+		_, err = r.WriteTo(io.MultiWriter(dst, bar))
 	}
 
 	if _ = r.Close(); err != nil {
