@@ -52,7 +52,7 @@ func Download(ctx context.Context, client *s3.Client, bucket, key string, dst io
 	}
 
 	if verifier != nil && !verifier.SumAndVerify(nil) {
-		return ErrChecksumMismatch{Expected: checksum, Actual: verifier.SumToString(nil)}
+		return &ErrChecksumMismatch{Expected: checksum, Actual: verifier.SumToString(nil)}
 	}
 
 	return nil
@@ -63,6 +63,6 @@ type ErrChecksumMismatch struct {
 	Actual   string
 }
 
-func (e ErrChecksumMismatch) Error() string {
+func (e *ErrChecksumMismatch) Error() string {
 	return fmt.Sprintf("checksum does not match: expect %s, got %s", e.Expected, e.Actual)
 }
