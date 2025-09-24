@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path"
@@ -65,4 +66,9 @@ type ErrChecksumMismatch struct {
 
 func (e *ErrChecksumMismatch) Error() string {
 	return fmt.Sprintf("checksum does not match: expect %s, got %s", e.Expected, e.Actual)
+}
+
+func IsErrChecksumMismatch(err error) (t *ErrChecksumMismatch, ok bool) {
+	ok = errors.As(err, &t)
+	return
 }

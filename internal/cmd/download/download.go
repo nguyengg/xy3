@@ -2,7 +2,6 @@ package download
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 
@@ -27,7 +26,7 @@ func (c *Command) downloadFromManifest(ctx context.Context, manifestName string)
 	name := f.Name()
 
 	if err, _ = internal.Download(ctx, c.client, man.Bucket, man.Key, f), f.Close(); err != nil {
-		if errors.Is(err, internal.ErrChecksumMismatch{}) {
+		if _, ok := internal.IsErrChecksumMismatch(err); ok {
 			c.logger.Print(err)
 		} else {
 			_ = os.Remove(name)
@@ -60,7 +59,7 @@ func (c *Command) downloadFromS3(ctx context.Context, s3Uri string) error {
 	name := f.Name()
 
 	if err, _ = internal.Download(ctx, c.client, bucket, key, f), f.Close(); err != nil {
-		if errors.Is(err, internal.ErrChecksumMismatch{}) {
+		if _, ok := internal.IsErrChecksumMismatch(err); ok {
 			c.logger.Print(err)
 		} else {
 			_ = os.Remove(name)

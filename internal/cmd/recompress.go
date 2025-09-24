@@ -120,8 +120,7 @@ func (c *Recompress) recompress(ctx context.Context, algorithm internal.Algorith
 	}
 
 	if err, _ = internal.Download(ctx, c.client, originalManifest.Bucket, originalManifest.Key, f), f.Close(); err != nil {
-		var ecm *internal.ErrChecksumMismatch
-		if errors.As(err, &ecm) {
+		if _, ok := internal.IsErrChecksumMismatch(err); ok {
 			c.logger.Print(err)
 		} else {
 			return fmt.Errorf("download error: %w", err)
