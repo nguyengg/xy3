@@ -16,7 +16,6 @@ type Xy3 struct {
 	Download   download.Command `command:"download" alias:"down" description:"download from S3"`
 	Upload     upload.Command   `command:"upload" alias:"up" description:"upload files to S3"`
 	Remove     Remove           `command:"remove" alias:"rm" description:"remove both local and S3 files"`
-	Metadata   Metadata         `command:"metadata" alias:"md" description:"download manifests"`
 }
 
 func NewParser() (*flags.Parser, error) {
