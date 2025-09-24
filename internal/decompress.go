@@ -123,11 +123,7 @@ func Decompress(ctx context.Context, name, dir string, optFns ...func(*Decompres
 		return dst.Name(), nil
 	}
 
-	// decompress and extracting at the same time.
-	bar := tspb.DefaultBytes(-1, fmt.Sprintf(`extracting "%s"`, filepath.Base(name)))
-	defer bar.Close()
-
-	// the contents of the archive will be extracted into a unique directory.
+	// decompress and extract archive contents into a unique directory.
 	// if unsuccessful, this output directory will be deleted.
 	target, err = util.MkExclDir(dir, stem, 0755)
 	if err != nil {
@@ -140,20 +136,27 @@ func Decompress(ctx context.Context, name, dir string, optFns ...func(*Decompres
 		}
 	}()
 
-	// extracting will start with finding root dir.
-	var rootDir RootDir
+	// extracting will start with finding root dir. since we're already looking through all the files to find
+	// root dir, let's tally up the count and total uncompressed size of total regular files for better progress
+	// report.
+	var (
+		rootDir          RootDir
+		uncompressedSize int64
+	)
 	if err = util.ResettableReadSeeker(src, func(r io.ReadSeeker) error {
 		files, err := ex.Files(r, false)
 		if err != nil {
 			return err
 		}
-		if rootDir, err = findRootDir(ctx, files); err != nil {
+		if rootDir, _, uncompressedSize, err = findRootDir(ctx, files); err != nil {
 			return err
 		}
 		return nil
 	}); err != nil {
 		return "", fmt.Errorf("find root dir error: %w", err)
 	}
+	bar := tspb.DefaultBytes(uncompressedSize, fmt.Sprintf(`extracting "%s"`, filepath.Base(name)))
+	defer bar.Close()
 
 	// now go through the archive files again, this time opening each file for reading.
 	files, err := ex.Files(src, true)
@@ -199,23 +202,28 @@ func Decompress(ctx context.Context, name, dir string, optFns ...func(*Decompres
 	return target, nil
 }
 
-func findRootDir(ctx context.Context, files iter.Seq2[ArchiveFile, error]) (rootDir RootDir, err error) {
+func findRootDir(ctx context.Context, files iter.Seq2[ArchiveFile, error]) (rootDir RootDir, count int, uncompressedSize int64, err error) {
 	var (
 		rootFinder = NewZipRootDirFinder()
-		ok         bool
+		ok         = true
 	)
 
 	for f, err := range files {
 		if err != nil {
-			return "", err
+			return rootDir, count, uncompressedSize, err
 		}
 
 		select {
 		case <-ctx.Done():
-			return "", ctx.Err()
+			return rootDir, count, uncompressedSize, ctx.Err()
 		default:
-			if rootDir, ok = rootFinder(f.Name()); !ok {
-				return rootDir, nil
+			if ok {
+				rootDir, ok = rootFinder(f.Name())
+			}
+
+			if f.FileMode().IsRegular() {
+				count++
+				uncompressedSize += f.FileInfo().Size()
 			}
 		}
 
