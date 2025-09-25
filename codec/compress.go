@@ -35,14 +35,14 @@ const DefaultAlgorithmName = "zstd"
 func NewCompressorFromAlgorithm(name string) (Compressor, bool) {
 	switch name {
 	case "gzip", "gz":
-		return &gzipCodec{}, true
+		return &GzipCodec{}, true
 	case "zip":
-		return &zipCompressor{}, true
+		return &ZipCompressor{}, true
 	case "zstd":
-		return &zstdCompressor{}, true
+		return &ZstdCodec{}, true
 	case "xz":
-		return &xzCodec{}, true
+		return &XzCodec{}, true
 	default:
-		return &zstdCompressor{}, false
+		return &ZstdCodec{}, false
 	}
 }

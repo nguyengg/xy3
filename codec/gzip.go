@@ -9,23 +9,23 @@ import (
 	"github.com/nguyengg/xy3/archive"
 )
 
-// gzipCodec implements Codec and Compressor for gzip compression algorithm.
-type gzipCodec struct {
+// GzipCodec implements Codec and Compressor for gzip compression algorithm.
+type GzipCodec struct {
 }
 
-var _ Codec = gzipCodec{}
+var _ Codec = GzipCodec{}
 
-func (c gzipCodec) NewDecoder(src io.Reader) (io.ReadCloser, error) {
+func (c GzipCodec) NewDecoder(src io.Reader) (io.ReadCloser, error) {
 	return gzip.NewReader(src)
 }
 
-func (c gzipCodec) NewEncoder(dst io.Writer) (io.WriteCloser, error) {
+func (c GzipCodec) NewEncoder(dst io.Writer) (io.WriteCloser, error) {
 	return gzip.NewWriterLevel(dst, gzip.BestCompression)
 }
 
-var _ Compressor = gzipCodec{}
+var _ Compressor = GzipCodec{}
 
-func (c gzipCodec) NewArchive(dst io.Writer, root string) (add archive.AddFunction, closer archive.CloseFunction, err error) {
+func (c GzipCodec) NewArchive(dst io.Writer, root string) (add archive.AddFunction, closer archive.CloseFunction, err error) {
 	enc, err := c.NewEncoder(dst)
 	if err != nil {
 		return nil, nil, err
@@ -35,7 +35,7 @@ func (c gzipCodec) NewArchive(dst io.Writer, root string) (add archive.AddFuncti
 	return add, wrapCloser(enc, closer), nil
 }
 
-func (c gzipCodec) New(dst io.Writer) (archive.AddFunction, error) {
+func (c GzipCodec) New(dst io.Writer) (archive.AddFunction, error) {
 	enc, err := c.NewEncoder(dst)
 	if err != nil {
 		return nil, err
@@ -46,7 +46,7 @@ func (c gzipCodec) New(dst io.Writer) (archive.AddFunction, error) {
 	}, nil
 }
 
-func (c gzipCodec) Ext(archive bool) string {
+func (c GzipCodec) Ext(archive bool) string {
 	if archive {
 		return ".tar.gz"
 	}
@@ -54,7 +54,7 @@ func (c gzipCodec) Ext(archive bool) string {
 	return ".gz"
 }
 
-func (c gzipCodec) ContentType() string {
+func (c GzipCodec) ContentType() string {
 	return "application/gzip"
 }
 

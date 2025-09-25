@@ -9,12 +9,12 @@ import (
 	"github.com/nguyengg/xy3/archive"
 )
 
-// zstdCompressor implements Codec and Compressor for zstd compression algorithm.
-type zstdCompressor struct{}
+// ZstdCodec implements Codec and Compressor for zstd compression algorithm.
+type ZstdCodec struct{}
 
-var _ Codec = zstdCompressor{}
+var _ Codec = ZstdCodec{}
 
-func (c zstdCompressor) NewDecoder(src io.Reader) (io.ReadCloser, error) {
+func (c ZstdCodec) NewDecoder(src io.Reader) (io.ReadCloser, error) {
 	dec, err := zstd.NewReader(src)
 	return &zstdDecoder{dec}, err
 }
@@ -28,13 +28,13 @@ func (d *zstdDecoder) Close() error {
 	return nil
 }
 
-func (c zstdCompressor) NewEncoder(dst io.Writer) (io.WriteCloser, error) {
+func (c ZstdCodec) NewEncoder(dst io.Writer) (io.WriteCloser, error) {
 	return zstd.NewWriter(dst, zstd.WithEncoderLevel(zstd.SpeedBestCompression))
 }
 
-var _ Compressor = zstdCompressor{}
+var _ Compressor = ZstdCodec{}
 
-func (c zstdCompressor) NewArchive(dst io.Writer, root string) (add archive.AddFunction, closer archive.CloseFunction, err error) {
+func (c ZstdCodec) NewArchive(dst io.Writer, root string) (add archive.AddFunction, closer archive.CloseFunction, err error) {
 	enc, err := c.NewEncoder(dst)
 	if err != nil {
 		return nil, nil, err
@@ -44,7 +44,7 @@ func (c zstdCompressor) NewArchive(dst io.Writer, root string) (add archive.AddF
 	return add, wrapCloser(enc, closer), nil
 }
 
-func (c zstdCompressor) New(dst io.Writer) (archive.AddFunction, error) {
+func (c ZstdCodec) New(dst io.Writer) (archive.AddFunction, error) {
 	enc, err := c.NewEncoder(dst)
 	if err != nil {
 		return nil, err
@@ -55,7 +55,7 @@ func (c zstdCompressor) New(dst io.Writer) (archive.AddFunction, error) {
 	}, nil
 }
 
-func (c zstdCompressor) Ext(archive bool) string {
+func (c ZstdCodec) Ext(archive bool) string {
 	if archive {
 		return ".tar.zst"
 	}
@@ -63,6 +63,6 @@ func (c zstdCompressor) Ext(archive bool) string {
 	return ".zst"
 }
 
-func (c zstdCompressor) ContentType() string {
+func (c ZstdCodec) ContentType() string {
 	return "application/zstd"
 }

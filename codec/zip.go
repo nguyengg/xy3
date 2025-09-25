@@ -8,18 +8,18 @@ import (
 	"github.com/nguyengg/xy3/archive"
 )
 
-// zipCompressor implements Compressor for ZIP files.
-type zipCompressor struct {
+// ZipCompressor implements Compressor for ZIP files.
+type ZipCompressor struct {
 }
 
-var _ Compressor = zipCompressor{}
+var _ Compressor = ZipCompressor{}
 
-func (z zipCompressor) NewArchive(dst io.Writer, root string) (add archive.AddFunction, closer archive.CloseFunction, err error) {
+func (z ZipCompressor) NewArchive(dst io.Writer, root string) (add archive.AddFunction, closer archive.CloseFunction, err error) {
 	add, closer = archive.Zip{}.Create(dst, filepath.Base(root))
 	return
 }
 
-func (z zipCompressor) New(dst io.Writer) (archive.AddFunction, error) {
+func (z ZipCompressor) New(dst io.Writer) (archive.AddFunction, error) {
 	add, closer := archive.Zip{}.Create(dst, "")
 	return func(path string, fi os.FileInfo) (io.WriteCloser, error) {
 		w, err := add(path, fi)
@@ -31,11 +31,11 @@ func (z zipCompressor) New(dst io.Writer) (archive.AddFunction, error) {
 	}, nil
 }
 
-func (z zipCompressor) Ext(archive bool) string {
+func (z ZipCompressor) Ext(archive bool) string {
 	return ".zip"
 }
 
-func (z zipCompressor) ContentType() string {
+func (z ZipCompressor) ContentType() string {
 	return "application/zip"
 }
 

@@ -9,13 +9,13 @@ import (
 	"github.com/ulikunitz/xz"
 )
 
-// xzCodec implements Codec and Compressor for xz compression algorithm.
-type xzCodec struct {
+// XzCodec implements Codec and Compressor for xz compression algorithm.
+type XzCodec struct {
 }
 
-var _ Codec = xzCodec{}
+var _ Codec = XzCodec{}
 
-func (c xzCodec) NewDecoder(src io.Reader) (io.ReadCloser, error) {
+func (c XzCodec) NewDecoder(src io.Reader) (io.ReadCloser, error) {
 	r, err := xz.NewReader(src)
 	if err != nil {
 		return nil, err
@@ -24,13 +24,13 @@ func (c xzCodec) NewDecoder(src io.Reader) (io.ReadCloser, error) {
 	return io.NopCloser(r), nil
 }
 
-func (c xzCodec) NewEncoder(dst io.Writer) (io.WriteCloser, error) {
+func (c XzCodec) NewEncoder(dst io.Writer) (io.WriteCloser, error) {
 	return xz.NewWriter(dst)
 }
 
-var _ Compressor = xzCodec{}
+var _ Compressor = XzCodec{}
 
-func (c xzCodec) NewArchive(dst io.Writer, root string) (add archive.AddFunction, closer archive.CloseFunction, err error) {
+func (c XzCodec) NewArchive(dst io.Writer, root string) (add archive.AddFunction, closer archive.CloseFunction, err error) {
 	enc, err := c.NewEncoder(dst)
 	if err != nil {
 		return nil, nil, err
@@ -40,7 +40,7 @@ func (c xzCodec) NewArchive(dst io.Writer, root string) (add archive.AddFunction
 	return add, wrapCloser(enc, closer), nil
 }
 
-func (c xzCodec) New(dst io.Writer) (archive.AddFunction, error) {
+func (c XzCodec) New(dst io.Writer) (archive.AddFunction, error) {
 	enc, err := c.NewEncoder(dst)
 	if err != nil {
 		return nil, err
@@ -51,7 +51,7 @@ func (c xzCodec) New(dst io.Writer) (archive.AddFunction, error) {
 	}, nil
 }
 
-func (c xzCodec) Ext(archive bool) string {
+func (c XzCodec) Ext(archive bool) string {
 	if archive {
 		return ".tar.xz"
 	}
@@ -59,6 +59,6 @@ func (c xzCodec) Ext(archive bool) string {
 	return ".xz"
 }
 
-func (c xzCodec) ContentType() string {
+func (c XzCodec) ContentType() string {
 	return "application/x-xz"
 }

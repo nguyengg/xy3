@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nguyengg/go-aws-commons/tspb"
+	"github.com/nguyengg/xy3/codec"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/util"
 )
@@ -41,15 +42,15 @@ func Decompress(ctx context.Context, name, dir string, optFns ...func(*Decompres
 		case ".gz":
 			ext = filepath.Ext(stem)
 			stem = strings.TrimSuffix(stem, ext)
-			return decompress(ctx, name, dir, stem, ext, &gzCodec{})
+			return decompress(ctx, name, dir, stem, ext, &codec.GzipCodec{})
 		case ".xz":
 			ext = filepath.Ext(stem)
 			stem = strings.TrimSuffix(stem, ext)
-			return decompress(ctx, name, dir, stem, ext, &xzCodec{})
+			return decompress(ctx, name, dir, stem, ext, &codec.XzCodec{})
 		case ".zst":
 			ext = filepath.Ext(stem)
 			stem = strings.TrimSuffix(stem, ext)
-			return decompress(ctx, name, dir, stem, ext, &zstdCodec{})
+			return decompress(ctx, name, dir, stem, ext, &codec.ZstdCodec{})
 		default:
 			return "", fmt.Errorf("no support for decompression of files with extension %s", ext)
 		}
@@ -57,11 +58,11 @@ func Decompress(ctx context.Context, name, dir string, optFns ...func(*Decompres
 
 	switch stem, ext := util.StemAndExt(name); ext {
 	case ".tar.gz":
-		return extract(ctx, name, dir, stem, &tarCodec{dec: &gzCodec{}})
+		return extract(ctx, name, dir, stem, &tarCodec{dec: &codec.GzipCodec{}})
 	case ".tar.xz":
-		return extract(ctx, name, dir, stem, &tarCodec{dec: &xzCodec{}})
+		return extract(ctx, name, dir, stem, &tarCodec{dec: &codec.XzCodec{}})
 	case ".tar.zst":
-		return extract(ctx, name, dir, stem, &tarCodec{dec: &zstdCodec{}})
+		return extract(ctx, name, dir, stem, &tarCodec{dec: &codec.ZstdCodec{}})
 	case ".7z":
 		return extract(ctx, name, dir, stem, &sevenZipCodec{})
 	case ".zip":
@@ -71,7 +72,7 @@ func Decompress(ctx context.Context, name, dir string, optFns ...func(*Decompres
 	}
 }
 
-func decompress(ctx context.Context, name, dir, stem, ext string, dec decompressor) (string, error) {
+func decompress(ctx context.Context, name, dir, stem, ext string, cd codec.Codec) (string, error) {
 	src, err := os.Open(name)
 	if err != nil {
 		return "", fmt.Errorf(`open file "%s" error: %w`, name, err)
@@ -85,27 +86,30 @@ func decompress(ctx context.Context, name, dir, stem, ext string, dec decompress
 	}
 	bar := tspb.DefaultBytes(fi.Size(), fmt.Sprintf(`decompressing "%s"`, filepath.Base(name)))
 
-	r, err := dec.NewDecoder(io.TeeReader(src, bar))
+	r, err := cd.NewDecoder(io.TeeReader(src, bar))
 	if err != nil {
 		return "", err
 	}
-	defer r.Close()
 
 	dst, err := util.OpenExclFile(dir, stem, ext, 0666)
 	if err != nil {
+		_ = r.Close()
 		return "", fmt.Errorf("create output file error: %w", err)
 	}
 
 	_, err = util.CopyBufferWithContext(ctx, dst, r, nil)
 	_ = dst.Close()
-	if err == nil {
-		err, _ = r.Close(), bar.Close()
+	if err != nil {
+		_ = r.Close()
+	} else {
+		err = r.Close()
 	}
 	if err != nil {
 		_ = os.Remove(dst.Name())
 		return "", fmt.Errorf(`decompress file "%s" error: %w`, name, err)
 	}
 
+	_ = bar.Close()
 	return dst.Name(), nil
 }
 
