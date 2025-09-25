@@ -5,20 +5,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/aws/transport/http"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/jessevdk/go-flags"
-	"github.com/nguyengg/xy3/internal/cmd/awsconfig"
-	"github.com/nguyengg/xy3/internal/manifest"
-
 	"io"
 	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"strings"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/transport/http"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/jessevdk/go-flags"
+	"github.com/nguyengg/xy3/internal"
+	"github.com/nguyengg/xy3/internal/cmd/awsconfig"
 )
 
 type Remove struct {
@@ -103,12 +102,8 @@ func (c *Remove) remove(ctx context.Context, name string) error {
 	basename := filepath.Base(name)
 	logger := log.New(os.Stderr, `"`+basename+`" `, log.LstdFlags)
 
-	file, err := os.Open(name)
+	man, err := internal.LoadManifestFromFile(name)
 	if err != nil {
-		return fmt.Errorf("open file error: %w", err)
-	}
-	man, err := manifest.UnmarshalFromReader(file)
-	if _ = file.Close(); err != nil {
 		return err
 	}
 

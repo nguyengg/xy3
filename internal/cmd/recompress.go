@@ -17,7 +17,6 @@ import (
 	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/cmd/awsconfig"
-	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/nguyengg/xy3/util"
 )
 
@@ -91,7 +90,7 @@ func (c *Recompress) Execute(args []string) error {
 }
 
 func (c *Recompress) recompress(ctx context.Context, algorithm xy3.Algorithm, originalManifestName, moveToBucket, moveToPrefix string) error {
-	originalManifest, err := manifest.UnmarshalFromFile(originalManifestName)
+	originalManifest, err := internal.LoadManifestFromFile(originalManifestName)
 	if err != nil {
 		return fmt.Errorf("read manifest error: %w", err)
 	}
@@ -171,10 +170,10 @@ func (c *Recompress) recompress(ctx context.Context, algorithm xy3.Algorithm, or
 	// write manifest to a unique local .s3 file.
 	f, err = util.OpenExclFile(".", stem, ".tar"+algorithm.Ext()+".s3", 0666)
 	if err == nil {
-		err = newMan.MarshalTo(f)
+		err = newMan.SaveTo(f)
 	}
 	if _ = f.Close(); err != nil {
-		_ = newMan.MarshalTo(os.Stdout)
+		_ = newMan.SaveTo(os.Stdout)
 		return fmt.Errorf("write manifest error: %w", err)
 	}
 

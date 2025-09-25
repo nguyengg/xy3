@@ -17,13 +17,12 @@ import (
 	"github.com/nguyengg/go-aws-commons/sri"
 	"github.com/nguyengg/go-aws-commons/tspb"
 	"github.com/nguyengg/xy3/internal"
-	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/nguyengg/xy3/util"
 	"github.com/nguyengg/xy3/zipper"
 	"github.com/schollz/progressbar/v3"
 )
 
-func (c *Command) canStream(ctx context.Context, man manifest.Manifest) (headers []zipper.CDFileHeader, uncompressedSize uint64, rootDir internal.RootDir, err error) {
+func (c *Command) canStream(ctx context.Context, man internal.Manifest) (headers []zipper.CDFileHeader, uncompressedSize uint64, rootDir internal.RootDir, err error) {
 	r, err := s3reader.New(ctx, c.client, &s3.GetObjectInput{
 		Bucket:              aws.String(man.Bucket),
 		Key:                 aws.String(man.Key),
@@ -58,7 +57,7 @@ func (c *Command) canStream(ctx context.Context, man manifest.Manifest) (headers
 	return
 }
 
-func (c *Command) stream(ctx context.Context, man manifest.Manifest) (bool, error) {
+func (c *Command) stream(ctx context.Context, man internal.Manifest) (bool, error) {
 	// check for streaming eligibility by finding the ZIP headers.
 	headers, uncompressedSize, rootDir, err := c.canStream(ctx, man)
 	if err != nil {

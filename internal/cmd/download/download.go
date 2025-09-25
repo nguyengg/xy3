@@ -6,12 +6,12 @@ import (
 	"os"
 
 	"github.com/nguyengg/xy3"
-	"github.com/nguyengg/xy3/internal/manifest"
+	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/util"
 )
 
 func (c *Command) downloadFromManifest(ctx context.Context, manifestName string) error {
-	man, err := manifest.UnmarshalFromFile(manifestName)
+	man, err := internal.LoadManifestFromFile(manifestName)
 	if err != nil {
 		return fmt.Errorf("read manifest error: %w", err)
 	}

@@ -10,7 +10,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/nguyengg/xy3/internal/manifest"
+	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/util"
 )
 
@@ -42,7 +42,7 @@ func (c *Command) downloadManifests(ctx context.Context, s3Location string) (n i
 				return n, fmt.Errorf(`get metadata about "%s" error: %w`, aws.ToString(obj.Key), err)
 			}
 
-			m := manifest.Manifest{
+			m := internal.Manifest{
 				Bucket:   bucket,
 				Key:      aws.ToString(obj.Key),
 				Size:     aws.ToInt64(obj.Size),
@@ -55,7 +55,7 @@ func (c *Command) downloadManifests(ctx context.Context, s3Location string) (n i
 			}
 			name := f.Name()
 
-			if err, _ = m.MarshalTo(f), f.Close(); err != nil {
+			if err, _ = m.SaveTo(f), f.Close(); err != nil {
 				return n, fmt.Errorf(`write manifest to "%s" error: %w`, name, err)
 			}
 

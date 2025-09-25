@@ -9,7 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/nguyengg/go-aws-commons/s3writer"
-	"github.com/nguyengg/xy3/internal/manifest"
+	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/util"
 )
 
@@ -51,7 +51,7 @@ func (c *Command) upload(ctx context.Context, name string) error {
 	// use the name of the archive (in the case of directory) to have meaningful extensions.
 	stem, ext := util.StemAndExt(f.Name())
 	key := c.prefix + stem + ext
-	m := manifest.Manifest{
+	m := internal.Manifest{
 		Bucket: c.bucket,
 		Key:    key,
 		Size:   size,
@@ -86,11 +86,11 @@ func (c *Command) upload(ctx context.Context, name string) error {
 	// to standard output so that they can be saved manually later.
 	mf, err := util.OpenExclFile(".", stem, ext+".s3", 0666)
 	if err != nil {
-		_ = m.MarshalTo(os.Stdout)
+		_ = m.SaveTo(os.Stdout)
 		return fmt.Errorf("create manifest file error: %w", err)
 	}
-	if err, _ = m.MarshalTo(mf), mf.Close(); err != nil {
-		_ = m.MarshalTo(os.Stdout)
+	if err, _ = m.SaveTo(mf), mf.Close(); err != nil {
+		_ = m.SaveTo(os.Stdout)
 		return fmt.Errorf("write manifest error: %w", err)
 	}
 

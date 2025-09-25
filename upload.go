@@ -12,7 +12,7 @@ import (
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/nguyengg/go-aws-commons/s3writer"
 	"github.com/nguyengg/go-aws-commons/tspb"
-	"github.com/nguyengg/xy3/internal/manifest"
+	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/util"
 )
 
@@ -27,7 +27,7 @@ type UploadOptions struct {
 }
 
 // Upload uploads the given io.Reader contents to S3.
-func Upload(ctx context.Context, client *s3.Client, src io.Reader, bucket, key string, optFns ...func(*UploadOptions)) (man manifest.Manifest, err error) {
+func Upload(ctx context.Context, client *s3.Client, src io.Reader, bucket, key string, optFns ...func(*UploadOptions)) (man internal.Manifest, err error) {
 	opts := &UploadOptions{}
 	for _, fn := range optFns {
 		fn(opts)
