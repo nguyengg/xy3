@@ -30,13 +30,8 @@ func (c *Command) upload(ctx context.Context, name string) error {
 		return fmt.Errorf(`stat file "%s" error: %w`, name, err)
 
 	case fi.IsDir():
-		root, err := os.OpenRoot(name)
-		if err != nil {
-			return err
-		}
-
 		var archiveName string
-		archiveName, size, contentType, checksum, err = c.compressDir(ctx, root)
+		archiveName, size, contentType, checksum, err = c.compressDir(ctx, name)
 		if err != nil {
 			return fmt.Errorf(`compress directory "%s" error: %w`, name, err)
 		}

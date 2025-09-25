@@ -129,11 +129,6 @@ func (c *Recompress) recompress(ctx context.Context, originalManifestName, moveT
 		return fmt.Errorf("decompress error: %w", err)
 	}
 
-	root, err := os.OpenRoot(uncompressedDir)
-	if err != nil {
-		return fmt.Errorf(`open "%s" as root error: %w`, uncompressedDir, err)
-	}
-
 	// now compress the extracted contents.
 	comp := xy3.NewCompressorFromName(c.Algorithm)
 	f, err = os.OpenFile(filepath.Join(dir, stem+comp.ArchiveExt()), os.O_RDWR|os.O_CREATE|os.O_EXCL, 0666)
@@ -141,8 +136,8 @@ func (c *Recompress) recompress(ctx context.Context, originalManifestName, moveT
 		return fmt.Errorf("create recompressed file error: %w", err)
 	}
 
-	if err, _ = xy3.CompressDir(ctx, root, f), f.Close(); err != nil {
-		return fmt.Errorf(`compress "%s" error: %w`, filepath.Join(dir, "tmp"), err)
+	if err, _ = xy3.CompressDir(ctx, uncompressedDir, f), f.Close(); err != nil {
+		return fmt.Errorf(`compress directory "%s" error: %w`, filepath.Join(dir, uncompressedDir), err)
 	}
 
 	// reopen the file to upload.

@@ -30,7 +30,7 @@ type CompressOptions struct {
 const defaultBufferSize = 32 * 1024
 
 // CompressDir compresses the given root directory.
-func CompressDir(ctx context.Context, root *os.Root, dst io.Writer, optFns ...func(options *CompressOptions)) (err error) {
+func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(options *CompressOptions)) (err error) {
 	opts := &CompressOptions{
 		Algorithm: DefaultAlgorithmName,
 	}
@@ -39,20 +39,19 @@ func CompressDir(ctx context.Context, root *os.Root, dst io.Writer, optFns ...fu
 	}
 
 	comp := NewCompressorFromName(opts.Algorithm)
-	rootDir := root.Name()
-	add, closer, err := comp.Create(dst, filepath.Base(rootDir))
+	add, closer, err := comp.Create(dst, filepath.Base(dir))
 	if err != nil {
 		return fmt.Errorf("create %s compressor error: %w", opts.Algorithm, err)
 	}
 
-	bar, err := compressDirProgressBar(rootDir)
+	bar, err := compressDirProgressBar(dir)
 	if err != nil {
 		return err
 	}
 
 	buf := make([]byte, defaultBufferSize)
 
-	err = filepath.WalkDir(rootDir, func(path string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		select {
 		case <-ctx.Done():
 			// ctx.Err is not supposed to return nil here if ctx.Done() is closed.
@@ -70,7 +69,7 @@ func CompressDir(ctx context.Context, root *os.Root, dst io.Writer, optFns ...fu
 			return fmt.Errorf("walk dir error: %w", err)
 
 		case d.Type().IsRegular():
-			src, err := root.Open(path)
+			src, err := os.Open(path)
 			if err != nil {
 				return fmt.Errorf(`open file "%s" error: %w`, path, err)
 			}
@@ -107,7 +106,7 @@ func CompressDir(ctx context.Context, root *os.Root, dst io.Writer, optFns ...fu
 		}
 	}
 	if err != nil {
-		return fmt.Errorf(`compress directory "%s" error: %w`, rootDir, err)
+		return fmt.Errorf(`compress directory "%s" error: %w`, dir, err)
 	}
 
 	return nil

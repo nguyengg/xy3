@@ -67,18 +67,13 @@ func (c *Compress) compress(ctx context.Context, name string) error {
 		return fmt.Errorf(`stat file "%s" error: %w`, name, err)
 
 	case fi.IsDir():
-		root, err := os.OpenRoot(name)
-		if err != nil {
-			return err
-		}
-
 		dst, err := util.OpenExclFile(".", filepath.Base(name), ext, 0666)
 		if err != nil {
 			return fmt.Errorf("create archive error: %w", err)
 		}
 		defer dst.Close()
 
-		if err = xy3.CompressDir(ctx, root, dst, func(opts *xy3.CompressOptions) {
+		if err = xy3.CompressDir(ctx, name, dst, func(opts *xy3.CompressOptions) {
 			opts.Algorithm = c.Algorithm
 			if c.MaxConcurrency > 0 {
 				opts.MaxConcurrency = c.MaxConcurrency
@@ -94,7 +89,7 @@ func (c *Compress) compress(ctx context.Context, name string) error {
 		}
 
 	default:
-		// a single file so if the compressor implements codec.Codec then use that extension.
+		// if the compressor implements codec.Codec then use that extension since this is a single file.
 		if cd, ok := comp.(codec.Codec); ok {
 			ext = cd.Ext()
 		}

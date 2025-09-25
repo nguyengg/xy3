@@ -15,12 +15,12 @@ import (
 // compressDir creates a new archive and compresses all files recursively starting at root.
 //
 // On success, return the name of the archive.
-func (c *Command) compressDir(ctx context.Context, root *os.Root) (name string, size int64, contentType *string, checksum string, err error) {
+func (c *Command) compressDir(ctx context.Context, dir string) (name string, size int64, contentType *string, checksum string, err error) {
 	alg := xy3.DefaultAlgorithmName
 	comp := xy3.NewCompressorFromName(alg)
 	ext := comp.ArchiveExt()
 
-	dst, err := util.OpenExclFile(".", filepath.Base(root.Name()), ext, 0666)
+	dst, err := util.OpenExclFile(".", filepath.Base(dir), ext, 0666)
 	if err != nil {
 		return "", 0, nil, "", fmt.Errorf("create archive error: %w", err)
 	}
@@ -29,7 +29,7 @@ func (c *Command) compressDir(ctx context.Context, root *os.Root) (name string, 
 	sizer := &util.Sizer{}
 	checksummer := util.DefaultChecksum()
 
-	if err = xy3.CompressDir(ctx, root, io.MultiWriter(dst, sizer, checksummer), func(opts *xy3.CompressOptions) {
+	if err = xy3.CompressDir(ctx, dir, io.MultiWriter(dst, sizer, checksummer), func(opts *xy3.CompressOptions) {
 		opts.Algorithm = alg
 		if c.MaxConcurrency > 0 {
 			opts.MaxConcurrency = c.MaxConcurrency
