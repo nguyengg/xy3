@@ -7,6 +7,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.29.6
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.78.2
 	github.com/bodgit/sevenzip v1.6.1
+	github.com/go-ini/ini v1.67.0
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/klauspost/compress v1.17.11
 	github.com/krolaw/zipstream v0.0.0-20180621105154-0a2661891f94
