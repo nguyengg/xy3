@@ -18,6 +18,12 @@ import (
 type DownloadOptions struct {
 	// S3ReaderOptions customises s3reader.Options.
 	S3ReaderOptions func(*s3reader.Options)
+
+	// ExpectedChecksum provides an alternative checksum to verify against.
+	//
+	// By default, if the S3 object has metadata attribute named "checksum", its value will be used. ExpectedChecksum
+	// will override this.
+	ExpectedChecksum string
 }
 
 // Download downloads S3 object and writes to the given io.Writer.
@@ -50,13 +56,14 @@ func Download(ctx context.Context, client *s3.Client, bucket, key string, dst io
 	}
 
 	bar := tspb.DefaultBytes(aws.ToInt64(headObjectResult.ContentLength), fmt.Sprintf(`downloading "%s"`, path.Base(key)))
-	defer bar.Close()
 
-	// if the object's metadata contains a checksum, use it during download and writing to file.
 	var (
 		checksum = headObjectResult.Metadata["checksum"]
 		verifier sri.Verifier
 	)
+	if opts.ExpectedChecksum != "" {
+		checksum = opts.ExpectedChecksum
+	}
 	if checksum != "" {
 		verifier, _ = sri.NewVerifier(checksum)
 	}
@@ -69,6 +76,8 @@ func Download(ctx context.Context, client *s3.Client, bucket, key string, dst io
 	if _ = r.Close(); err != nil {
 		return fmt.Errorf("download error: %w", err)
 	}
+
+	_ = bar.Close()
 
 	if verifier != nil && !verifier.SumAndVerify(nil) {
 		return &ErrChecksumMismatch{Expected: checksum, Actual: verifier.SumToString(nil)}

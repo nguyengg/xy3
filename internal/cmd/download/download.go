@@ -25,7 +25,9 @@ func (c *Command) downloadFromManifest(ctx context.Context, manifestName string)
 	}
 	name := f.Name()
 
-	if err, _ = xy3.Download(ctx, c.client, man.Bucket, man.Key, f), f.Close(); err != nil {
+	if err, _ = xy3.Download(ctx, c.client, man.Bucket, man.Key, f, func(opts *xy3.DownloadOptions) {
+		opts.ExpectedChecksum = man.Checksum
+	}), f.Close(); err != nil {
 		if _, ok := xy3.IsErrChecksumMismatch(err); ok {
 			c.logger.Print(err)
 		} else {

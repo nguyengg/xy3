@@ -113,7 +113,9 @@ func (c *Recompress) recompress(ctx context.Context, originalManifestName, moveT
 		return fmt.Errorf("create original file error: %w", err)
 	}
 
-	if err, _ = xy3.Download(ctx, c.client, originalManifest.Bucket, originalManifest.Key, f), f.Close(); err != nil {
+	if err, _ = xy3.Download(ctx, c.client, originalManifest.Bucket, originalManifest.Key, f, func(opts *xy3.DownloadOptions) {
+		opts.ExpectedChecksum = originalManifest.Checksum
+	}), f.Close(); err != nil {
 		if _, ok := xy3.IsErrChecksumMismatch(err); ok {
 			c.logger.Print(err)
 		} else {
