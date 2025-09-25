@@ -12,6 +12,7 @@ import (
 
 	"github.com/jessevdk/go-flags"
 	"github.com/nguyengg/xy3"
+	"github.com/nguyengg/xy3/codec"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/util"
 )
@@ -26,14 +27,9 @@ type Compress struct {
 	logger *log.Logger
 }
 
-func (c *Compress) Execute(args []string) error {
+func (c *Compress) Execute(args []string) (err error) {
 	if len(args) != 0 {
 		return fmt.Errorf("unknown positional arguments: %s", strings.Join(args, " "))
-	}
-
-	algorithm, err := xy3.NewAlgorithmFromName(c.Algorithm)
-	if err != nil {
-		return fmt.Errorf("unknown algorithm: %v", c.Algorithm)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
@@ -45,30 +41,7 @@ func (c *Compress) Execute(args []string) error {
 		c.logger = internal.NewLogger(i, n, file)
 		c.logger.Printf("start compressing")
 
-		// stat to determine if file or directory.
-		path := string(file)
-		fi, err := os.Stat(path)
-		if err != nil {
-			c.logger.Printf(`stat file "%s" error: %v`, path, err)
-			continue
-		}
-
-		if fi.IsDir() {
-			if err = c.compressDir(ctx, algorithm, path); err == nil {
-				c.logger.Printf("done compressing")
-				success++
-				continue
-			}
-
-			if errors.Is(err, context.Canceled) {
-				break
-			}
-
-			c.logger.Printf(`compress directory "%s" error: %v`, path, err)
-			continue
-		}
-
-		if err = c.compressFile(ctx, algorithm, path); err == nil {
+		if err = c.compress(ctx, string(file)); err == nil {
 			c.logger.Printf("done compressing")
 			success++
 			continue
@@ -78,51 +51,33 @@ func (c *Compress) Execute(args []string) error {
 			break
 		}
 
-		c.logger.Printf(`compress file "%s" error: %v`, path, err)
+		c.logger.Printf(`compress "%s" error: %v`, file, err)
 	}
 
 	log.Printf("successfully compressed %d/%d files", success, n)
 	return nil
 }
 
-func (c *Compress) compressDir(ctx context.Context, algorithm xy3.Algorithm, name string) error {
-	ext := algorithm.Ext()
-	if algorithm.ShouldTar() {
-		ext = ".tar" + ext
+func (c *Compress) compress(ctx context.Context, name string) error {
+	fi, err := os.Stat(name)
+	if err != nil {
+		return fmt.Errorf(`stat "%s" error: %w`, name, err)
 	}
+
+	comp, _ := codec.NewCompressorFromAlgorithm(c.Algorithm)
+	ext := comp.Ext(fi.IsDir())
 
 	dst, err := util.OpenExclFile(".", filepath.Base(name), ext, 0666)
 	if err != nil {
 		return fmt.Errorf("create archive error: %w", err)
 	}
 
-	if err, _ = xy3.CompressDir(ctx, name, dst, func(opts *xy3.CompressOptions) {
-		opts.Algorithm = algorithm
-		opts.MaxConcurrency = c.MaxConcurrency
+	if err, _ = xy3.Compress(ctx, name, dst, func(opts *xy3.CompressOptions) {
+		opts.Algorithm = c.Algorithm
+		if c.MaxConcurrency > 0 {
+			opts.MaxConcurrency = c.MaxConcurrency
+		}
 	}), dst.Close(); err != nil {
-		_ = os.Remove(dst.Name())
-		return err
-	}
-
-	return nil
-}
-
-func (c *Compress) compressFile(ctx context.Context, algorithm xy3.Algorithm, name string) error {
-	src, err := os.Open(name)
-	if err != nil {
-		return fmt.Errorf(`open file "%s" error: %w`, name, err)
-	}
-
-	dst, err := util.OpenExclFile(".", filepath.Base(name), algorithm.Ext(), 0666)
-	if err != nil {
-		_ = src.Close()
-		return fmt.Errorf("create archive error: %w", err)
-	}
-
-	if err, _, _ = xy3.Compress(ctx, src, dst, func(opts *xy3.CompressOptions) {
-		opts.Algorithm = algorithm
-		opts.MaxConcurrency = c.MaxConcurrency
-	}), dst.Close(), src.Close(); err != nil {
 		_ = os.Remove(dst.Name())
 		return err
 	}

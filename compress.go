@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/nguyengg/go-aws-commons/tspb"
+	"github.com/nguyengg/xy3/codec"
 	"github.com/nguyengg/xy3/util"
 )
 
@@ -16,8 +17,8 @@ import (
 type CompressOptions struct {
 	// Algorithm indicates which compression algorithm to use.
 	//
-	// Default to DefaultAlgorithm.
-	Algorithm Algorithm
+	// Default to codec.DefaultAlgorithmName.
+	Algorithm string
 
 	// MaxConcurrency customises the concurrency level.
 	//
@@ -26,39 +27,50 @@ type CompressOptions struct {
 	MaxConcurrency int
 }
 
-// DefaultAlgorithm is the default compression algorithm for CompressDir and Compress.
-const DefaultAlgorithm = AlgorithmZstd
-
 const defaultBufferSize = 32 * 1024
 
-// CompressDir recursively compresses the given named directory.
-func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(options *CompressOptions)) error {
+// Compress compresses either a single file or a directory with the given name.
+func Compress(ctx context.Context, name string, dst io.Writer, optFns ...func(options *CompressOptions)) error {
 	opts := &CompressOptions{
-		Algorithm: DefaultAlgorithm,
+		Algorithm: codec.DefaultAlgorithmName,
 	}
 	for _, fn := range optFns {
 		fn(opts)
 	}
 
-	bar, _ := compressDirProgressBar(dir)
-	if bar != nil {
-		defer bar.Close()
-	}
-
-	comp, err := opts.Algorithm.createArchiver(dst, opts)
+	fi, err := os.Stat(name)
 	if err != nil {
-		return fmt.Errorf("create archiver error: %w", err)
+		return fmt.Errorf(`stat "%s" error: %w`, name, err)
 	}
 
-	base := filepath.Base(dir)
-	createPath := func(path string) (name string, err error) {
-		name, err = filepath.Rel(dir, path)
-		return filepath.Join(base, name), err
+	if fi.IsDir() {
+		return compressDir(ctx, name, dst, opts)
+	}
+
+	src, err := os.Open(name)
+	if err != nil {
+		return fmt.Errorf(`open file "%s" error: %w`, name, err)
+	}
+	defer src.Close()
+
+	return compressFile(ctx, src, dst, fi, opts)
+}
+
+func compressDir(ctx context.Context, root string, dst io.Writer, opts *CompressOptions) (err error) {
+	comp, _ := codec.NewCompressorFromAlgorithm(opts.Algorithm)
+	add, closer, err := comp.NewArchive(dst, filepath.Base(root))
+	if err != nil {
+		return err
+	}
+
+	bar, err := compressDirProgressBar(root)
+	if err != nil {
+		return err
 	}
 
 	buf := make([]byte, defaultBufferSize)
 
-	err = filepath.WalkDir(dir, func(srcPath string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		select {
 		case <-ctx.Done():
 			// ctx.Err is not supposed to return nil here if ctx.Done() is closed.
@@ -76,26 +88,29 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 			return fmt.Errorf("walk dir error: %w", err)
 
 		case d.Type().IsRegular():
-			src, err := os.Open(srcPath)
+			src, err := os.Open(path)
 			if err != nil {
-				return fmt.Errorf("open file (path=%s) error: %w", srcPath, err)
+				return fmt.Errorf(`open file "%s" error: %w`, path, err)
 			}
 			defer src.Close()
 
-			dstPath, err := createPath(srcPath)
-			if err == nil {
-				err = comp.AddFile(srcPath, dstPath)
-			}
+			fi, err := src.Stat()
 			if err != nil {
-				return fmt.Errorf("compute file (path=%s) name in archive error: %w", dstPath, err)
+				return fmt.Errorf(`stat file "%s" error: %w`, path, err)
 			}
 
-			if bar != nil {
-				if _, err = util.CopyBufferWithContext(ctx, comp, io.TeeReader(src, bar), buf); err != nil {
-					return fmt.Errorf("add file (path=%s) to archive file (name=%s) error: %w", srcPath, dstPath, err)
-				}
-			} else if _, err = util.CopyBufferWithContext(ctx, comp, src, buf); err != nil {
-				return fmt.Errorf("add file (path=%s) to archive file (name=%s) error: %w", srcPath, dstPath, err)
+			w, err := add(path, fi)
+			if err != nil {
+				return fmt.Errorf(`create archive file "%s" error: %w`, path, err)
+			}
+
+			if _, err = util.CopyBufferWithContext(ctx, w, io.TeeReader(src, bar), buf); err != nil {
+				_ = w.Close()
+				return fmt.Errorf(`write archive file "%s" error: %w`, path, err)
+			}
+
+			if err = w.Close(); err != nil {
+				return fmt.Errorf(`close archive file "%s" error: %w`, path, err)
 			}
 
 			return nil
@@ -105,50 +120,41 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 		}
 	})
 	if err == nil {
-		err = comp.Close()
+		if err = closer(); err == nil {
+			_ = bar.Close()
+		}
 	}
 	if err != nil {
-		return fmt.Errorf(`compress dir "%s" error: %w`, dir, err)
+		return fmt.Errorf(`compress directory "%s" error: %w`, root, err)
 	}
 
 	return nil
 }
 
-// Compress compresses the given io.Reader.
-//
-// TODO bug: unable to zip a single file.
-func Compress(ctx context.Context, src io.Reader, dst io.Writer, optFns ...func(options *CompressOptions)) error {
-	opts := &CompressOptions{
-		Algorithm: DefaultAlgorithm,
-	}
-	for _, fn := range optFns {
-		fn(opts)
-	}
-
-	bar, _ := compressFileProgressBar(src)
-	defer func() {
-		if bar != nil {
-			_ = bar.Close()
-		}
-	}()
-
-	comp, err := opts.Algorithm.createCompressor(dst, opts)
+func compressFile(ctx context.Context, src *os.File, dst io.Writer, fi os.FileInfo, opts *CompressOptions) error {
+	comp, _ := codec.NewCompressorFromAlgorithm(opts.Algorithm)
+	add, err := comp.New(dst)
 	if err != nil {
-		return fmt.Errorf("create archiver error: %w", err)
+		return err
 	}
 
-	if bar != nil {
-		if _, err = util.CopyBufferWithContext(ctx, comp, io.TeeReader(src, bar), nil); err != nil {
-			return fmt.Errorf("compress error: %w", err)
-		}
-	} else if _, err = util.CopyBufferWithContext(ctx, comp, src, nil); err != nil {
-		return fmt.Errorf("compress error: %w", err)
+	bar := tspb.DefaultBytes(fi.Size(), fmt.Sprintf(`compressing "%s"`, fi.Name()))
+
+	w, err := add(fi.Name(), fi)
+	if err != nil {
+		return err
 	}
 
-	if err = comp.Close(); err != nil {
-		return fmt.Errorf("close archiver error: %w", err)
+	if _, err = util.CopyBufferWithContext(ctx, w, io.TeeReader(src, bar), nil); err != nil {
+		_ = w.Close()
+		return err
 	}
 
+	if err = w.Close(); err != nil {
+		return err
+	}
+
+	_ = bar.Close()
 	return nil
 }
 
@@ -173,19 +179,6 @@ func compressDirProgressBar(dir string) (io.WriteCloser, error) {
 	}
 
 	return nil, err
-}
-
-func compressFileProgressBar(r io.Reader) (io.WriteCloser, error) {
-	if f, ok := r.(*os.File); ok {
-		fi, err := f.Stat()
-		if err == nil {
-			return tspb.DefaultBytes(fi.Size(), fmt.Sprintf(`compressing "%s"`, filepath.Base(f.Name()))), nil
-		}
-
-		return nil, err
-	}
-
-	return nil, nil
 }
 
 // archiver compresses a directory recursively.

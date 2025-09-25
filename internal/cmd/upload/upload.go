@@ -24,13 +24,13 @@ func (c *Command) upload(ctx context.Context, name string) error {
 	)
 
 	// name can either be a file or a directory, so use stat to determine what to do.
-	// if it's a directory, compress it and the resulting archive will be deleted upon return.
+	// if it's a directory, compressDir it and the resulting archive will be deleted upon return.
 	switch fi, err := os.Stat(name); {
 	case err != nil:
 		return fmt.Errorf(`stat file "%s" error: %w`, name, err)
 
 	case fi.IsDir():
-		f, size, contentType, checksum, err = c.compress(ctx, name)
+		f, size, contentType, checksum, err = c.compressDir(ctx, name)
 		if err != nil {
 			return fmt.Errorf(`compress directory "%s" error: %w`, name, err)
 		}

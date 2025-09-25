@@ -81,3 +81,12 @@ func ResettableReadSeeker(r io.ReadSeeker, cb func(io.ReadSeeker) error) error {
 
 	return nil
 }
+
+// WriteNoopCloser implements a no-op io.Closer for an io.Writer.
+type WriteNoopCloser struct {
+	io.Writer
+}
+
+func (w *WriteNoopCloser) Close() error {
+	return nil
+}

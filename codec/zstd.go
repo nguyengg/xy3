@@ -1,0 +1,68 @@
+package codec
+
+import (
+	"io"
+	"os"
+	"path/filepath"
+
+	"github.com/klauspost/compress/zstd"
+	"github.com/nguyengg/xy3/archive"
+)
+
+// zstdCompressor implements Codec and Compressor for zstd compression algorithm.
+type zstdCompressor struct{}
+
+var _ Codec = zstdCompressor{}
+
+func (c zstdCompressor) NewDecoder(src io.Reader) (io.ReadCloser, error) {
+	dec, err := zstd.NewReader(src)
+	return &zstdDecoder{dec}, err
+}
+
+type zstdDecoder struct {
+	*zstd.Decoder
+}
+
+func (d *zstdDecoder) Close() error {
+	d.Decoder.Close()
+	return nil
+}
+
+func (c zstdCompressor) NewEncoder(dst io.Writer) (io.WriteCloser, error) {
+	return zstd.NewWriter(dst, zstd.WithEncoderLevel(zstd.SpeedBestCompression))
+}
+
+var _ Compressor = zstdCompressor{}
+
+func (c zstdCompressor) NewArchive(dst io.Writer, root string) (add archive.AddFunction, closer archive.CloseFunction, err error) {
+	enc, err := c.NewEncoder(dst)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	add, closer = archive.Tar{}.Create(enc, filepath.ToSlash(root))
+	return add, wrapCloser(enc, closer), nil
+}
+
+func (c zstdCompressor) New(dst io.Writer) (archive.AddFunction, error) {
+	enc, err := c.NewEncoder(dst)
+	if err != nil {
+		return nil, err
+	}
+
+	return func(path string, fi os.FileInfo) (io.WriteCloser, error) {
+		return enc, err
+	}, nil
+}
+
+func (c zstdCompressor) Ext(archive bool) string {
+	if archive {
+		return ".tar.zst"
+	}
+
+	return ".zst"
+}
+
+func (c zstdCompressor) ContentType() string {
+	return "application/zstd"
+}
