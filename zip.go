@@ -18,8 +18,8 @@ type zipCodec struct {
 	fw io.Writer // nil until NewFile is called at least once.
 }
 
-// compressor.
-var _ compressor = &zipCodec{}
+// archiver.
+var _ archiver = &zipCodec{}
 
 func (c *zipCodec) AddFile(src, dst string) error {
 	dst = filepath.ToSlash(dst)
@@ -44,7 +44,7 @@ func (c *zipCodec) AddFile(src, dst string) error {
 
 func (c *zipCodec) Write(p []byte) (n int, err error) {
 	if c.fw == nil {
-		return 0, fmt.Errorf("NewFile has not been called")
+		return 0, fmt.Errorf("AddFile has not been called")
 	}
 
 	return c.fw.Write(p)

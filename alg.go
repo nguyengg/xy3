@@ -80,7 +80,7 @@ func (m Algorithm) ShouldTar() bool {
 	}
 }
 
-func (m Algorithm) createCompressor(dst io.Writer, opts *CompressOptions) (compressor, error) {
+func (m Algorithm) createCompressor(dst io.Writer, opts *CompressOptions) (io.WriteCloser, error) {
 	switch m {
 	case AlgorithmZstd:
 		return newZstdCompressor(dst, opts)
@@ -93,4 +93,17 @@ func (m Algorithm) createCompressor(dst io.Writer, opts *CompressOptions) (compr
 	default:
 		return nil, fmt.Errorf("unknown algorithm: %v", m)
 	}
+}
+
+func (m Algorithm) createArchiver(dst io.Writer, opts *CompressOptions) (archiver, error) {
+	w, err := m.createCompressor(dst, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	if c, ok := w.(archiver); ok {
+		return c, nil
+	}
+
+	return &tarCodec{wc: w}, nil
 }

@@ -2,25 +2,21 @@ package xy3
 
 import (
 	"archive/tar"
-	"compress/gzip"
 	"fmt"
 	"io"
 	"iter"
 	"os"
 	"path/filepath"
-
-	"github.com/klauspost/compress/zstd"
-	"github.com/ulikunitz/xz"
 )
 
 type tarCodec struct {
-	wc io.WriteCloser
-	tw *tar.Writer // nil until NewFile is called at least once.
-	ex func(io.Reader) iter.Seq2[archiveFile, error]
+	wc  io.WriteCloser
+	tw  *tar.Writer // nil until NewFile is called at least once.
+	dec decompressor
 }
 
-// compressor.
-var _ compressor = &tarCodec{}
+// archiver.
+var _ archiver = &tarCodec{}
 
 func (tc *tarCodec) AddFile(src, dst string) error {
 	dst = filepath.ToSlash(dst)
@@ -63,79 +59,24 @@ func (tc *tarCodec) Close() (err error) {
 	}
 
 	if err = tc.wc.Close(); err != nil {
-		return fmt.Errorf("close compressor error: %w", err)
+		return fmt.Errorf("close archiver error: %w", err)
 	}
 
 	return nil
-}
-
-func newZstdCompressor(dst io.Writer, opts *CompressOptions) (compressor, error) {
-	zopts := []zstd.EOption{zstd.WithEncoderLevel(zstd.SpeedBestCompression)}
-	if opts.MaxConcurrency > 0 {
-		zopts = append(zopts, zstd.WithEncoderConcurrency(opts.MaxConcurrency))
-	}
-
-	w, err := zstd.NewWriter(dst, zopts...)
-	if err != nil {
-		return nil, fmt.Errorf("create zstd writer error: %w", err)
-	}
-
-	return &tarCodec{wc: w}, nil
-}
-
-func newGzipCompressor(dst io.Writer, opts *CompressOptions) (compressor, error) {
-	w, err := gzip.NewWriterLevel(dst, gzip.BestCompression)
-	if err != nil {
-		return nil, fmt.Errorf("create gzip writer error: %w", err)
-	}
-
-	return &tarCodec{wc: w}, nil
-}
-
-func newXzCompressor(dst io.Writer, opts *CompressOptions) (compressor, error) {
-	w, err := xz.NewWriter(dst)
-	if err != nil {
-		return nil, fmt.Errorf("create xz writer error: %w", err)
-	}
-
-	return &tarCodec{wc: w}, nil
 }
 
 // extractor.
 var _ extractor = &tarCodec{}
 
 func (tc *tarCodec) Files(src io.Reader, open bool) (iter.Seq2[archiveFile, error], error) {
-	return tc.ex(src), nil
-}
-
-func fromTarZstReader(src io.Reader) iter.Seq2[archiveFile, error] {
-	return func(yield func(archiveFile, error) bool) {
-		r, err := zstd.NewReader(src)
-		if err != nil {
-			yield(nil, fmt.Errorf("open zstd reader error: %w", err))
-			return
-		}
-
-		defer r.Close()
-
-		for e, err := range untar(r) {
-			if !yield(e, err) || err != nil {
-				return
-			}
-		}
+	r, err := tc.dec.NewDecoder(src)
+	if err != nil {
+		return nil, err
 	}
-}
 
-func fromTarGzipReader(src io.Reader) iter.Seq2[archiveFile, error] {
 	return func(yield func(archiveFile, error) bool) {
-		r, err := gzip.NewReader(src)
-		if err != nil {
-			yield(nil, fmt.Errorf("open gzip reader error: %w", err))
-			return
-		}
-
-		for e, err := range untar(r) {
-			if !yield(e, err) || err != nil {
+		for f, err := range untar(r) {
+			if !yield(f, err) || err != nil {
 				return
 			}
 		}
@@ -143,23 +84,7 @@ func fromTarGzipReader(src io.Reader) iter.Seq2[archiveFile, error] {
 		if err = r.Close(); err != nil {
 			yield(nil, err)
 		}
-	}
-}
-
-func fromTarXzReader(src io.Reader) iter.Seq2[archiveFile, error] {
-	return func(yield func(archiveFile, error) bool) {
-		r, err := xz.NewReader(src)
-		if err != nil {
-			yield(nil, fmt.Errorf("open xz reader error: %w", err))
-			return
-		}
-
-		for e, err := range untar(r) {
-			if !yield(e, err) || err != nil {
-				return
-			}
-		}
-	}
+	}, nil
 }
 
 func untar(src io.Reader) iter.Seq2[archiveFile, error] {

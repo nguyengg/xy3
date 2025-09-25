@@ -45,9 +45,9 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 		defer bar.Close()
 	}
 
-	comp, err := opts.Algorithm.createCompressor(dst, opts)
+	comp, err := opts.Algorithm.createArchiver(dst, opts)
 	if err != nil {
-		return fmt.Errorf("create compressor error: %w", err)
+		return fmt.Errorf("create archiver error: %w", err)
 	}
 
 	base := filepath.Base(dir)
@@ -108,13 +108,15 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 		err = comp.Close()
 	}
 	if err != nil {
-		return fmt.Errorf("compress error: %w", err)
+		return fmt.Errorf(`compress dir "%s" error: %w`, dir, err)
 	}
 
 	return nil
 }
 
 // Compress compresses the given io.Reader.
+//
+// TODO bug: unable to zip a single file.
 func Compress(ctx context.Context, src io.Reader, dst io.Writer, optFns ...func(options *CompressOptions)) error {
 	opts := &CompressOptions{
 		Algorithm: DefaultAlgorithm,
@@ -132,7 +134,7 @@ func Compress(ctx context.Context, src io.Reader, dst io.Writer, optFns ...func(
 
 	comp, err := opts.Algorithm.createCompressor(dst, opts)
 	if err != nil {
-		return fmt.Errorf("create compressor error: %w", err)
+		return fmt.Errorf("create archiver error: %w", err)
 	}
 
 	if bar != nil {
@@ -144,7 +146,7 @@ func Compress(ctx context.Context, src io.Reader, dst io.Writer, optFns ...func(
 	}
 
 	if err = comp.Close(); err != nil {
-		return fmt.Errorf("close compressor error: %w", err)
+		return fmt.Errorf("close archiver error: %w", err)
 	}
 
 	return nil
@@ -186,13 +188,13 @@ func compressFileProgressBar(r io.Reader) (io.WriteCloser, error) {
 	return nil, nil
 }
 
-// compressor can be used for both compressing a single file or a directory.
-type compressor interface {
+// archiver compresses a directory recursively.
+type archiver interface {
 	io.WriteCloser
 
 	// AddFile indicates subsequent calls to Write will be for compressing the file specified by src argument.
 	//
 	// The dst argument indicates the desired name of the file in archive. If this method is never called, the
-	// compressor can be used to compress a single file.
+	// archiver can be used to compress a single file.
 	AddFile(src, dst string) error
 }

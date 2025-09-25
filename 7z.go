@@ -44,7 +44,6 @@ func from7zFile(src *os.File, open bool) iter.Seq2[archiveFile, error] {
 				continue
 			}
 
-			// we'll always open the file for reading for now. caller is responsible for closing it.
 			var rc io.ReadCloser
 			if open {
 				rc, err = f.Open()
