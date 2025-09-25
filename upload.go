@@ -1,4 +1,4 @@
-package internal
+package xy3
 
 import (
 	"context"
@@ -18,11 +18,15 @@ import (
 
 // UploadOptions customises Upload.
 type UploadOptions struct {
-	PutObjectInputOptions func(input *s3.PutObjectInput)
-	MaxConcurrency        int
+	// S3WriterOptions customises s3writer.Options.
+	S3WriterOptions func(*s3writer.Options)
+	// PutObjectInputOptions can be used to modify the s3.PutObjectInput passed to s3writer.New.
+	//
+	// Useful if you need to add ExpectedBucketOwner or other customisations.
+	PutObjectInputOptions func(*s3.PutObjectInput)
 }
 
-// Upload uploads io.Reader contents to S3.
+// Upload uploads the given io.Reader contents to S3.
 func Upload(ctx context.Context, client *s3.Client, src io.Reader, bucket, key string, optFns ...func(*UploadOptions)) (man manifest.Manifest, err error) {
 	opts := &UploadOptions{}
 	for _, fn := range optFns {
@@ -81,8 +85,8 @@ func Upload(ctx context.Context, client *s3.Client, src io.Reader, bucket, key s
 
 	// now upload to s3.
 	w, err := s3writer.New(ctx, client, putObjectInput, func(s3writerOpts *s3writer.Options) {
-		if opts.MaxConcurrency > 0 {
-			s3writerOpts.Concurrency = opts.MaxConcurrency
+		if opts.S3WriterOptions != nil {
+			opts.S3WriterOptions(s3writerOpts)
 		}
 	})
 	if err != nil {

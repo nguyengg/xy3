@@ -1,4 +1,4 @@
-package internal
+package xy3
 
 import (
 	"context"
@@ -14,10 +14,21 @@ import (
 	"github.com/nguyengg/go-aws-commons/tspb"
 )
 
+// DownloadOptions customises Download.
+type DownloadOptions struct {
+	// S3ReaderOptions customises s3reader.Options.
+	S3ReaderOptions func(*s3reader.Options)
+}
+
 // Download downloads S3 object and writes to the given io.Writer.
 //
 // If the checksum mismatches, ErrChecksumMismatch will be returned.
-func Download(ctx context.Context, client *s3.Client, bucket, key string, dst io.Writer) error {
+func Download(ctx context.Context, client *s3.Client, bucket, key string, dst io.Writer, optFns ...func(*DownloadOptions)) error {
+	opts := &DownloadOptions{}
+	for _, fn := range optFns {
+		fn(opts)
+	}
+
 	// headObject to see if there's a checksum to be used. the response's size is also used.
 	headObjectResult, err := client.HeadObject(ctx, &s3.HeadObjectInput{Bucket: &bucket, Key: &key})
 	if err != nil {
@@ -28,7 +39,12 @@ func Download(ctx context.Context, client *s3.Client, bucket, key string, dst io
 		ctx,
 		client,
 		&s3.GetObjectInput{Bucket: &bucket, Key: &key},
-		aws.ToInt64(headObjectResult.ContentLength))
+		aws.ToInt64(headObjectResult.ContentLength),
+		func(s3readerOpts *s3reader.Options) {
+			if opts.S3ReaderOptions != nil {
+				opts.S3ReaderOptions(s3readerOpts)
+			}
+		})
 	if err != nil {
 		return fmt.Errorf("create s3 reader error: %w", err)
 	}

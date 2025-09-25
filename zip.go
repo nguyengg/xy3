@@ -1,4 +1,4 @@
-package internal
+package xy3
 
 import (
 	"archive/zip"
@@ -66,7 +66,7 @@ func newZipCompressor(dst io.Writer, opts *CompressOptions) *zipCodec {
 // extractor.
 var _ extractor = &zipCodec{}
 
-func (c *zipCodec) Files(src io.Reader, open bool) (iter.Seq2[ArchiveFile, error], error) {
+func (c *zipCodec) Files(src io.Reader, open bool) (iter.Seq2[archiveFile, error], error) {
 	if f, ok := src.(*os.File); ok {
 		return fromZipFile(f), nil
 	}
@@ -74,8 +74,8 @@ func (c *zipCodec) Files(src io.Reader, open bool) (iter.Seq2[ArchiveFile, error
 	return fromZipReader(src), nil
 }
 
-func fromZipReader(src io.Reader) iter.Seq2[ArchiveFile, error] {
-	return func(yield func(ArchiveFile, error) bool) {
+func fromZipReader(src io.Reader) iter.Seq2[archiveFile, error] {
+	return func(yield func(archiveFile, error) bool) {
 		zr := zipstream.NewReader(src)
 
 		for {
@@ -100,8 +100,8 @@ func fromZipReader(src io.Reader) iter.Seq2[ArchiveFile, error] {
 	}
 }
 
-func fromZipFile(src *os.File) iter.Seq2[ArchiveFile, error] {
-	return func(yield func(ArchiveFile, error) bool) {
+func fromZipFile(src *os.File) iter.Seq2[archiveFile, error] {
+	return func(yield func(archiveFile, error) bool) {
 		fi, err := src.Stat()
 		if err != nil {
 			yield(nil, fmt.Errorf(`stat file "%s" error: %w`, src.Name(), err))
@@ -139,7 +139,7 @@ type zipEntry struct {
 	io.ReadCloser
 }
 
-var _ ArchiveFile = &zipEntry{}
+var _ archiveFile = &zipEntry{}
 
 func (e *zipEntry) Name() string {
 	return e.fh.Name

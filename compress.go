@@ -1,4 +1,4 @@
-package internal
+package xy3
 
 import (
 	"context"
@@ -26,7 +26,7 @@ type CompressOptions struct {
 	MaxConcurrency int
 }
 
-// DefaultAlgorithm is the default compression algorithm.
+// DefaultAlgorithm is the default compression algorithm for CompressDir and Compress.
 const DefaultAlgorithm = AlgorithmZstd
 
 const defaultBufferSize = 32 * 1024
@@ -40,9 +40,9 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 		fn(opts)
 	}
 
-	progressWriter, _ := compressDirProgressBar(dir)
-	if progressWriter != nil {
-		defer progressWriter.Close()
+	bar, _ := compressDirProgressBar(dir)
+	if bar != nil {
+		defer bar.Close()
 	}
 
 	comp, err := opts.Algorithm.createCompressor(dst, opts)
@@ -90,8 +90,8 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 				return fmt.Errorf("compute file (path=%s) name in archive error: %w", dstPath, err)
 			}
 
-			if progressWriter != nil {
-				if _, err = util.CopyBufferWithContext(ctx, comp, io.TeeReader(src, progressWriter), buf); err != nil {
+			if bar != nil {
+				if _, err = util.CopyBufferWithContext(ctx, comp, io.TeeReader(src, bar), buf); err != nil {
 					return fmt.Errorf("add file (path=%s) to archive file (name=%s) error: %w", srcPath, dstPath, err)
 				}
 			} else if _, err = util.CopyBufferWithContext(ctx, comp, src, buf); err != nil {

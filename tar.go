@@ -1,4 +1,4 @@
-package internal
+package xy3
 
 import (
 	"archive/tar"
@@ -16,7 +16,7 @@ import (
 type tarCodec struct {
 	wc io.WriteCloser
 	tw *tar.Writer // nil until NewFile is called at least once.
-	ex func(io.Reader) iter.Seq2[ArchiveFile, error]
+	ex func(io.Reader) iter.Seq2[archiveFile, error]
 }
 
 // compressor.
@@ -104,12 +104,12 @@ func newXzCompressor(dst io.Writer, opts *CompressOptions) (compressor, error) {
 // extractor.
 var _ extractor = &tarCodec{}
 
-func (tc *tarCodec) Files(src io.Reader, open bool) (iter.Seq2[ArchiveFile, error], error) {
+func (tc *tarCodec) Files(src io.Reader, open bool) (iter.Seq2[archiveFile, error], error) {
 	return tc.ex(src), nil
 }
 
-func fromTarZstReader(src io.Reader) iter.Seq2[ArchiveFile, error] {
-	return func(yield func(ArchiveFile, error) bool) {
+func fromTarZstReader(src io.Reader) iter.Seq2[archiveFile, error] {
+	return func(yield func(archiveFile, error) bool) {
 		r, err := zstd.NewReader(src)
 		if err != nil {
 			yield(nil, fmt.Errorf("open zstd reader error: %w", err))
@@ -126,8 +126,8 @@ func fromTarZstReader(src io.Reader) iter.Seq2[ArchiveFile, error] {
 	}
 }
 
-func fromTarGzipReader(src io.Reader) iter.Seq2[ArchiveFile, error] {
-	return func(yield func(ArchiveFile, error) bool) {
+func fromTarGzipReader(src io.Reader) iter.Seq2[archiveFile, error] {
+	return func(yield func(archiveFile, error) bool) {
 		r, err := gzip.NewReader(src)
 		if err != nil {
 			yield(nil, fmt.Errorf("open gzip reader error: %w", err))
@@ -146,8 +146,8 @@ func fromTarGzipReader(src io.Reader) iter.Seq2[ArchiveFile, error] {
 	}
 }
 
-func fromTarXzReader(src io.Reader) iter.Seq2[ArchiveFile, error] {
-	return func(yield func(ArchiveFile, error) bool) {
+func fromTarXzReader(src io.Reader) iter.Seq2[archiveFile, error] {
+	return func(yield func(archiveFile, error) bool) {
 		r, err := xz.NewReader(src)
 		if err != nil {
 			yield(nil, fmt.Errorf("open xz reader error: %w", err))
@@ -162,10 +162,10 @@ func fromTarXzReader(src io.Reader) iter.Seq2[ArchiveFile, error] {
 	}
 }
 
-func untar(src io.Reader) iter.Seq2[ArchiveFile, error] {
+func untar(src io.Reader) iter.Seq2[archiveFile, error] {
 	tr := tar.NewReader(src)
 
-	return func(yield func(ArchiveFile, error) bool) {
+	return func(yield func(archiveFile, error) bool) {
 		for {
 			hdr, err := tr.Next()
 			if err != nil {

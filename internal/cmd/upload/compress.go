@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/nguyengg/xy3/internal"
+	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/util"
 )
 
@@ -16,7 +16,7 @@ import (
 //
 // On success, the returned file is ready for read at offset 0.
 func (c *Command) compress(ctx context.Context, root string) (f *os.File, size int64, contentType *string, checksum string, err error) {
-	alg := internal.DefaultAlgorithm
+	alg := xy3.DefaultAlgorithm
 	ext := alg.Ext()
 	if alg.ShouldTar() {
 		ext = ".tar" + ext
@@ -31,7 +31,7 @@ func (c *Command) compress(ctx context.Context, root string) (f *os.File, size i
 	sizer := &util.Sizer{}
 	checksummer := util.DefaultChecksum()
 
-	if err = internal.CompressDir(ctx, root, io.MultiWriter(f, sizer, checksummer), func(opts *internal.CompressOptions) {
+	if err = xy3.CompressDir(ctx, root, io.MultiWriter(f, sizer, checksummer), func(opts *xy3.CompressOptions) {
 		opts.Algorithm = alg
 		if c.MaxConcurrency > 0 {
 			opts.MaxConcurrency = c.MaxConcurrency

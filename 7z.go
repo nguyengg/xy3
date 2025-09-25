@@ -1,4 +1,4 @@
-package internal
+package xy3
 
 import (
 	"fmt"
@@ -15,7 +15,7 @@ type sevenZipCodec struct {
 // extractor.
 var _ extractor = &sevenZipCodec{}
 
-func (s *sevenZipCodec) Files(src io.Reader, open bool) (iter.Seq2[ArchiveFile, error], error) {
+func (s *sevenZipCodec) Files(src io.Reader, open bool) (iter.Seq2[archiveFile, error], error) {
 	if f, ok := src.(*os.File); ok {
 		return from7zFile(f, open), nil
 	}
@@ -24,8 +24,8 @@ func (s *sevenZipCodec) Files(src io.Reader, open bool) (iter.Seq2[ArchiveFile, 
 	return nil, fmt.Errorf("7z archives must be opened as os.File")
 }
 
-func from7zFile(src *os.File, open bool) iter.Seq2[ArchiveFile, error] {
-	return func(yield func(ArchiveFile, error) bool) {
+func from7zFile(src *os.File, open bool) iter.Seq2[archiveFile, error] {
+	return func(yield func(archiveFile, error) bool) {
 		fi, err := src.Stat()
 		if err != nil {
 			yield(nil, fmt.Errorf(`stat file "%s" error: %w`, src.Name(), err))
@@ -66,7 +66,7 @@ type sevenZipEntry struct {
 	io.ReadCloser
 }
 
-var _ ArchiveFile = &sevenZipEntry{}
+var _ archiveFile = &sevenZipEntry{}
 
 func (e *sevenZipEntry) Name() string {
 	return e.fh.Name

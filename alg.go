@@ -1,4 +1,4 @@
-package internal
+package xy3
 
 import (
 	"errors"

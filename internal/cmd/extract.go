@@ -10,11 +10,13 @@ import (
 	"strings"
 
 	"github.com/jessevdk/go-flags"
+	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
 )
 
 type Extract struct {
-	Args struct {
+	DecompressOnly bool `long:"decompress-only" description:"if specified, the compressed archives will only be decompressed without extracting"`
+	Args           struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the local files to be extracted" required:"yes"`
 	} `positional-args:"yes"`
 
@@ -35,7 +37,9 @@ func (c *Extract) Execute(args []string) (err error) {
 		c.logger = internal.NewLogger(i, n, file)
 		c.logger.Printf("start decompresing")
 
-		if _, err = internal.Decompress(ctx, string(file), "."); err == nil {
+		if _, err = xy3.Decompress(ctx, string(file), ".", func(opts *xy3.DecompressOptions) {
+			opts.NoExtract = c.DecompressOnly
+		}); err == nil {
 			c.logger.Printf("done decompresing")
 			success++
 			continue

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/nguyengg/xy3/internal"
+	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal/manifest"
 	"github.com/nguyengg/xy3/util"
 )
@@ -25,8 +25,8 @@ func (c *Command) downloadFromManifest(ctx context.Context, manifestName string)
 	}
 	name := f.Name()
 
-	if err, _ = internal.Download(ctx, c.client, man.Bucket, man.Key, f), f.Close(); err != nil {
-		if _, ok := internal.IsErrChecksumMismatch(err); ok {
+	if err, _ = xy3.Download(ctx, c.client, man.Bucket, man.Key, f), f.Close(); err != nil {
+		if _, ok := xy3.IsErrChecksumMismatch(err); ok {
 			c.logger.Print(err)
 		} else {
 			_ = os.Remove(name)
@@ -35,7 +35,7 @@ func (c *Command) downloadFromManifest(ctx context.Context, manifestName string)
 	}
 
 	if c.Extract {
-		if _, err = internal.Decompress(ctx, name, "."); err == nil {
+		if _, err = xy3.Decompress(ctx, name, "."); err == nil {
 			_ = os.Remove(name)
 		}
 	}
@@ -58,8 +58,8 @@ func (c *Command) downloadFromS3(ctx context.Context, s3Uri string) error {
 	}
 	name := f.Name()
 
-	if err, _ = internal.Download(ctx, c.client, bucket, key, f), f.Close(); err != nil {
-		if _, ok := internal.IsErrChecksumMismatch(err); ok {
+	if err, _ = xy3.Download(ctx, c.client, bucket, key, f), f.Close(); err != nil {
+		if _, ok := xy3.IsErrChecksumMismatch(err); ok {
 			c.logger.Print(err)
 		} else {
 			_ = os.Remove(name)
@@ -68,7 +68,7 @@ func (c *Command) downloadFromS3(ctx context.Context, s3Uri string) error {
 	}
 
 	if c.Extract {
-		if _, err = internal.Decompress(ctx, name, "."); err == nil {
+		if _, err = xy3.Decompress(ctx, name, "."); err == nil {
 			_ = os.Remove(name)
 		}
 	}

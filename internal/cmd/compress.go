@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/jessevdk/go-flags"
+	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/util"
 )
@@ -30,7 +31,7 @@ func (c *Compress) Execute(args []string) error {
 		return fmt.Errorf("unknown positional arguments: %s", strings.Join(args, " "))
 	}
 
-	algorithm, err := internal.NewAlgorithmFromName(c.Algorithm)
+	algorithm, err := xy3.NewAlgorithmFromName(c.Algorithm)
 	if err != nil {
 		return fmt.Errorf("unknown algorithm: %v", c.Algorithm)
 	}
@@ -84,7 +85,7 @@ func (c *Compress) Execute(args []string) error {
 	return nil
 }
 
-func (c *Compress) compressDir(ctx context.Context, algorithm internal.Algorithm, name string) error {
+func (c *Compress) compressDir(ctx context.Context, algorithm xy3.Algorithm, name string) error {
 	ext := algorithm.Ext()
 	if algorithm.ShouldTar() {
 		ext = ".tar" + ext
@@ -95,7 +96,7 @@ func (c *Compress) compressDir(ctx context.Context, algorithm internal.Algorithm
 		return fmt.Errorf("create archive error: %w", err)
 	}
 
-	if err, _ = internal.CompressDir(ctx, name, dst, func(opts *internal.CompressOptions) {
+	if err, _ = xy3.CompressDir(ctx, name, dst, func(opts *xy3.CompressOptions) {
 		opts.Algorithm = algorithm
 		opts.MaxConcurrency = c.MaxConcurrency
 	}), dst.Close(); err != nil {
@@ -106,7 +107,7 @@ func (c *Compress) compressDir(ctx context.Context, algorithm internal.Algorithm
 	return nil
 }
 
-func (c *Compress) compressFile(ctx context.Context, algorithm internal.Algorithm, name string) error {
+func (c *Compress) compressFile(ctx context.Context, algorithm xy3.Algorithm, name string) error {
 	src, err := os.Open(name)
 	if err != nil {
 		return fmt.Errorf(`open file "%s" error: %w`, name, err)
@@ -118,7 +119,7 @@ func (c *Compress) compressFile(ctx context.Context, algorithm internal.Algorith
 		return fmt.Errorf("create archive error: %w", err)
 	}
 
-	if err, _, _ = internal.Compress(ctx, src, dst, func(opts *internal.CompressOptions) {
+	if err, _, _ = xy3.Compress(ctx, src, dst, func(opts *xy3.CompressOptions) {
 		opts.Algorithm = algorithm
 		opts.MaxConcurrency = c.MaxConcurrency
 	}), dst.Close(), src.Close(); err != nil {

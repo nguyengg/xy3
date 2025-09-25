@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jessevdk/go-flags"
+	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/cmd/awsconfig"
 	"github.com/nguyengg/xy3/internal/manifest"
@@ -31,7 +32,7 @@ type Recompress struct {
 
 	client    *s3.Client
 	logger    *log.Logger
-	algorithm internal.Algorithm
+	algorithm xy3.Algorithm
 }
 
 func (c *Recompress) Execute(args []string) error {
@@ -39,7 +40,7 @@ func (c *Recompress) Execute(args []string) error {
 		return fmt.Errorf("unknown positional arguments: %s", strings.Join(args, " "))
 	}
 
-	algorithm, err := internal.NewAlgorithmFromName(c.Algorithm)
+	algorithm, err := xy3.NewAlgorithmFromName(c.Algorithm)
 	if err != nil {
 		return fmt.Errorf("unknown algorithm: %v", c.Algorithm)
 	}
@@ -89,7 +90,7 @@ func (c *Recompress) Execute(args []string) error {
 	return nil
 }
 
-func (c *Recompress) recompress(ctx context.Context, algorithm internal.Algorithm, originalManifestName, moveToBucket, moveToPrefix string) error {
+func (c *Recompress) recompress(ctx context.Context, algorithm xy3.Algorithm, originalManifestName, moveToBucket, moveToPrefix string) error {
 	originalManifest, err := manifest.UnmarshalFromFile(originalManifestName)
 	if err != nil {
 		return fmt.Errorf("read manifest error: %w", err)
@@ -119,8 +120,8 @@ func (c *Recompress) recompress(ctx context.Context, algorithm internal.Algorith
 		return fmt.Errorf("create original file error: %w", err)
 	}
 
-	if err, _ = internal.Download(ctx, c.client, originalManifest.Bucket, originalManifest.Key, f), f.Close(); err != nil {
-		if _, ok := internal.IsErrChecksumMismatch(err); ok {
+	if err, _ = xy3.Download(ctx, c.client, originalManifest.Bucket, originalManifest.Key, f), f.Close(); err != nil {
+		if _, ok := xy3.IsErrChecksumMismatch(err); ok {
 			c.logger.Print(err)
 		} else {
 			return fmt.Errorf("download error: %w", err)
@@ -128,7 +129,7 @@ func (c *Recompress) recompress(ctx context.Context, algorithm internal.Algorith
 	}
 
 	// extract to a new directory inside the working directory.
-	uncompressedDir, err := internal.Decompress(ctx, f.Name(), dir)
+	uncompressedDir, err := xy3.Decompress(ctx, f.Name(), dir)
 	if err != nil {
 		return fmt.Errorf("decompress error: %w", err)
 	}
@@ -139,7 +140,7 @@ func (c *Recompress) recompress(ctx context.Context, algorithm internal.Algorith
 		return fmt.Errorf("create recompressed file error: %w", err)
 	}
 
-	if err, _ = internal.CompressDir(ctx, uncompressedDir, f), f.Close(); err != nil {
+	if err, _ = xy3.CompressDir(ctx, uncompressedDir, f), f.Close(); err != nil {
 		return fmt.Errorf(`compress "%s" error: %w`, filepath.Join(dir, "tmp"), err)
 	}
 
@@ -157,9 +158,9 @@ func (c *Recompress) recompress(ctx context.Context, algorithm internal.Algorith
 		key = moveToPrefix + stem + ".tar" + algorithm.Ext()
 	}
 
-	newMan, err := internal.Upload(ctx, c.client, f, bucket, key, func(opts *internal.UploadOptions) {
+	newMan, err := xy3.Upload(ctx, c.client, f, bucket, key, func(opts *xy3.UploadOptions) {
 		opts.PutObjectInputOptions = func(input *s3.PutObjectInput) {
-			input.ContentType = aws.String(internal.DefaultAlgorithm.ContentType())
+			input.ContentType = aws.String(xy3.DefaultAlgorithm.ContentType())
 		}
 	})
 	_ = f.Close()
