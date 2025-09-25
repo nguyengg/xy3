@@ -59,27 +59,75 @@ func (c *Compress) Execute(args []string) (err error) {
 }
 
 func (c *Compress) compress(ctx context.Context, name string) error {
-	fi, err := os.Stat(name)
-	if err != nil {
-		return fmt.Errorf(`stat "%s" error: %w`, name, err)
-	}
+	comp := xy3.NewCompressorFromName(c.Algorithm)
+	ext := comp.ArchiveExt()
 
-	comp, _ := codec.NewCompressorFromAlgorithm(c.Algorithm)
-	ext := comp.Ext(fi.IsDir())
+	switch fi, err := os.Stat(name); {
+	case err != nil:
+		return fmt.Errorf(`stat file "%s" error: %w`, name, err)
 
-	dst, err := util.OpenExclFile(".", filepath.Base(name), ext, 0666)
-	if err != nil {
-		return fmt.Errorf("create archive error: %w", err)
-	}
-
-	if err, _ = xy3.Compress(ctx, name, dst, func(opts *xy3.CompressOptions) {
-		opts.Algorithm = c.Algorithm
-		if c.MaxConcurrency > 0 {
-			opts.MaxConcurrency = c.MaxConcurrency
+	case fi.IsDir():
+		root, err := os.OpenRoot(name)
+		if err != nil {
+			return err
 		}
-	}), dst.Close(); err != nil {
-		_ = os.Remove(dst.Name())
-		return err
+
+		dst, err := util.OpenExclFile(".", filepath.Base(name), ext, 0666)
+		if err != nil {
+			return fmt.Errorf("create archive error: %w", err)
+		}
+		defer dst.Close()
+
+		if err = xy3.CompressDir(ctx, root, dst, func(opts *xy3.CompressOptions) {
+			opts.Algorithm = c.Algorithm
+			if c.MaxConcurrency > 0 {
+				opts.MaxConcurrency = c.MaxConcurrency
+			}
+		}); err != nil {
+			_, _ = dst.Close(), os.Remove(dst.Name())
+			return fmt.Errorf(`compress directory "%s" error: %w`, name, err)
+		}
+
+		if err = dst.Close(); err != nil {
+			_ = os.Remove(dst.Name())
+			return fmt.Errorf(`complete compressing directory "%s" error: %w`, name, err)
+		}
+
+	default:
+		// a single file so if the compressor implements codec.Codec then use that extension.
+		if cd, ok := comp.(codec.Codec); ok {
+			ext = cd.Ext()
+		}
+
+		dst, err := util.OpenExclFile(".", filepath.Base(name), ext, 0666)
+		if err != nil {
+			return fmt.Errorf("create output file error: %w", err)
+		}
+		defer dst.Close()
+
+		src, err := os.Open(name)
+		if err != nil {
+			_, _ = dst.Close(), os.Remove(dst.Name())
+			return fmt.Errorf(`open file "%s" error: %w`, name, err)
+		}
+		defer src.Close()
+
+		fi, _ = src.Stat()
+
+		if err = xy3.Compress(ctx, src, fi, dst, func(opts *xy3.CompressOptions) {
+			opts.Algorithm = c.Algorithm
+			if c.MaxConcurrency > 0 {
+				opts.MaxConcurrency = c.MaxConcurrency
+			}
+		}); err != nil {
+			_, _ = dst.Close(), os.Remove(dst.Name())
+			return fmt.Errorf(`compress file "%s" error: %w`, name, err)
+		}
+
+		if err = dst.Close(); err != nil {
+			_ = os.Remove(dst.Name())
+			return fmt.Errorf(`complete compressing file "%s" error: %w`, name, err)
+		}
 	}
 
 	return nil

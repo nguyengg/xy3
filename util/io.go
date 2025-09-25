@@ -90,3 +90,16 @@ type WriteNoopCloser struct {
 func (w *WriteNoopCloser) Close() error {
 	return nil
 }
+
+// ChainCloser makes sure all the close functions are called at least once, but will only return the first error.
+func ChainCloser(closeFns ...func() error) func() error {
+	return func() (err error) {
+		for _, fn := range closeFns {
+			if e := fn(); e != nil && err == nil {
+				err = e
+			}
+		}
+
+		return
+	}
+}

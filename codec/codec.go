@@ -1,13 +1,18 @@
 package codec
 
-import (
-	"io"
-)
+import "io"
 
 // Codec has methods to create compressor/encoder and decompressor/decoder.
 type Codec interface {
 	// NewDecoder creates a decoder to decompress contents from the given io.Reader.
 	NewDecoder(src io.Reader) (io.ReadCloser, error)
+
 	// NewEncoder creates an encoder to compress contents from the given io.Writer.
 	NewEncoder(dst io.Writer) (io.WriteCloser, error)
+
+	// Ext returns the extension of the files created with this encoder.
+	Ext() string
+
+	// ContentType returns the content type of the files created with this encoder.
+	ContentType() string
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nguyengg/go-aws-commons/tspb"
+	"github.com/nguyengg/xy3/archive"
 	"github.com/nguyengg/xy3/codec"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/util"
@@ -33,104 +34,83 @@ func Decompress(ctx context.Context, name, dir string, optFns ...func(*Decompres
 		fn(opts)
 	}
 
-	// TODO use http.DetectContentType() instead of relying on file extension.
 	if opts.NoExtract {
-		basename := filepath.Base(name)
-		ext := filepath.Ext(name)
-		stem := strings.TrimSuffix(basename, ext)
-		switch ext {
+		switch ext := filepath.Ext(name); ext {
 		case ".gz":
-			ext = filepath.Ext(stem)
-			stem = strings.TrimSuffix(stem, ext)
-			return decompress(ctx, name, dir, stem, ext, &codec.GzipCodec{})
+			return decompress(ctx, name, dir, &codec.GzipCodec{})
 		case ".xz":
-			ext = filepath.Ext(stem)
-			stem = strings.TrimSuffix(stem, ext)
-			return decompress(ctx, name, dir, stem, ext, &codec.XzCodec{})
+			return decompress(ctx, name, dir, &codec.XzCodec{})
 		case ".zst":
-			ext = filepath.Ext(stem)
-			stem = strings.TrimSuffix(stem, ext)
-			return decompress(ctx, name, dir, stem, ext, &codec.ZstdCodec{})
+			return decompress(ctx, name, dir, &codec.ZstdCodec{})
 		default:
-			return "", fmt.Errorf("no support for decompression of files with extension %s", ext)
+			return "", fmt.Errorf("no decompression support for files with extension %s", ext)
 		}
 	}
 
-	switch stem, ext := util.StemAndExt(name); ext {
+	switch _, ext := util.StemAndExt(name); ext {
+	case ".tar":
+		return extract(ctx, name, dir, &archive.Tar{})
 	case ".tar.gz":
-		return extract(ctx, name, dir, stem, &tarCodec{dec: &codec.GzipCodec{}})
+		return extract(ctx, name, dir, &archive.Tar{Codec: &codec.GzipCodec{}})
 	case ".tar.xz":
-		return extract(ctx, name, dir, stem, &tarCodec{dec: &codec.XzCodec{}})
+		return extract(ctx, name, dir, &archive.Tar{Codec: &codec.XzCodec{}})
 	case ".tar.zst":
-		return extract(ctx, name, dir, stem, &tarCodec{dec: &codec.ZstdCodec{}})
+		return extract(ctx, name, dir, &archive.Tar{Codec: &codec.ZstdCodec{}})
 	case ".7z":
-		return extract(ctx, name, dir, stem, &sevenZipCodec{})
+		return extract(ctx, name, dir, &archive.SevenZip{})
 	case ".zip":
-		return extract(ctx, name, dir, stem, &zipCodec{})
+		return extract(ctx, name, dir, &archive.Zip{})
 	default:
-		return "", fmt.Errorf("no support for extraction from files with extension %s", ext)
+		return "", fmt.Errorf("no extraction support for archives with extension %s", ext)
 	}
 }
 
-func decompress(ctx context.Context, name, dir, stem, ext string, cd codec.Codec) (string, error) {
+func decompress(ctx context.Context, name, dir string, cd codec.Codec) (string, error) {
+	// the name of the output file will be the original with the codec ext trimmed off.
+	stem, ext := util.StemAndExt(strings.TrimSuffix(name, cd.Ext()))
+	dst, err := util.OpenExclFile(dir, stem, ext, 0666)
+	if err != nil {
+		return "", fmt.Errorf("create output file error: %w", err)
+	}
+	defer dst.Close()
+
 	src, err := os.Open(name)
 	if err != nil {
 		return "", fmt.Errorf(`open file "%s" error: %w`, name, err)
 	}
 	defer src.Close()
 
-	// stat file for the size to get progress report.
-	fi, err := src.Stat()
-	if err != nil {
-		return "", fmt.Errorf(`stat file "%s" error: %w`, name, err)
-	}
-	bar := tspb.DefaultBytes(fi.Size(), fmt.Sprintf(`decompressing "%s"`, filepath.Base(name)))
+	bar := util.FileProgressBar(src, fmt.Sprintf(`decompressing "%s"`, filepath.Base(name)))
 
 	r, err := cd.NewDecoder(io.TeeReader(src, bar))
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("create decoder error: %w", err)
 	}
 
-	dst, err := util.OpenExclFile(dir, stem, ext, 0666)
-	if err != nil {
-		_ = r.Close()
-		return "", fmt.Errorf("create output file error: %w", err)
-	}
+	closer := util.ChainCloser(r.Close, src.Close, dst.Close)
 
-	_, err = util.CopyBufferWithContext(ctx, dst, r, nil)
-	_ = dst.Close()
-	if err != nil {
-		_ = r.Close()
-	} else {
-		err = r.Close()
-	}
-	if err != nil {
-		_ = os.Remove(dst.Name())
+	if _, err = util.CopyBufferWithContext(ctx, dst, r, nil); err != nil {
+		_, _ = closer(), os.Remove(dst.Name())
 		return "", fmt.Errorf(`decompress file "%s" error: %w`, name, err)
+	}
+
+	if err = closer(); err != nil {
+		return "", fmt.Errorf(`complete writing to file "%s" error: %w`, name, err)
 	}
 
 	_ = bar.Close()
 	return dst.Name(), nil
 }
 
-type decompressor interface {
-	NewDecoder(io.Reader) (io.ReadCloser, error)
-}
-
-func extract(ctx context.Context, name, dir, stem string, ex extractor) (string, error) {
-	src, err := os.Open(name)
-	if err != nil {
-		return "", fmt.Errorf(`open file "%s" error: %w`, name, err)
-	}
-	defer src.Close()
-
-	// decompress and extract archive contents into a unique directory.
-	// if unsuccessful, this output directory will be deleted.
+func extract(ctx context.Context, name, dir string, archiver archive.Archiver) (string, error) {
+	// decompress and extract contents into a unique directory.
+	stem, _ := util.StemAndExt(strings.TrimSuffix(name, archiver.ArchiveExt()))
 	target, err := util.MkExclDir(dir, stem, 0755)
 	if err != nil {
 		return "", fmt.Errorf("create output directory error: %w", err)
 	}
 
+	// if unsuccessful, this output directory will be deleted.
 	success := false
 	defer func() {
 		if !success {
@@ -138,33 +118,24 @@ func extract(ctx context.Context, name, dir, stem string, ex extractor) (string,
 		}
 	}()
 
-	// extracting will start with finding root dir. since we're already looking through all the files to find
-	// root dir, let's tally up the count and total uncompressed size of total regular files for better progress
-	// report.
-	var (
-		rootDir          internal.RootDir
-		uncompressedSize int64
-	)
-	if err = util.ResettableReadSeeker(src, func(r io.ReadSeeker) error {
-		files, err := ex.Files(r, false)
-		if err != nil {
-			return err
-		}
-		if rootDir, uncompressedSize, err = findRootDir(ctx, files); err != nil {
-			return err
-		}
-		return nil
-	}); err != nil {
+	// first pass to find root dir and uncompressed size for progress report.
+	rootDir, uncompressedSize, err := findRootDir(ctx, name, archiver)
+	if err != nil {
 		return "", fmt.Errorf("find root dir error: %w", err)
 	}
 
 	bar := tspb.DefaultBytes(uncompressedSize, fmt.Sprintf(`extracting "%s"`, filepath.Base(name)))
-	defer bar.Close()
 
 	// now go through the archive files again, this time opening each file for reading.
-	files, err := ex.Files(src, true)
+	src, err := os.Open(name)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf(`open file "%s" error: %w`, name, err)
+	}
+	defer src.Close()
+
+	files, err := archiver.Open(src)
+	if err != nil {
+		return "", fmt.Errorf(`read archive "%s" error: %w`, name, err)
 	}
 
 	buf := make([]byte, defaultBufferSize)
@@ -174,25 +145,38 @@ func extract(ctx context.Context, name, dir, stem string, ex extractor) (string,
 			return "", err
 		}
 
-		// TODO support creating directories as well
+		name, fi := f.Name(), f.FileInfo()
+		if fi.IsDir() || strings.HasSuffix(name, "/") {
+			// TODO support creating directories as well
+			continue
+		}
 
-		path, fi := rootDir.Join(target, f.Name()), f.FileInfo()
+		r, err := f.Open()
+		if err != nil {
+			return "", fmt.Errorf(`open archive file "%s" error: %w`, f.Name(), err)
+		}
 
+		path := rootDir.Join(target, name)
 		if err = os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-			_ = f.Close()
+			_ = r.Close()
 			return "", fmt.Errorf(`create path to file "%s" error: %w`, path, err)
 		}
 
-		w, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, f.FileMode())
+		w, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, f.Mode())
 		if err != nil {
-			_ = f.Close()
+			_ = r.Close()
 			return "", fmt.Errorf(`create file "%s" error: %w`, path, err)
 		}
 
-		_, err = util.CopyBufferWithContext(ctx, w, io.TeeReader(f, bar), buf)
-		_, _ = w.Close(), f.Close()
-		if err != nil {
+		closer := util.ChainCloser(w.Close, r.Close)
+
+		if _, err = util.CopyBufferWithContext(ctx, w, io.TeeReader(r, bar), buf); err != nil {
+			_ = closer()
 			return "", fmt.Errorf(`write to file "%s" error: %w`, path, err)
+		}
+
+		if err = closer(); err != nil {
+			return "", fmt.Errorf(`complete writing to file "%s" error: %w`, path, err)
 		}
 
 		if err = os.Chtimes(path, time.Time{}, fi.ModTime()); err != nil {
@@ -204,7 +188,22 @@ func extract(ctx context.Context, name, dir, stem string, ex extractor) (string,
 	return target, nil
 }
 
-func findRootDir(ctx context.Context, files iter.Seq2[archiveFile, error]) (rootDir internal.RootDir, uncompressedSize int64, err error) {
+// findRootDir inspects the named archive and return the root dir (if exits).
+//
+// And since we're already looking through all the files to find root dir, let's tally up the count and total
+// uncompressed size of total regular files for better progress report.
+func findRootDir(ctx context.Context, name string, archiver archive.Archiver) (rootDir internal.RootDir, uncompressedSize int64, err error) {
+	src, err := os.Open(name)
+	if err != nil {
+		return "", 0, fmt.Errorf(`open file "%s" error: %w`, name, err)
+	}
+	defer src.Close()
+
+	files, err := archiver.Open(src)
+	if err != nil {
+		return "", 0, fmt.Errorf(`read archive "%s" error: %w`, name, err)
+	}
+
 	var (
 		rootFinder = internal.NewZipRootDirFinder()
 		ok         = true
@@ -223,7 +222,7 @@ func findRootDir(ctx context.Context, files iter.Seq2[archiveFile, error]) (root
 				rootDir, ok = rootFinder(f.Name())
 			}
 
-			if f.FileMode().IsRegular() {
+			if f.Mode().IsRegular() {
 				uncompressedSize += f.FileInfo().Size()
 			}
 		}

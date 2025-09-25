@@ -15,7 +15,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jessevdk/go-flags"
 	"github.com/nguyengg/xy3"
-	"github.com/nguyengg/xy3/codec"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/cmd/awsconfig"
 	"github.com/nguyengg/xy3/util"
@@ -128,14 +127,19 @@ func (c *Recompress) recompress(ctx context.Context, originalManifestName, moveT
 		return fmt.Errorf("decompress error: %w", err)
 	}
 
+	root, err := os.OpenRoot(uncompressedDir)
+	if err != nil {
+		return fmt.Errorf(`open "%s" as root error: %w`, uncompressedDir, err)
+	}
+
 	// now compress the extracted contents.
-	comp, _ := codec.NewCompressorFromAlgorithm(c.Algorithm)
-	f, err = os.OpenFile(filepath.Join(dir, stem+comp.Ext(true)), os.O_RDWR|os.O_CREATE|os.O_EXCL, 0666)
+	comp := xy3.NewCompressorFromName(c.Algorithm)
+	f, err = os.OpenFile(filepath.Join(dir, stem+comp.ArchiveExt()), os.O_RDWR|os.O_CREATE|os.O_EXCL, 0666)
 	if err != nil {
 		return fmt.Errorf("create recompressed file error: %w", err)
 	}
 
-	if err, _ = xy3.Compress(ctx, uncompressedDir, f), f.Close(); err != nil {
+	if err, _ = xy3.CompressDir(ctx, root, f), f.Close(); err != nil {
 		return fmt.Errorf(`compress "%s" error: %w`, filepath.Join(dir, "tmp"), err)
 	}
 
@@ -147,10 +151,10 @@ func (c *Recompress) recompress(ctx context.Context, originalManifestName, moveT
 
 	// bucket and key might be new values if we're moving to a different location.
 	bucket := originalManifest.Bucket
-	key := path.Dir(originalManifest.Key) + stem + comp.Ext(true)
+	key := path.Dir(originalManifest.Key) + stem + comp.ArchiveExt()
 	if moveToBucket != "" {
 		bucket = moveToBucket
-		key = moveToPrefix + stem + comp.Ext(true)
+		key = moveToPrefix + stem + comp.ArchiveExt()
 	}
 
 	newMan, err := xy3.Upload(ctx, c.client, f, bucket, key, func(opts *xy3.UploadOptions) {
@@ -164,7 +168,7 @@ func (c *Recompress) recompress(ctx context.Context, originalManifestName, moveT
 	}
 
 	// write manifest to a unique local .s3 file.
-	f, err = util.OpenExclFile(".", stem, comp.Ext(true)+".s3", 0666)
+	f, err = util.OpenExclFile(".", stem, comp.ArchiveExt()+".s3", 0666)
 	if err == nil {
 		err = newMan.SaveTo(f)
 	}

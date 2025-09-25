@@ -30,19 +30,30 @@ func (c *Command) upload(ctx context.Context, name string) error {
 		return fmt.Errorf(`stat file "%s" error: %w`, name, err)
 
 	case fi.IsDir():
-		f, size, contentType, checksum, err = c.compressDir(ctx, name)
+		root, err := os.OpenRoot(name)
+		if err != nil {
+			return err
+		}
+
+		var archiveName string
+		archiveName, size, contentType, checksum, err = c.compressDir(ctx, root)
 		if err != nil {
 			return fmt.Errorf(`compress directory "%s" error: %w`, name, err)
 		}
 
+		if f, err = os.Open(archiveName); err != nil {
+			_ = os.Remove(archiveName)
+			return fmt.Errorf(`open archive "%s" error: %w`, archiveName, err)
+		}
+
 		defer func() {
-			_, _ = f.Close(), os.Remove(f.Name())
+			_, _ = f.Close(), os.Remove(archiveName)
 		}()
 
 	default:
 		f, size, contentType, checksum, err = c.inspect(ctx, name)
 		if err != nil {
-			return fmt.Errorf(`inspect file "%s" error: %w`, name, err)
+			return fmt.Errorf(`validate file "%s" error: %w`, name, err)
 		}
 
 		defer f.Close()

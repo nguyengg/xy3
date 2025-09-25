@@ -15,6 +15,10 @@ type SevenZip struct {
 
 var _ Archiver = SevenZip{}
 
+func (s SevenZip) Create(_ io.Writer, _ string) (AddFunction, CloseFunction, error) {
+	panic("not implemented")
+}
+
 func (s SevenZip) Open(src io.Reader) (iter.Seq2[File, error], error) {
 	f, ok := src.(*os.File)
 	if !ok {
@@ -43,6 +47,14 @@ func (s SevenZip) Open(src io.Reader) (iter.Seq2[File, error], error) {
 	}, nil
 }
 
+func (s SevenZip) ArchiveExt() string {
+	return "7z"
+}
+
+func (s SevenZip) ContentType() string {
+	return "application/x-7z-compressed"
+}
+
 type sevenZipFile struct {
 	sevenzip.FileHeader
 	open func() (io.ReadCloser, error)
@@ -56,8 +68,4 @@ func (f *sevenZipFile) Name() string {
 
 func (f *sevenZipFile) Open() (io.ReadCloser, error) {
 	return f.open()
-}
-
-func (s SevenZip) Create(dst io.Writer, root string) (AddFunction, CloseFunction) {
-	panic("not implemented")
 }

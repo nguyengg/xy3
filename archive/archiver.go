@@ -26,7 +26,13 @@ type Archiver interface {
 	//
 	// The close function should be called once all files have been added. After close is called, subsequent calls
 	// to add and close will have undefined (and most likely wrong) behaviour.
-	Create(dst io.Writer, root string) (add AddFunction, close CloseFunction)
+	Create(dst io.Writer, root string) (add AddFunction, close CloseFunction, err error)
+
+	// ArchiveExt returns the file name extension of the archives created with this compressor.
+	ArchiveExt() string
+
+	// ContentType returns the content type of the archives created with this compressor.
+	ContentType() string
 }
 
 // AddFunction creates a new file in the archive.

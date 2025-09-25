@@ -2,12 +2,17 @@ package archive
 
 import (
 	"archive/zip"
+	"compress/flate"
 	"fmt"
 	"io"
 	"iter"
 	"os"
+	"path"
+	"path/filepath"
+	"strings"
 
 	"github.com/krolaw/zipstream"
+	"github.com/nguyengg/xy3/util"
 )
 
 // Zip implements Archiver for ZIP files.
@@ -16,12 +21,56 @@ type Zip struct {
 
 var _ Archiver = Zip{}
 
+func (z Zip) Create(dst io.Writer, root string) (add AddFunction, closer CloseFunction, err error) {
+	root = filepath.ToSlash(root)
+
+	w := zip.NewWriter(dst)
+	w.RegisterCompressor(zip.Deflate, func(w io.Writer) (io.WriteCloser, error) {
+		return flate.NewWriter(w, flate.BestCompression)
+	})
+
+	add = func(name string, fi os.FileInfo) (io.WriteCloser, error) {
+		name = filepath.ToSlash(name)
+		if fi.IsDir() || strings.HasSuffix(name, "/") {
+			name = path.Join(root, name) + "/"
+		} else {
+			name = path.Join(root, name)
+		}
+
+		fh := &zip.FileHeader{
+			Name:     name,
+			Method:   zip.Deflate,
+			Modified: fi.ModTime(),
+		}
+		fh.SetMode(fi.Mode())
+
+		fw, err := w.CreateHeader(fh)
+		if err != nil {
+			return nil, err
+		}
+
+		return &util.WriteNoopCloser{Writer: fw}, nil
+	}
+
+	closer = w.Close
+
+	return
+}
+
 func (z Zip) Open(src io.Reader) (iter.Seq2[File, error], error) {
 	if f, ok := src.(*os.File); ok {
 		return fromZipFile(f)
 	}
 
 	return fromZipReader(src)
+}
+
+func (z Zip) ArchiveExt() string {
+	return "zip"
+}
+
+func (z Zip) ContentType() string {
+	return "application/zip"
 }
 
 func fromZipReader(src io.Reader) (iter.Seq2[File, error], error) {
