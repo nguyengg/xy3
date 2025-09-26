@@ -16,7 +16,6 @@ import (
 	"github.com/jessevdk/go-flags"
 	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
-	"github.com/nguyengg/xy3/internal/cmd/awsconfig"
 	"github.com/nguyengg/xy3/util"
 )
 
@@ -27,10 +26,9 @@ type Recompress struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the local files each containing a single S3 URI" required:"yes"`
 	} `positional-args:"yes"`
 
-	awsconfig.ConfigLoaderMixin
-
-	client *s3.Client
-	logger *log.Logger
+	uploadCfg    internal.BucketConfig
+	uploadClient *s3.Client
+	logger       *log.Logger
 }
 
 func (c *Recompress) Execute(args []string) (err error) {
@@ -49,16 +47,11 @@ func (c *Recompress) Execute(args []string) (err error) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer stop()
 
-	cfg, err := c.LoadDefaultConfig(ctx)
+	c.uploadCfg = internal.ConfigForBucket(bucket)
+	c.uploadClient, err = util.NewS3ClientFromProfile(ctx, c.uploadCfg.AWSProfile)
 	if err != nil {
-		return fmt.Errorf("load default config error:%w", err)
+		return fmt.Errorf("create s3 client error: %w", err)
 	}
-
-	c.client = s3.NewFromConfig(cfg, func(options *s3.Options) {
-		// without this, getting a bunch of WARN message below:
-		// WARN Response has no supported checksum. Not validating response payload.
-		options.DisableLogOutputChecksumValidationSkipped = true
-	})
 
 	success := 0
 	n := len(c.Args.Files)
@@ -88,6 +81,21 @@ func (c *Recompress) recompress(ctx context.Context, originalManifestName, moveT
 	if err != nil {
 		return fmt.Errorf("read manifest error: %w", err)
 	}
+	downloadExpectedBucketOwner := originalManifest.ExpectedBucketOwner
+
+	downloadCfg := internal.ConfigForBucket(originalManifest.Bucket)
+	if downloadExpectedBucketOwner == nil {
+		downloadExpectedBucketOwner = downloadCfg.ExpectedBucketOwner
+	}
+
+	downloadClient, err := util.NewS3ClientFromProfile(ctx, downloadCfg.AWSProfile, func(options *s3.Options) {
+		// without this, getting a bunch of WARN message below:
+		// WARN Response has no supported checksum. Not validating response payload.
+		options.DisableLogOutputChecksumValidationSkipped = true
+	})
+	if err != nil {
+		return fmt.Errorf("create s3 client error: %w", err)
+	}
 
 	// we'll create a temp directory to store all intermediate artifacts.
 	// this temp directory is deleted only after complete success.
@@ -113,7 +121,10 @@ func (c *Recompress) recompress(ctx context.Context, originalManifestName, moveT
 		return fmt.Errorf("create original file error: %w", err)
 	}
 
-	if err, _ = xy3.Download(ctx, c.client, originalManifest.Bucket, originalManifest.Key, f, func(opts *xy3.DownloadOptions) {
+	if err, _ = xy3.Download(ctx, downloadClient, originalManifest.Bucket, originalManifest.Key, f, func(opts *xy3.DownloadOptions) {
+		if opts.ExpectedBucketOwner = originalManifest.ExpectedBucketOwner; opts.ExpectedBucketOwner == nil {
+			opts.ExpectedBucketOwner = downloadCfg.ExpectedBucketOwner
+		}
 		opts.ExpectedChecksum = originalManifest.Checksum
 	}), f.Close(); err != nil {
 		if _, ok := xy3.IsErrChecksumMismatch(err); ok {
@@ -149,14 +160,20 @@ func (c *Recompress) recompress(ctx context.Context, originalManifestName, moveT
 	// bucket and key might be new values if we're moving to a different location.
 	bucket := originalManifest.Bucket
 	key := path.Dir(originalManifest.Key) + stem + comp.ArchiveExt()
+	uploadExpectedBucketOwner := originalManifest.ExpectedBucketOwner
+	if uploadExpectedBucketOwner == nil {
+		uploadExpectedBucketOwner = downloadCfg.ExpectedBucketOwner
+	}
 	if moveToBucket != "" {
 		bucket = moveToBucket
 		key = moveToPrefix + stem + comp.ArchiveExt()
+		uploadExpectedBucketOwner = c.uploadCfg.ExpectedBucketOwner
 	}
 
-	newMan, err := xy3.Upload(ctx, c.client, f, bucket, key, func(opts *xy3.UploadOptions) {
+	newMan, err := xy3.Upload(ctx, c.uploadClient, f, bucket, key, func(opts *xy3.UploadOptions) {
 		opts.PutObjectInputOptions = func(input *s3.PutObjectInput) {
 			input.ContentType = aws.String(comp.ContentType())
+			input.ExpectedBucketOwner = uploadExpectedBucketOwner
 		}
 	})
 	_ = f.Close()
@@ -178,9 +195,10 @@ func (c *Recompress) recompress(ctx context.Context, originalManifestName, moveT
 
 	// delete old file locally as well as in s3.
 	c.logger.Printf(`deleting "s3://%s/%s"`, originalManifest.Bucket, originalManifest.Key)
-	if _, err = c.client.DeleteObject(ctx, &s3.DeleteObjectInput{
-		Bucket: &originalManifest.Bucket,
-		Key:    &originalManifest.Key,
+	if _, err = downloadClient.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket:              &originalManifest.Bucket,
+		Key:                 &originalManifest.Key,
+		ExpectedBucketOwner: downloadExpectedBucketOwner,
 	}); err != nil {
 		c.logger.Printf("delete old S3 file error: %v", err)
 	}

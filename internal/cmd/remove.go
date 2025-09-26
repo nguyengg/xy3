@@ -17,7 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jessevdk/go-flags"
 	"github.com/nguyengg/xy3/internal"
-	"github.com/nguyengg/xy3/internal/cmd/awsconfig"
+	"github.com/nguyengg/xy3/util"
 )
 
 type Remove struct {
@@ -25,10 +25,6 @@ type Remove struct {
 	Args      struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the local files each containing a single S3 URI" required:"yes"`
 	} `positional-args:"yes"`
-
-	awsconfig.ConfigLoaderMixin
-
-	client *s3.Client
 }
 
 func (c *Remove) Execute(args []string) error {
@@ -38,13 +34,6 @@ func (c *Remove) Execute(args []string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer stop()
-
-	cfg, err := c.LoadDefaultConfig(ctx)
-	if err != nil {
-		return fmt.Errorf("load default config error:%w", err)
-	}
-
-	c.client = s3.NewFromConfig(cfg)
 
 	// to prevent accidental download, prompt for each file.
 	prompt := true
@@ -81,7 +70,7 @@ fileLoop:
 			}
 		}
 
-		if err = c.remove(ctx, string(file)); err != nil {
+		if err := c.remove(ctx, string(file)); err != nil {
 			if errors.Is(err, context.Canceled) {
 				log.Printf("interrupted; successfully deleted %d/%d files", success, n)
 				return nil
@@ -107,11 +96,22 @@ func (c *Remove) remove(ctx context.Context, name string) error {
 		return err
 	}
 
+	cfg := internal.ConfigForBucket(man.Bucket)
+	client, err := util.NewS3ClientFromProfile(ctx, cfg.AWSProfile)
+	if err != nil {
+		return fmt.Errorf("create s3 client error: %w", err)
+	}
+	expectedBucketOwner := man.ExpectedBucketOwner
+	if expectedBucketOwner == nil {
+		expectedBucketOwner = cfg.ExpectedBucketOwner
+	}
+
 	logger.Printf(`deleting "s3://%s/%s"`, man.Bucket, man.Key)
-	if _, err = c.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+
+	if _, err = client.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket:              aws.String(man.Bucket),
 		Key:                 aws.String(man.Key),
-		ExpectedBucketOwner: man.ExpectedBucketOwner,
+		ExpectedBucketOwner: expectedBucketOwner,
 	}); err != nil {
 		if errors.Is(err, context.Canceled) {
 			return err
