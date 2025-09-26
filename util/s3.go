@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
+	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
@@ -55,5 +57,23 @@ func ParseS3URI(text string) (bucket, key string, err error) {
 	if len(parts) > 1 {
 		key = parts[1]
 	}
+	return
+}
+
+var s3clientCache sync.Map
+
+// NewS3ClientFromProfile creates a new s3.Client using the given profile.
+func NewS3ClientFromProfile(ctx context.Context, profile string, optFns ...func(*s3.Options)) (c *s3.Client, err error) {
+	if c, ok := s3clientCache.Load(profile); ok {
+		return c.(*s3.Client), nil
+	}
+
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithSharedConfigProfile(profile))
+	if err != nil {
+		return nil, err
+	}
+
+	c = s3.NewFromConfig(cfg, optFns...)
+	s3clientCache.Store(profile, c)
 	return
 }

@@ -12,7 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jessevdk/go-flags"
 	"github.com/nguyengg/xy3/internal"
-	"github.com/nguyengg/xy3/internal/cmd/awsconfig"
+	"github.com/nguyengg/xy3/util"
 )
 
 type Command struct {
@@ -23,13 +23,10 @@ type Command struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the local files each containing a single S3 URI; or S3 URI in format s3://bucket/key to download directly from S3; or S3 locations in format s3://bucket/prefix to download manifests (with --manifests)"`
 	} `positional-args:"yes"`
 
-	awsconfig.ConfigLoaderMixin
-
-	client *s3.Client
 	logger *log.Logger
 }
 
-func (c *Command) Execute(args []string) error {
+func (c *Command) Execute(args []string) (err error) {
 	if len(args) != 0 {
 		return fmt.Errorf("unknown positional arguments: %s", strings.Join(args, " "))
 	}
@@ -40,17 +37,6 @@ func (c *Command) Execute(args []string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer stop()
-
-	cfg, err := c.LoadDefaultConfig(ctx)
-	if err != nil {
-		return fmt.Errorf("load default config error:%w", err)
-	}
-
-	c.client = s3.NewFromConfig(cfg, func(options *s3.Options) {
-		// without this, getting a bunch of WARN message below:
-		// WARN Response has no supported checksum. Not validating response payload.
-		options.DisableLogOutputChecksumValidationSkipped = true
-	})
 
 	if c.DownloadManifests {
 		var count, n int
@@ -99,4 +85,18 @@ func (c *Command) Execute(args []string) error {
 
 	log.Printf("successfully downloaded %d/%d files", success, n)
 	return nil
+}
+
+func (c *Command) createClient(ctx context.Context, bucket string) (cfg internal.BucketConfig, client *s3.Client, err error) {
+	cfg = internal.ConfigForBucket(bucket)
+	client, err = util.NewS3ClientFromProfile(ctx, cfg.AWSProfile, func(opts *s3.Options) {
+		// without this, getting a bunch of WARN message below:
+		// WARN Response has no supported checksum. Not validating response payload.
+		opts.DisableLogOutputChecksumValidationSkipped = true
+	})
+	if err != nil {
+		return cfg, nil, fmt.Errorf("create s3 client error: %w", err)
+	}
+
+	return
 }

@@ -19,6 +19,9 @@ type DownloadOptions struct {
 	// S3ReaderOptions customises s3reader.Options.
 	S3ReaderOptions func(*s3reader.Options)
 
+	// ExpectedBucketOwner if given will be used for the relevant S3 HeadObject and GetObject calls.
+	ExpectedBucketOwner *string
+
 	// ExpectedChecksum provides an alternative checksum to verify against.
 	//
 	// By default, if the S3 object has metadata attribute named "checksum", its value will be used. ExpectedChecksum
@@ -36,7 +39,11 @@ func Download(ctx context.Context, client *s3.Client, bucket, key string, dst io
 	}
 
 	// headObject to see if there's a checksum to be used. the response's size is also used.
-	headObjectResult, err := client.HeadObject(ctx, &s3.HeadObjectInput{Bucket: &bucket, Key: &key})
+	headObjectResult, err := client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket:              &bucket,
+		Key:                 &key,
+		ExpectedBucketOwner: opts.ExpectedBucketOwner,
+	})
 	if err != nil {
 		return fmt.Errorf("head object error: %w", err)
 	}
@@ -44,7 +51,7 @@ func Download(ctx context.Context, client *s3.Client, bucket, key string, dst io
 	r, err := s3reader.NewReaderWithSize(
 		ctx,
 		client,
-		&s3.GetObjectInput{Bucket: &bucket, Key: &key},
+		&s3.GetObjectInput{Bucket: &bucket, Key: &key, ExpectedBucketOwner: opts.ExpectedBucketOwner},
 		aws.ToInt64(headObjectResult.ContentLength),
 		func(s3readerOpts *s3reader.Options) {
 			if opts.S3ReaderOptions != nil {

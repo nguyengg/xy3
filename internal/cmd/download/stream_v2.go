@@ -22,6 +22,15 @@ import (
 )
 
 func (c *Command) streamV2(ctx context.Context, man internal.Manifest) (bool, error) {
+	cfg, client, err := c.createClient(ctx, man.Bucket)
+	if err != nil {
+		return false, err
+	}
+	expectedBucketOwner := man.ExpectedBucketOwner
+	if expectedBucketOwner == nil {
+		expectedBucketOwner = cfg.ExpectedBucketOwner
+	}
+
 	// check for streaming eligibility by finding the ZIP headers.
 	headers, uncompressedSize, rootDir, err := c.canStream(ctx, man)
 	if err != nil {
@@ -62,10 +71,10 @@ func (c *Command) streamV2(ctx context.Context, man internal.Manifest) (bool, er
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
 
-	r, err := s3reader.New(ctx, c.client, &s3.GetObjectInput{
+	r, err := s3reader.New(ctx, client, &s3.GetObjectInput{
 		Bucket:              aws.String(man.Bucket),
 		Key:                 aws.String(man.Key),
-		ExpectedBucketOwner: man.ExpectedBucketOwner,
+		ExpectedBucketOwner: expectedBucketOwner,
 	})
 	if err != nil {
 		return true, err

@@ -19,14 +19,21 @@ func (c *Command) downloadManifests(ctx context.Context, s3Location string) (n i
 	if err != nil {
 		return 0, fmt.Errorf(`invalid s3 location "%s": %w`, s3Location, err)
 	}
+
+	cfg, client, err := c.createClient(ctx, bucket)
+	if err != nil {
+		return 0, err
+	}
+
 	var prefix *string
 	if key != "" {
 		prefix = &key
 	}
 
-	for paginator := s3.NewListObjectsV2Paginator(c.client, &s3.ListObjectsV2Input{
-		Bucket: aws.String(bucket),
-		Prefix: prefix,
+	for paginator := s3.NewListObjectsV2Paginator(client, &s3.ListObjectsV2Input{
+		Bucket:              aws.String(bucket),
+		Prefix:              prefix,
+		ExpectedBucketOwner: cfg.ExpectedBucketOwner,
 	}); paginator.HasMorePages(); {
 		page, err := paginator.NextPage(ctx)
 		if err != nil {
@@ -34,19 +41,21 @@ func (c *Command) downloadManifests(ctx context.Context, s3Location string) (n i
 		}
 
 		for _, obj := range page.Contents {
-			headObjectResult, err := c.client.HeadObject(ctx, &s3.HeadObjectInput{
-				Bucket: aws.String(bucket),
-				Key:    obj.Key,
+			headObjectResult, err := client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket:              aws.String(bucket),
+				Key:                 obj.Key,
+				ExpectedBucketOwner: cfg.ExpectedBucketOwner,
 			})
 			if err != nil {
 				return n, fmt.Errorf(`get metadata about "%s" error: %w`, aws.ToString(obj.Key), err)
 			}
 
 			m := internal.Manifest{
-				Bucket:   bucket,
-				Key:      aws.ToString(obj.Key),
-				Size:     aws.ToInt64(obj.Size),
-				Checksum: headObjectResult.Metadata["checksum"],
+				Bucket:              bucket,
+				Key:                 aws.ToString(obj.Key),
+				Size:                aws.ToInt64(obj.Size),
+				ExpectedBucketOwner: cfg.ExpectedBucketOwner,
+				Checksum:            headObjectResult.Metadata["checksum"],
 			}
 
 			f, err := os.OpenFile(path.Base(m.Key)+".s3", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)

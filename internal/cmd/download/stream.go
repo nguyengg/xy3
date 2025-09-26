@@ -23,10 +23,19 @@ import (
 )
 
 func (c *Command) canStream(ctx context.Context, man internal.Manifest) (headers []zipper.CDFileHeader, uncompressedSize uint64, rootDir internal.RootDir, err error) {
-	r, err := s3reader.New(ctx, c.client, &s3.GetObjectInput{
+	cfg, client, err := c.createClient(ctx, man.Bucket)
+	if err != nil {
+		return headers, uncompressedSize, rootDir, err
+	}
+	expectedBucketOwner := man.ExpectedBucketOwner
+	if expectedBucketOwner == nil {
+		expectedBucketOwner = cfg.ExpectedBucketOwner
+	}
+
+	r, err := s3reader.New(ctx, client, &s3.GetObjectInput{
 		Bucket:              aws.String(man.Bucket),
 		Key:                 aws.String(man.Key),
-		ExpectedBucketOwner: man.ExpectedBucketOwner,
+		ExpectedBucketOwner: expectedBucketOwner,
 	})
 	if err != nil {
 		return nil, 0, "", err
@@ -58,6 +67,15 @@ func (c *Command) canStream(ctx context.Context, man internal.Manifest) (headers
 }
 
 func (c *Command) stream(ctx context.Context, man internal.Manifest) (bool, error) {
+	cfg, client, err := c.createClient(ctx, man.Bucket)
+	if err != nil {
+		return false, err
+	}
+	expectedBucketOwner := man.ExpectedBucketOwner
+	if expectedBucketOwner == nil {
+		expectedBucketOwner = cfg.ExpectedBucketOwner
+	}
+
 	// check for streaming eligibility by finding the ZIP headers.
 	headers, uncompressedSize, rootDir, err := c.canStream(ctx, man)
 	if err != nil {
@@ -105,10 +123,10 @@ func (c *Command) stream(ctx context.Context, man internal.Manifest) (bool, erro
 	go func() {
 		defer pw.Close()
 
-		r, err := s3reader.New(ctx, c.client, &s3.GetObjectInput{
+		r, err := s3reader.New(ctx, client, &s3.GetObjectInput{
 			Bucket:              aws.String(man.Bucket),
 			Key:                 aws.String(man.Key),
-			ExpectedBucketOwner: man.ExpectedBucketOwner,
+			ExpectedBucketOwner: expectedBucketOwner,
 		}, func(opts *s3reader.Options) {
 			if c.MaxConcurrency > 0 {
 				opts.Concurrency = c.MaxConcurrency

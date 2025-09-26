@@ -37,7 +37,6 @@ type BucketConfig struct {
 	Bucket              string
 	AWSProfile          string
 	ExpectedBucketOwner *string
-	SecretId            *string
 	StorageClass        types.StorageClass
 }
 
@@ -58,9 +57,6 @@ func ConfigForBucket(bucket string) (c BucketConfig) {
 	c.AWSProfile = sec.Key("aws-profile").Value()
 	if k := sec.Key("expected-bucket-owner"); k != nil {
 		c.ExpectedBucketOwner = aws.String(k.Value())
-	}
-	if k := sec.Key("secret-id"); k != nil {
-		c.SecretId = aws.String(k.Value())
 	}
 	if k := sec.Key("storage-class"); k != nil {
 		c.StorageClass = types.StorageClass(k.Value())
