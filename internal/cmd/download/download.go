@@ -29,25 +29,31 @@ func (c *Command) downloadFromManifest(ctx context.Context, manifestName string)
 	if err != nil {
 		return fmt.Errorf("create file error: %w", err)
 	}
+	defer f.Close()
+
 	name := f.Name()
 
-	if err, _ = xy3.Download(ctx, client, man.Bucket, man.Key, f, func(opts *xy3.DownloadOptions) {
-		if opts.ExpectedBucketOwner = man.ExpectedBucketOwner; opts.ExpectedBucketOwner == nil {
-			opts.ExpectedBucketOwner = cfg.ExpectedBucketOwner
-		}
-		opts.ExpectedChecksum = man.Checksum
-		opts.S3ReaderOptions = func(opts *s3reader.Options) {
-			if c.MaxConcurrency > 0 {
+	err = xy3.Download(
+		ctx,
+		client,
+		man.Bucket,
+		man.Key,
+		f,
+		xy3.WithExpectedBucketOwner(internal.FirstNonNil(man.ExpectedBucketOwner, cfg.ExpectedBucketOwner)),
+		func(opts *xy3.DownloadOptions) {
+			opts.S3ReaderOptions = func(opts *s3reader.Options) {
 				opts.Concurrency = c.MaxConcurrency
 			}
-		}
-	}), f.Close(); err != nil {
-		if _, ok := xy3.IsErrChecksumMismatch(err); ok {
-			c.logger.Print(err)
-		} else {
-			_ = os.Remove(name)
+
+			opts.ExpectedChecksum = man.Checksum
+		})
+	if err != nil {
+		if _, ok := xy3.IsErrChecksumMismatch(err); !ok {
+			_, _ = f.Close(), os.Remove(name)
 			return err
 		}
+
+		c.logger.Print(err)
 	}
 
 	if c.NoExtract {
@@ -58,7 +64,7 @@ func (c *Command) downloadFromManifest(ctx context.Context, manifestName string)
 }
 
 func (c *Command) downloadFromS3(ctx context.Context, s3Uri string) error {
-	bucket, key, err := util.ParseS3URI(s3Uri)
+	bucket, key, err := internal.ParseS3URI(s3Uri)
 	if err != nil {
 		return fmt.Errorf(`invalid s3 URI "%s": %w`, s3Uri, err)
 	}
@@ -75,22 +81,29 @@ func (c *Command) downloadFromS3(ctx context.Context, s3Uri string) error {
 	if err != nil {
 		return fmt.Errorf("create file error: %w", err)
 	}
+	defer f.Close()
+
 	name := f.Name()
 
-	if err, _ = xy3.Download(ctx, client, bucket, key, f, func(opts *xy3.DownloadOptions) {
-		opts.ExpectedBucketOwner = cfg.ExpectedBucketOwner
-		opts.S3ReaderOptions = func(opts *s3reader.Options) {
-			if c.MaxConcurrency > 0 {
+	err = xy3.Download(
+		ctx,
+		client,
+		bucket,
+		key,
+		f,
+		xy3.WithExpectedBucketOwner(cfg.ExpectedBucketOwner),
+		func(opts *xy3.DownloadOptions) {
+			opts.S3ReaderOptions = func(opts *s3reader.Options) {
 				opts.Concurrency = c.MaxConcurrency
 			}
-		}
-	}), f.Close(); err != nil {
-		if _, ok := xy3.IsErrChecksumMismatch(err); ok {
-			c.logger.Print(err)
-		} else {
-			_ = os.Remove(name)
+		})
+	if err != nil {
+		if _, ok := xy3.IsErrChecksumMismatch(err); !ok {
+			_, _ = f.Close(), os.Remove(name)
 			return err
 		}
+
+		c.logger.Print(err)
 	}
 
 	if c.NoExtract {

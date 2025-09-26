@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jessevdk/go-flags"
+	"github.com/nguyengg/go-aws-commons/s3reader"
 	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/util"
@@ -39,7 +40,7 @@ func (c *Recompress) Execute(args []string) (err error) {
 	// if MoveTo is specified, parse and validate them first.
 	var bucket, prefix string
 	if c.MoveTo != "" {
-		if bucket, prefix, err = util.ParseS3URI(c.MoveTo); err != nil {
+		if bucket, prefix, err = internal.ParseS3URI(c.MoveTo); err != nil {
 			return fmt.Errorf("invalid MoveTo: %w", err)
 		}
 	}
@@ -48,7 +49,7 @@ func (c *Recompress) Execute(args []string) (err error) {
 	defer stop()
 
 	c.uploadCfg = internal.ConfigForBucket(bucket)
-	c.uploadClient, err = util.NewS3ClientFromProfile(ctx, c.uploadCfg.AWSProfile)
+	c.uploadClient, err = internal.NewS3ClientFromProfile(ctx, c.uploadCfg.AWSProfile)
 	if err != nil {
 		return fmt.Errorf("create s3 client error: %w", err)
 	}
@@ -81,14 +82,11 @@ func (c *Recompress) recompress(ctx context.Context, originalManifestName, moveT
 	if err != nil {
 		return fmt.Errorf("read manifest error: %w", err)
 	}
-	downloadExpectedBucketOwner := originalManifest.ExpectedBucketOwner
 
 	downloadCfg := internal.ConfigForBucket(originalManifest.Bucket)
-	if downloadExpectedBucketOwner == nil {
-		downloadExpectedBucketOwner = downloadCfg.ExpectedBucketOwner
-	}
+	downloadExpectedBucketOwner := internal.FirstNonNil(originalManifest.ExpectedBucketOwner, downloadCfg.ExpectedBucketOwner)
 
-	downloadClient, err := util.NewS3ClientFromProfile(ctx, downloadCfg.AWSProfile, func(options *s3.Options) {
+	downloadClient, err := internal.NewS3ClientFromProfile(ctx, downloadCfg.AWSProfile, func(options *s3.Options) {
 		// without this, getting a bunch of WARN message below:
 		// WARN Response has no supported checksum. Not validating response payload.
 		options.DisableLogOutputChecksumValidationSkipped = true
@@ -116,22 +114,34 @@ func (c *Recompress) recompress(ctx context.Context, originalManifestName, moveT
 	}()
 
 	// this is essentially download and extract mode.
+	// f.Close() will be called right after xy3.Download
 	f, err := os.CreateTemp(dir, stem+"-*"+ext)
 	if err != nil {
 		return fmt.Errorf("create original file error: %w", err)
 	}
 
-	if err, _ = xy3.Download(ctx, downloadClient, originalManifest.Bucket, originalManifest.Key, f, func(opts *xy3.DownloadOptions) {
-		if opts.ExpectedBucketOwner = originalManifest.ExpectedBucketOwner; opts.ExpectedBucketOwner == nil {
-			opts.ExpectedBucketOwner = downloadCfg.ExpectedBucketOwner
+	err = xy3.Download(
+		ctx,
+		downloadClient,
+		originalManifest.Bucket,
+		originalManifest.Key,
+		f,
+		xy3.WithExpectedBucketOwner(downloadExpectedBucketOwner),
+		func(opts *xy3.DownloadOptions) {
+			opts.S3ReaderOptions = func(s3readerOpts *s3reader.Options) {
+				s3readerOpts.Concurrency = 0
+			}
+
+			opts.ExpectedChecksum = originalManifest.Checksum
+		})
+	_ = f.Close()
+
+	if err != nil {
+		if _, ok := xy3.IsErrChecksumMismatch(err); !ok {
+			return err
 		}
-		opts.ExpectedChecksum = originalManifest.Checksum
-	}), f.Close(); err != nil {
-		if _, ok := xy3.IsErrChecksumMismatch(err); ok {
-			c.logger.Print(err)
-		} else {
-			return fmt.Errorf("download error: %w", err)
-		}
+
+		c.logger.Print(err)
 	}
 
 	// extract to a new directory inside the working directory.
@@ -160,10 +170,8 @@ func (c *Recompress) recompress(ctx context.Context, originalManifestName, moveT
 	// bucket and key might be new values if we're moving to a different location.
 	bucket := originalManifest.Bucket
 	key := path.Dir(originalManifest.Key) + stem + comp.ArchiveExt()
-	uploadExpectedBucketOwner := originalManifest.ExpectedBucketOwner
-	if uploadExpectedBucketOwner == nil {
-		uploadExpectedBucketOwner = downloadCfg.ExpectedBucketOwner
-	}
+	uploadExpectedBucketOwner := internal.FirstNonNil(originalManifest.ExpectedBucketOwner, downloadCfg.ExpectedBucketOwner)
+
 	if moveToBucket != "" {
 		bucket = moveToBucket
 		key = moveToPrefix + stem + comp.ArchiveExt()
@@ -172,8 +180,9 @@ func (c *Recompress) recompress(ctx context.Context, originalManifestName, moveT
 
 	newMan, err := xy3.Upload(ctx, c.uploadClient, f, bucket, key, func(opts *xy3.UploadOptions) {
 		opts.PutObjectInputOptions = func(input *s3.PutObjectInput) {
-			input.ContentType = aws.String(comp.ContentType())
 			input.ExpectedBucketOwner = uploadExpectedBucketOwner
+			input.ContentType = aws.String(comp.ContentType())
+			input.StorageClass = c.uploadCfg.StorageClass
 		}
 	})
 	_ = f.Close()

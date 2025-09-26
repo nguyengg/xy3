@@ -1,4 +1,4 @@
-package util
+package internal
 
 import (
 	"context"
@@ -76,4 +76,14 @@ func NewS3ClientFromProfile(ctx context.Context, profile string, optFns ...func(
 	c = s3.NewFromConfig(cfg, optFns...)
 	s3clientCache.Store(profile, c)
 	return
+}
+
+func FirstNonNil(a *string, b *string) *string {
+	if a != nil {
+		return a
+	}
+	if b != nil {
+		return b
+	}
+	return nil
 }

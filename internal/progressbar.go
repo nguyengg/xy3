@@ -1,4 +1,4 @@
-package util
+package internal
 
 import (
 	"io"
@@ -8,6 +8,7 @@ import (
 	"github.com/schollz/progressbar/v3"
 )
 
+// FileProgressBar creates a progress bar from the given file.
 func FileProgressBar(f *os.File, description string, options ...progressbar.Option) io.WriteCloser {
 	var size int64 = -1
 

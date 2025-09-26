@@ -19,6 +19,8 @@ import (
 //
 // The file is opened with flag `os.O_RDWR|os.O_CREATE|os.O_EXCL`. Caller is responsible for closing the file upon a
 // successful return. See MkExclDir for a dir equivalent.
+//
+// This method gives you a more predictable name over os.CreateTemp at the cost of performance and concurrency.
 func OpenExclFile(parent, stem, ext string, perm os.FileMode) (file *os.File, err error) {
 	name := filepath.Join(parent, stem+ext)
 	for i := 0; ; {
@@ -38,6 +40,8 @@ func OpenExclFile(parent, stem, ext string, perm os.FileMode) (file *os.File, er
 //
 // Stem is the desired name of the directory. The actual directory that is created might have numeric suffixes such as
 // stem-1, stem-2, etc. The return value "name" is the actual path to the newly created directory.
+//
+// This method gives you a more predictable name over os.MkdirTemp at the cost of performance and concurrency.
 func MkExclDir(parent, stem string, perm os.FileMode) (name string, err error) {
 	name = filepath.Join(parent, stem)
 	for i := 0; ; {

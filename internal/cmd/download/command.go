@@ -12,7 +12,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jessevdk/go-flags"
 	"github.com/nguyengg/xy3/internal"
-	"github.com/nguyengg/xy3/util"
 )
 
 type Command struct {
@@ -89,7 +88,7 @@ func (c *Command) Execute(args []string) (err error) {
 
 func (c *Command) createClient(ctx context.Context, bucket string) (cfg internal.BucketConfig, client *s3.Client, err error) {
 	cfg = internal.ConfigForBucket(bucket)
-	client, err = util.NewS3ClientFromProfile(ctx, cfg.AWSProfile, func(opts *s3.Options) {
+	client, err = internal.NewS3ClientFromProfile(ctx, cfg.AWSProfile, func(opts *s3.Options) {
 		// without this, getting a bunch of WARN message below:
 		// WARN Response has no supported checksum. Not validating response payload.
 		opts.DisableLogOutputChecksumValidationSkipped = true

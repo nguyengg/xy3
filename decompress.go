@@ -61,7 +61,7 @@ func decompress(ctx context.Context, name, dir string) (string, error) {
 	}
 	defer src.Close()
 
-	bar := util.FileProgressBar(src, fmt.Sprintf(`decompressing "%s"`, filepath.Base(name)))
+	bar := internal.FileProgressBar(src, fmt.Sprintf(`decompressing "%s"`, filepath.Base(name)))
 
 	r, err := cd.NewDecoder(io.TeeReader(src, bar))
 	if err != nil {

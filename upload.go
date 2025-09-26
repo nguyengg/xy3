@@ -9,7 +9,6 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/nguyengg/go-aws-commons/s3writer"
 	"github.com/nguyengg/go-aws-commons/tspb"
 	"github.com/nguyengg/xy3/internal"
@@ -20,9 +19,10 @@ import (
 type UploadOptions struct {
 	// S3WriterOptions customises s3writer.Options.
 	S3WriterOptions func(*s3writer.Options)
+
 	// PutObjectInputOptions can be used to modify the s3.PutObjectInput passed to s3writer.New.
 	//
-	// Useful if you need to add ExpectedBucketOwner or other customisations.
+	// Useful if you need to add ExpectedBucketOwner or other customisations such as StorageClass.
 	PutObjectInputOptions func(*s3.PutObjectInput)
 }
 
@@ -58,9 +58,8 @@ func Upload(ctx context.Context, client *s3.Client, src io.Reader, bucket, key s
 
 	// putObjectInput can be customised.
 	putObjectInput := &s3.PutObjectInput{
-		Bucket:       aws.String(bucket),
-		Key:          aws.String(key),
-		StorageClass: s3types.StorageClassIntelligentTiering,
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
 	}
 	if checksum != "" {
 		putObjectInput.Metadata = map[string]string{"checksum": checksum}
@@ -73,7 +72,7 @@ func Upload(ctx context.Context, client *s3.Client, src io.Reader, bucket, key s
 	// if checksum and/or size weren't computed back then, let's compute them now too.
 	var (
 		sizer       = &util.Sizer{}
-		checksummer = util.DefaultChecksum()
+		checksummer = internal.DefaultChecksum()
 		bar         io.WriteCloser
 	)
 
@@ -113,7 +112,7 @@ func Upload(ctx context.Context, client *s3.Client, src io.Reader, bucket, key s
 
 func computeChecksum(ctx context.Context, src io.Reader) (string, int64, error) {
 	sizer := &util.Sizer{}
-	checksummer := util.DefaultChecksum()
+	checksummer := internal.DefaultChecksum()
 
 	if f, ok := src.(*os.File); ok {
 		fi, err := f.Stat()

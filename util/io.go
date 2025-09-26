@@ -54,6 +54,7 @@ func CopyBufferWithContext(ctx context.Context, dst io.Writer, src io.Reader, bu
 
 // Sizer implements io.Writer that tallies that number of bytes written.
 type Sizer struct {
+	// Size is the total number of bytes that have been written to this io.Writer.
 	Size int64
 }
 

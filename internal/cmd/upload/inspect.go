@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/nguyengg/go-aws-commons/tspb"
+	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/util"
 )
 
@@ -26,7 +27,7 @@ func (c *Command) inspect(ctx context.Context, name string) (f *os.File, size in
 		size = fi.Size()
 	}
 
-	checksummer := util.DefaultChecksum()
+	checksummer := internal.DefaultChecksum()
 	bar := tspb.DefaultBytes(size, fmt.Sprintf(`computing checksum "%s"`, filepath.Base(name)))
 
 	// read first 512 bytes to detect content type.

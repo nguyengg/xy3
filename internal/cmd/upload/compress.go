@@ -9,6 +9,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/nguyengg/xy3"
+	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/util"
 )
 
@@ -27,7 +28,7 @@ func (c *Command) compressDir(ctx context.Context, dir string) (name string, siz
 	defer dst.Close()
 
 	sizer := &util.Sizer{}
-	checksummer := util.DefaultChecksum()
+	checksummer := internal.DefaultChecksum()
 
 	if err = xy3.CompressDir(ctx, dir, io.MultiWriter(dst, sizer, checksummer), func(opts *xy3.CompressOptions) {
 		opts.Algorithm = alg
