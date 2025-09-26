@@ -12,7 +12,6 @@ import (
 
 	"github.com/nguyengg/go-aws-commons/tspb"
 	"github.com/nguyengg/xy3/archive"
-	"github.com/nguyengg/xy3/codec"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/util"
 )
@@ -35,39 +34,19 @@ func Decompress(ctx context.Context, name, dir string, optFns ...func(*Decompres
 	}
 
 	if opts.NoExtract {
-		switch ext := filepath.Ext(name); ext {
-		case ".gz":
-			return decompress(ctx, name, dir, &codec.GzipCodec{})
-		case ".xz":
-			return decompress(ctx, name, dir, &codec.XzCodec{})
-		case ".zst":
-			return decompress(ctx, name, dir, &codec.ZstdCodec{})
-		default:
-			return "", fmt.Errorf("no decompression support for files with extension %s", ext)
-		}
+		return decompress(ctx, name, dir)
 	}
 
-	switch {
-	case strings.HasSuffix(name, ".tar"):
-		return extract(ctx, name, dir, &archive.Tar{})
-	case strings.HasSuffix(name, ".tar.gz"):
-		return extract(ctx, name, dir, &archive.Tar{Codec: &codec.GzipCodec{}})
-	case strings.HasSuffix(name, ".tar.xz"):
-		return extract(ctx, name, dir, &archive.Tar{Codec: &codec.XzCodec{}})
-	case strings.HasSuffix(name, ".tar.zst"):
-		return extract(ctx, name, dir, &archive.Tar{Codec: &codec.ZstdCodec{}})
-	case strings.HasSuffix(name, ".7z"):
-		return extract(ctx, name, dir, &archive.SevenZip{})
-	case strings.HasSuffix(name, ".rar"):
-		return extract(ctx, name, dir, &archive.Rar{})
-	case strings.HasSuffix(name, ".zip"):
-		return extract(ctx, name, dir, &archive.Zip{})
-	default:
-		return "", fmt.Errorf("no extraction support for archives with extension %s", filepath.Ext(name))
-	}
+	return extract(ctx, name, dir)
 }
 
-func decompress(ctx context.Context, name, dir string, cd codec.Codec) (string, error) {
+func decompress(ctx context.Context, name, dir string) (string, error) {
+	// use the file name extension to detect a codec.
+	cd := NewDecoderFromExt(filepath.Ext(name))
+	if cd == nil {
+		return "", fmt.Errorf(`no supported decompression algorithm for file "%s"`, filepath.Base(name))
+	}
+
 	// the name of the output file will be the original with the codec ext trimmed off.
 	stem, ext := util.StemAndExt(strings.TrimSuffix(name, cd.Ext()))
 	dst, err := util.OpenExclFile(dir, stem, ext, 0666)
@@ -104,9 +83,15 @@ func decompress(ctx context.Context, name, dir string, cd codec.Codec) (string, 
 	return dst.Name(), nil
 }
 
-func extract(ctx context.Context, name, dir string, archiver archive.Archiver) (string, error) {
+func extract(ctx context.Context, name, dir string) (string, error) {
+	// use the file's base name to detect a decompressor.
+	arc := NewDecompressorFromName(filepath.Base(name))
+	if arc == nil {
+		return "", fmt.Errorf(`no supported decompression algorithm for file "%s"`, filepath.Base(name))
+	}
+
 	// decompress and extract contents into a unique directory.
-	stem, _ := util.StemAndExt(strings.TrimSuffix(name, archiver.ArchiveExt()))
+	stem, _ := util.StemAndExt(strings.TrimSuffix(name, arc.ArchiveExt()))
 	target, err := util.MkExclDir(dir, stem, 0755)
 	if err != nil {
 		return "", fmt.Errorf("create output directory error: %w", err)
@@ -121,7 +106,7 @@ func extract(ctx context.Context, name, dir string, archiver archive.Archiver) (
 	}()
 
 	// first pass to find root dir and uncompressed size for progress report.
-	rootDir, uncompressedSize, err := findRootDir(ctx, name, archiver)
+	rootDir, uncompressedSize, err := findRootDir(ctx, name, arc)
 	if err != nil {
 		return "", fmt.Errorf("find root dir error: %w", err)
 	}
@@ -135,7 +120,7 @@ func extract(ctx context.Context, name, dir string, archiver archive.Archiver) (
 	}
 	defer src.Close()
 
-	files, err := archiver.Open(src)
+	files, err := arc.Open(src)
 	if err != nil {
 		return "", fmt.Errorf(`read archive "%s" error: %w`, name, err)
 	}
