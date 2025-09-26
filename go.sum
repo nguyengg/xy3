@@ -136,6 +136,8 @@ github.com/nguyengg/go-aws-commons/sri v0.1.0 h1:NuYDIWIGxpfqZ01VkNPwstDLdykoU/h
 github.com/nguyengg/go-aws-commons/sri v0.1.0/go.mod h1:TjOwNWKjGWfJpONPI+XUkxVczEC3xNPC79knv2ephWQ=
 github.com/nguyengg/go-aws-commons/tspb v0.1.2 h1:qqR0C4B96tcXTPtQ9u0HAVnCnK4/kdjyClQ3ncJxbsU=
 github.com/nguyengg/go-aws-commons/tspb v0.1.2/go.mod h1:2hlB+os3xBQMQOfTBZT/5BUWTUPIZzoXcK5wPPqcih4=
+github.com/nwaples/rardecode v1.1.3 h1:cWCaZwfM5H7nAD6PyEdcVnczzV8i/JtotnyW/dD9lEc=
+github.com/nwaples/rardecode v1.1.3/go.mod h1:5DzqNKiOdpKKBH87u8VlvAnPZMXcGRhxWkRpHbbfGS0=
 github.com/pierrec/lz4/v4 v4.1.22 h1:cKFw6uJDK+/gfw5BcDL0JL5aBsAFdsIT18eRtLj7VIU=
 github.com/pierrec/lz4/v4 v4.1.22/go.mod h1:gZWDp/Ze/IJXGXf23ltt2EXimqmTUXEy0GFuRQyBid4=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=

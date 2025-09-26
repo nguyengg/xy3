@@ -82,13 +82,17 @@ func fromZipReader(src io.Reader) (iter.Seq2[File, error], error) {
 			if err == io.EOF {
 				return
 			}
+			if err != nil {
+				yield(nil, err)
+				return
+			}
 
 			if !yield(&zipFile{
 				FileHeader: fh,
 				open: func() (io.ReadCloser, error) {
 					return io.NopCloser(zr), nil
 				},
-			}, err) || err != nil {
+			}, nil) {
 				return
 			}
 		}

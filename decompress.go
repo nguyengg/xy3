@@ -47,21 +47,23 @@ func Decompress(ctx context.Context, name, dir string, optFns ...func(*Decompres
 		}
 	}
 
-	switch _, ext := util.StemAndExt(name); ext {
-	case ".tar":
+	switch {
+	case strings.HasSuffix(name, ".tar"):
 		return extract(ctx, name, dir, &archive.Tar{})
-	case ".tar.gz":
+	case strings.HasSuffix(name, ".tar.gz"):
 		return extract(ctx, name, dir, &archive.Tar{Codec: &codec.GzipCodec{}})
-	case ".tar.xz":
+	case strings.HasSuffix(name, ".tar.xz"):
 		return extract(ctx, name, dir, &archive.Tar{Codec: &codec.XzCodec{}})
-	case ".tar.zst":
+	case strings.HasSuffix(name, ".tar.zst"):
 		return extract(ctx, name, dir, &archive.Tar{Codec: &codec.ZstdCodec{}})
-	case ".7z":
+	case strings.HasSuffix(name, ".7z"):
 		return extract(ctx, name, dir, &archive.SevenZip{})
-	case ".zip":
+	case strings.HasSuffix(name, ".rar"):
+		return extract(ctx, name, dir, &archive.Rar{})
+	case strings.HasSuffix(name, ".zip"):
 		return extract(ctx, name, dir, &archive.Zip{})
 	default:
-		return "", fmt.Errorf("no extraction support for archives with extension %s", ext)
+		return "", fmt.Errorf("no extraction support for archives with extension %s", filepath.Ext(name))
 	}
 }
 
