@@ -42,7 +42,7 @@ func (c *Command) downloadFromManifest(ctx context.Context, manifestName string)
 		xy3.WithExpectedBucketOwner(internal.FirstNonNil(man.ExpectedBucketOwner, cfg.ExpectedBucketOwner)),
 		func(opts *xy3.DownloadOptions) {
 			opts.S3ReaderOptions = func(opts *s3reader.Options) {
-				opts.Concurrency = c.MaxConcurrency
+				opts.MaxBytesInSecond = c.MaxBytesInSecond
 			}
 
 			opts.ExpectedChecksum = man.Checksum
@@ -94,7 +94,7 @@ func (c *Command) downloadFromS3(ctx context.Context, s3Uri string) error {
 		xy3.WithExpectedBucketOwner(cfg.ExpectedBucketOwner),
 		func(opts *xy3.DownloadOptions) {
 			opts.S3ReaderOptions = func(opts *s3reader.Options) {
-				opts.Concurrency = c.MaxConcurrency
+				opts.MaxBytesInSecond = c.MaxBytesInSecond
 			}
 		})
 	if err != nil {

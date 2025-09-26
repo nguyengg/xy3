@@ -15,9 +15,9 @@ import (
 )
 
 type Command struct {
-	DownloadManifests bool `long:"manifests" description:"if specified, the positional arguments must be come S3 locations in format s3://bucket/prefix (optional prefix) in order to download manifests of files found in those S3 location"`
-	NoExtract         bool `long:"no-extract" description:"if specified, the downloaded archives will not be automatically decompressed and extracted if it's an archive"`
-	MaxConcurrency    int  `short:"P" long:"max-concurrency" description:"use up to max-concurrency number of goroutines at a time for range downloads"`
+	DownloadManifests bool  `long:"manifests" description:"if specified, the positional arguments must be come S3 locations in format s3://bucket/prefix (optional prefix) in order to download manifests of files found in those S3 location"`
+	NoExtract         bool  `long:"no-extract" description:"if specified, the downloaded archives will not be automatically decompressed and extracted if it's an archive"`
+	MaxBytesInSecond  int64 `long:"throttle" description:"limits the number of bytes that are downloaded per second; the zero-value indicates no limit."`
 	Args              struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the local files each containing a single S3 URI; or S3 URI in format s3://bucket/key to download directly from S3; or S3 locations in format s3://bucket/prefix to download manifests (with --manifests)"`
 	} `positional-args:"yes"`
@@ -30,8 +30,8 @@ func (c *Command) Execute(args []string) (err error) {
 		return fmt.Errorf("unknown positional arguments: %s", strings.Join(args, " "))
 	}
 
-	if c.MaxConcurrency < 0 {
-		return fmt.Errorf("max-concurrency must be non-negative")
+	if c.MaxBytesInSecond < 0 {
+		return fmt.Errorf("--throttle must be non-negative")
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)

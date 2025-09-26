@@ -79,7 +79,7 @@ func (c *Command) upload(ctx context.Context, name string) error {
 		key,
 		func(uploadOpts *xy3.UploadOptions) {
 			uploadOpts.S3WriterOptions = func(s3writerOpts *s3writer.Options) {
-				s3writerOpts.Concurrency = c.MaxConcurrency
+				s3writerOpts.MaxBytesInSecond = c.MaxBytesInSecond
 			}
 
 			uploadOpts.PutObjectInputOptions = func(input *s3.PutObjectInput) {

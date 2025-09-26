@@ -16,9 +16,9 @@ import (
 )
 
 type Command struct {
-	S3Location     string `short:"u" long:"s3-location" description:"name of the S3 bucket and optional key prefix in format s3://bucket/prefix" value-name:"S3_LOCATION" required:"true"`
-	MaxConcurrency int    `short:"P" long:"max-concurrency" description:"use up to max-concurrency number of goroutines at a time for parallel uploads."`
-	Args           struct {
+	S3Location       string `short:"u" long:"s3-location" description:"name of the S3 bucket and optional key prefix in format s3://bucket/prefix" value-name:"S3_LOCATION" required:"true"`
+	MaxBytesInSecond int64  `long:"throttle" description:"limits the number of bytes that are uploaded in one second; the zero-value indicates no limit."`
+	Args             struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the local directories to be uploaded to S3 as archives." required:"yes"`
 	} `positional-args:"yes"`
 
@@ -33,8 +33,8 @@ func (c *Command) Execute(args []string) (err error) {
 		return fmt.Errorf("unknown positional arguments: %s", strings.Join(args, " "))
 	}
 
-	if c.MaxConcurrency < 0 {
-		return fmt.Errorf("max-concurrency must be non-negative")
+	if c.MaxBytesInSecond <= 0 {
+		return fmt.Errorf("--throttle must be non-negative")
 	}
 
 	c.bucket, c.prefix, err = internal.ParseS3URI(c.S3Location)

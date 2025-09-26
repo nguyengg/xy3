@@ -27,7 +27,6 @@ func (c *Command) compressDir(ctx context.Context, dir string) (name string, con
 
 	if err = xy3.CompressDir(ctx, dir, f, func(opts *xy3.CompressOptions) {
 		opts.Algorithm = alg
-		opts.MaxConcurrency = c.MaxConcurrency
 	}); err != nil {
 		_, _ = f.Close(), os.Remove(f.Name())
 		return "", nil, err
