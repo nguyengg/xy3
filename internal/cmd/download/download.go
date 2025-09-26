@@ -50,13 +50,11 @@ func (c *Command) downloadFromManifest(ctx context.Context, manifestName string)
 		}
 	}
 
-	if c.Extract {
-		if _, err = xy3.Decompress(ctx, name, "."); err == nil {
-			_ = os.Remove(name)
-		}
+	if c.NoExtract {
+		return nil
 	}
 
-	return err
+	return c.extract(ctx, name)
 }
 
 func (c *Command) downloadFromS3(ctx context.Context, s3Uri string) error {
@@ -95,7 +93,16 @@ func (c *Command) downloadFromS3(ctx context.Context, s3Uri string) error {
 		}
 	}
 
-	if c.Extract {
+	if c.NoExtract {
+		return nil
+	}
+
+	return c.extract(ctx, name)
+}
+
+func (c *Command) extract(ctx context.Context, name string) (err error) {
+	// if file is eligible for auto-extract then proceed to do so.
+	if cd := xy3.NewDecompressorFromName(name); cd != nil {
 		if _, err = xy3.Decompress(ctx, name, "."); err == nil {
 			_ = os.Remove(name)
 		}
