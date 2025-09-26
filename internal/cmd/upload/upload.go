@@ -3,12 +3,15 @@ package upload
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/nguyengg/go-aws-commons/s3writer"
+	"github.com/nguyengg/go-aws-commons/tspb"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/util"
 )
@@ -65,25 +68,35 @@ func (c *Command) upload(ctx context.Context, name string) error {
 
 	c.logger.Printf(`uploading to "s3://%s/%s"`, c.bucket, key)
 
+	storageClass := s3types.StorageClassIntelligentTiering
+	if c.cfg.StorageClass != "" {
+		storageClass = c.cfg.StorageClass
+	}
 	w, err := s3writer.New(ctx, c.client, &s3.PutObjectInput{
-		Bucket:       aws.String(c.bucket),
-		Key:          aws.String(key),
-		ContentType:  contentType,
-		StorageClass: s3types.StorageClassIntelligentTiering,
-		Metadata:     map[string]string{"checksum": checksum},
+		Bucket:              aws.String(c.bucket),
+		Key:                 aws.String(key),
+		ExpectedBucketOwner: c.cfg.ExpectedBucketOwner,
+		ContentType:         contentType,
+		StorageClass:        storageClass,
+		Metadata:            map[string]string{"checksum": checksum},
 	}, func(opts *s3writer.Options) {
 		if c.MaxConcurrency > 0 {
 			opts.Concurrency = c.MaxConcurrency
 		}
-	}, s3writer.WithProgressBar(size))
+	})
 	if err != nil {
 		return fmt.Errorf("create s3 writer error: %w", err)
 	}
-	if _, err = w.ReadFrom(f); err != nil {
+
+	bar := tspb.DefaultBytes(size, fmt.Sprintf(`uploading "%s"`, filepath.Base(name)))
+	closer := util.ChainCloser(w.Close, f.Close)
+
+	if _, err = f.WriteTo(io.MultiWriter(w, bar)); err != nil {
+		_ = closer()
 		return fmt.Errorf("upload to s3 error: %w", err)
 	}
-	if err = w.Close(); err != nil {
-		return fmt.Errorf("close s3 writer error: %w", err)
+	if err = closer(); err != nil {
+		return fmt.Errorf("complete uploading to s3 error: %w", err)
 	}
 
 	c.logger.Printf("done uploading")

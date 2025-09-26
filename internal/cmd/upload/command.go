@@ -13,7 +13,6 @@ import (
 	"github.com/jessevdk/go-flags"
 	"github.com/nguyengg/go-aws-commons/s3writer"
 	"github.com/nguyengg/xy3/internal"
-	"github.com/nguyengg/xy3/internal/cmd/awsconfig"
 	"github.com/nguyengg/xy3/util"
 )
 
@@ -24,9 +23,8 @@ type Command struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the local directories to be uploaded to S3 as archives." required:"yes"`
 	} `positional-args:"yes"`
 
-	awsconfig.ConfigLoaderMixin
-
 	bucket, prefix string
+	cfg            internal.BucketConfig
 	client         *s3.Client
 	logger         *log.Logger
 }
@@ -48,12 +46,11 @@ func (c *Command) Execute(args []string) (err error) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer stop()
 
-	cfg, err := c.LoadDefaultConfig(ctx)
+	c.cfg = internal.ConfigForBucket(c.bucket)
+	c.client, err = util.NewS3ClientFromProfile(ctx, c.cfg.AWSProfile)
 	if err != nil {
-		return fmt.Errorf("load default config error:%w", err)
+		return fmt.Errorf("create s3 client error: %w", err)
 	}
-
-	c.client = s3.NewFromConfig(cfg)
 
 	success := 0
 	n := len(c.Args.Files)
