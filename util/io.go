@@ -165,6 +165,10 @@ func (c *chainedError) Error() string {
 	return sb.String()
 }
 
-func (c *chainedError) Unwrap() error {
-	return c.next
+func (c *chainedError) Unwrap() []error {
+	if c.next == nil {
+		return []error{c.cause}
+	}
+
+	return []error{c.cause, c.next}
 }
