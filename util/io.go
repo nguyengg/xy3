@@ -2,8 +2,10 @@ package util
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"strings"
 )
 
 // CopyBufferWithContext is a custom implementation of io.CopyBuffer that is cancellable via context.
@@ -70,10 +72,10 @@ type resetOnCloseReadSeeker struct {
 	err    error
 }
 
-// ResetOnCloseReadSeeker will reset the original io.ReadSeeker's read offset to the original value upon closing.
+// ResetOnCloseReadSeeker will reset the src io.ReadSeeker's read offset to the original value upon closing.
 //
 // Error from capturing the original read offset will be returned by the Read, Seek, and Close methods to prevent
-// draining of the src io.ReadSeeker. Error from resetting the read offset will be returned by the Close method.
+// draining of the src io.ReadSeeker. Error from resetting the read offset will be returned only by the Close method.
 func ResetOnCloseReadSeeker(src io.ReadSeeker) io.ReadSeekCloser {
 	r := &resetOnCloseReadSeeker{src: src}
 	r.offset, r.err = src.Seek(0, io.SeekCurrent)
@@ -114,15 +116,55 @@ func (w *WriteNoopCloser) Close() error {
 	return nil
 }
 
-// ChainCloser makes sure all the close functions are called at least once, but will only return the first error.
-func ChainCloser(closeFns ...func() error) func() error {
-	return func() (err error) {
-		for _, fn := range closeFns {
-			if e := fn(); e != nil && err == nil {
-				err = e
+// ChainCloser makes sure all the close functions are called at least once and will return the first error that wraps
+// subsequent errors.
+//
+// The order of wrapping assumes the first close function is the most important.
+func ChainCloser(fn1 func() error, fn2 func() error, fns ...func() error) func() error {
+	return func() error {
+		err, err2 := fn1(), fn2()
+
+		if err2 != nil && err == nil {
+			err = err2
+		}
+
+		for _, fn := range fns {
+			if err2 = fn(); err2 != nil && err == nil {
+				err = err2
 			}
 		}
 
-		return
+		return err
 	}
+}
+
+type chainedError struct {
+	cause, next error
+}
+
+func (c *chainedError) Error() string {
+	next := c.next
+	if next == nil {
+		return c.cause.Error()
+	}
+
+	var sb strings.Builder
+	sb.WriteString(c.cause.Error())
+
+	for next != nil {
+		var ce *chainedError
+		if !errors.As(next, &ce) {
+			sb.WriteString(", " + next.Error())
+			break
+		}
+
+		sb.WriteString(", " + ce.cause.Error())
+		next = ce.next
+	}
+
+	return sb.String()
+}
+
+func (c *chainedError) Unwrap() error {
+	return c.next
 }

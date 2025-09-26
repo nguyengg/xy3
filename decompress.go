@@ -125,7 +125,7 @@ func extract(ctx context.Context, name, dir string) (string, error) {
 		return "", fmt.Errorf(`read archive "%s" error: %w`, name, err)
 	}
 
-	buf := make([]byte, defaultBufferSize)
+	buf := make([]byte, 32*1024)
 
 	for f, err := range files {
 		if err != nil {

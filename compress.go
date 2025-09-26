@@ -27,8 +27,6 @@ type CompressOptions struct {
 	MaxConcurrency int
 }
 
-const defaultBufferSize = 32 * 1024
-
 // CompressDir compresses the given root directory.
 func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(options *CompressOptions)) (err error) {
 	opts := &CompressOptions{
@@ -49,7 +47,7 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 		return err
 	}
 
-	buf := make([]byte, defaultBufferSize)
+	buf := make([]byte, 32*1024)
 
 	err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		select {
@@ -202,15 +200,4 @@ func compressDirProgressBar(dir string) (io.WriteCloser, error) {
 	}
 
 	return tspb.DefaultBytes(size, fmt.Sprintf(`compressing "%s"`, filepath.Base(dir))), nil
-}
-
-// archiver compresses a directory recursively.
-type archiver interface {
-	io.WriteCloser
-
-	// AddFile indicates subsequent calls to Write will be for compressing the file specified by src argument.
-	//
-	// The dst argument indicates the desired name of the file in archive. If this method is never called, the
-	// archiver can be used to compress a single file.
-	AddFile(src, dst string) error
 }
