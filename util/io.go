@@ -64,23 +64,45 @@ func (s *Sizer) Write(p []byte) (n int, err error) {
 	return
 }
 
-// ResettableReadSeeker saves the read offset of the given io.ReadSeeker, applies the callback, then resets the read
-// offset.
-func ResettableReadSeeker(r io.ReadSeeker, cb func(io.ReadSeeker) error) error {
-	offset, err := r.Seek(0, io.SeekCurrent)
-	if err != nil {
-		return fmt.Errorf("save read offset error: %w", err)
+type resetOnCloseReadSeeker struct {
+	src    io.ReadSeeker
+	offset int64
+	err    error
+}
+
+// ResetOnCloseReadSeeker will reset the original io.ReadSeeker's read offset to the original value upon closing.
+//
+// Error from capturing the original read offset will be returned by the Read, Seek, and Close methods to prevent
+// draining of the src io.ReadSeeker. Error from resetting the read offset will be returned by the Close method.
+func ResetOnCloseReadSeeker(src io.ReadSeeker) io.ReadSeekCloser {
+	r := &resetOnCloseReadSeeker{src: src}
+	r.offset, r.err = src.Seek(0, io.SeekCurrent)
+	return r
+}
+
+func (r *resetOnCloseReadSeeker) Read(p []byte) (n int, err error) {
+	if r.err != nil {
+		return 0, r.err
 	}
 
-	if err = cb(r); err != nil {
-		return err
+	return r.src.Read(p)
+}
+
+func (r *resetOnCloseReadSeeker) Seek(offset int64, whence int) (int64, error) {
+	if r.err != nil {
+		return r.offset, r.err
 	}
 
-	if _, err = r.Seek(offset, io.SeekStart); err != nil {
-		return fmt.Errorf("reset read offset error: %w", err)
+	return r.src.Seek(offset, whence)
+}
+
+func (r *resetOnCloseReadSeeker) Close() error {
+	if r.err != nil {
+		return r.err
 	}
 
-	return nil
+	_, r.err = r.Seek(r.offset, io.SeekStart)
+	return r.err
 }
 
 // WriteNoopCloser implements a no-op io.Closer for an io.Writer.

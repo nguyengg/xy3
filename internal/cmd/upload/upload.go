@@ -4,15 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
-	"path/filepath"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/nguyengg/go-aws-commons/s3writer"
-	"github.com/nguyengg/go-aws-commons/tspb"
-	"github.com/nguyengg/xy3/internal"
+	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/util"
 )
 
@@ -21,20 +18,18 @@ func (c *Command) upload(ctx context.Context, name string) error {
 	// if the latter is the case, the file will be deleted upon return.
 	var (
 		f           *os.File
-		size        int64
 		contentType *string
-		checksum    string
 	)
 
 	// name can either be a file or a directory, so use stat to determine what to do.
-	// if it's a directory, compressDir it and the resulting archive will be deleted upon return.
+	// if it's a directory, compress it and the resulting archive will be deleted upon return.
 	switch fi, err := os.Stat(name); {
 	case err != nil:
 		return fmt.Errorf(`stat file "%s" error: %w`, name, err)
 
 	case fi.IsDir():
 		var archiveName string
-		archiveName, size, contentType, checksum, err = c.compressDir(ctx, name)
+		archiveName, contentType, err = c.compressDir(ctx, name)
 		if err != nil {
 			return fmt.Errorf(`compress directory "%s" error: %w`, name, err)
 		}
@@ -49,54 +44,51 @@ func (c *Command) upload(ctx context.Context, name string) error {
 		}()
 
 	default:
-		f, size, contentType, checksum, err = c.inspect(ctx, name)
-		if err != nil {
-			return fmt.Errorf(`validate file "%s" error: %w`, name, err)
+		if f, err = os.Open(name); err != nil {
+			return fmt.Errorf(`open file "%s" error: %w`, name, err)
+		}
+		defer f.Close()
+
+		// read first 512 bytes to detect content type.
+		// if this won't produce a usable content type then let S3 decides it (which is probably going to be "binary/octet-stream").
+		data := make([]byte, 512)
+		if _, err = f.Read(data); err != nil {
+			return fmt.Errorf("read first 512 bytes error: %w", err)
 		}
 
-		defer f.Close()
+		if v := http.DetectContentType(data); v != "application/octet-stream" {
+			contentType = &v
+		}
+
+		if _, err = f.Seek(0, io.SeekStart); err != nil {
+			return fmt.Errorf(`seek start of "%s" error: %w`, name, err)
+		}
 	}
 
 	// use the name of the archive (in the case of directory) to have meaningful extensions.
 	stem, ext := util.StemAndExt(f.Name())
 	key := c.prefix + stem + ext
-	m := internal.Manifest{
-		Bucket: c.bucket,
-		Key:    key,
-		Size:   size,
-	}
 
 	c.logger.Printf(`uploading to "s3://%s/%s"`, c.bucket, key)
 
-	storageClass := s3types.StorageClassIntelligentTiering
-	if c.cfg.StorageClass != "" {
-		storageClass = c.cfg.StorageClass
-	}
-	w, err := s3writer.New(ctx, c.client, &s3.PutObjectInput{
-		Bucket:              aws.String(c.bucket),
-		Key:                 aws.String(key),
-		ExpectedBucketOwner: c.cfg.ExpectedBucketOwner,
-		ContentType:         contentType,
-		StorageClass:        storageClass,
-		Metadata:            map[string]string{"checksum": checksum},
-	}, func(opts *s3writer.Options) {
-		if c.MaxConcurrency > 0 {
-			opts.Concurrency = c.MaxConcurrency
-		}
-	})
+	man, err := xy3.Upload(
+		ctx,
+		c.client,
+		f,
+		c.bucket,
+		key,
+		func(uploadOpts *xy3.UploadOptions) {
+			uploadOpts.S3WriterOptions = func(s3writerOpts *s3writer.Options) {
+				s3writerOpts.Concurrency = c.MaxConcurrency
+			}
+
+			uploadOpts.PutObjectInputOptions = func(input *s3.PutObjectInput) {
+				input.ContentType = contentType
+				input.ExpectedBucketOwner = c.cfg.ExpectedBucketOwner
+			}
+		})
 	if err != nil {
-		return fmt.Errorf("create s3 writer error: %w", err)
-	}
-
-	bar := tspb.DefaultBytes(size, fmt.Sprintf(`uploading "%s"`, filepath.Base(name)))
-	closer := util.ChainCloser(w.Close, f.Close)
-
-	if _, err = f.WriteTo(io.MultiWriter(w, bar)); err != nil {
-		_ = closer()
-		return fmt.Errorf("upload to s3 error: %w", err)
-	}
-	if err = closer(); err != nil {
-		return fmt.Errorf("complete uploading to s3 error: %w", err)
+		return fmt.Errorf("upload error: %w", err)
 	}
 
 	c.logger.Printf("done uploading")
@@ -105,11 +97,12 @@ func (c *Command) upload(ctx context.Context, name string) error {
 	// to standard output so that they can be saved manually later.
 	mf, err := util.OpenExclFile(".", stem, ext+".s3", 0666)
 	if err != nil {
-		_ = m.SaveTo(os.Stdout)
+		_ = man.SaveTo(os.Stdout)
 		return fmt.Errorf("create manifest file error: %w", err)
 	}
-	if err, _ = m.SaveTo(mf), mf.Close(); err != nil {
-		_ = m.SaveTo(os.Stdout)
+
+	if err, _ = man.SaveTo(mf), mf.Close(); err != nil {
+		_ = man.SaveTo(os.Stdout)
 		return fmt.Errorf("write manifest error: %w", err)
 	}
 

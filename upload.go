@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/nguyengg/go-aws-commons/s3writer"
 	"github.com/nguyengg/go-aws-commons/tspb"
@@ -22,54 +21,40 @@ type UploadOptions struct {
 
 	// PutObjectInputOptions can be used to modify the s3.PutObjectInput passed to s3writer.New.
 	//
-	// Useful if you need to add ExpectedBucketOwner or other customisations such as StorageClass.
+	// Useful if you need to add ExpectedBucketOwner or StorageClass.
 	PutObjectInputOptions func(*s3.PutObjectInput)
 }
 
-// Upload uploads the given io.Reader contents to S3.
+// Upload uploads the given io.Reader contents to S3 and produces a manifest for the uploaded object.
+//
+// If src implements io.ReadSeeker, its checksum and size will be precomputed so that the checksum can be added to S3
+// metadata while the size will be used during progress report. The checksum and size included in the returned manifest
+// are computed during the second pass when uploading to S3. As a result, it is possible for the manifest's checksum to
+// be different from the S3 metadata checksum if the src io.Reader is not returning the same bytes for both passes.
+//
+// If src does not implement io.ReadSeeker, the checksum is only included in the returned manifest.
 func Upload(ctx context.Context, client *s3.Client, src io.Reader, bucket, key string, optFns ...func(*UploadOptions)) (man internal.Manifest, err error) {
 	opts := &UploadOptions{}
 	for _, fn := range optFns {
 		fn(opts)
 	}
 
-	man.Bucket = bucket
-	man.Key = key
+	man.Bucket, man.Key = bucket, key
+	putObjectInput := &s3.PutObjectInput{Bucket: &bucket, Key: &key}
 
 	// if src implements io.ReadSeeker then we can compute checksum first to add them as S3 metadata while also
 	// computing the size in order to provide better upload progress reporting.
-	// if not, we'll add the checksum to manifest instead.
-	var (
-		name, checksum string
-		size           int64 = -1
-	)
-	if rs, ok := src.(io.ReadSeeker); ok {
-		if f, ok := rs.(*os.File); ok {
-			name = f.Name()
-		}
-
-		if err = util.ResettableReadSeeker(rs, func(r io.ReadSeeker) error {
-			checksum, size, err = computeChecksum(ctx, r)
-			return err
-		}); err != nil {
-			return
-		}
-	}
-
-	// putObjectInput can be customised.
-	putObjectInput := &s3.PutObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
-	}
-	if checksum != "" {
-		putObjectInput.Metadata = map[string]string{"checksum": checksum}
+	// if not, we'll add the checksum only to manifest instead.
+	name, size, err := computeChecksum(ctx, src, putObjectInput)
+	if err != nil {
+		return man, fmt.Errorf("precompute checksum error: %w", err)
 	}
 	if opts.PutObjectInputOptions != nil {
 		opts.PutObjectInputOptions(putObjectInput)
 	}
 
+	// always compute size and checksum again as part of uploading.
 	// the progress bar can have known size or not, as well as known name or not.
-	// if checksum and/or size weren't computed back then, let's compute them now too.
 	var (
 		sizer       = &util.Sizer{}
 		checksummer = internal.DefaultChecksum()
@@ -89,9 +74,9 @@ func Upload(ctx context.Context, client *s3.Client, src io.Reader, bucket, key s
 		}
 	})
 	if err != nil {
-		_ = bar.Close()
 		return man, fmt.Errorf("create s3 writer error: %w", err)
 	}
+
 	_, err = w.ReadFrom(io.TeeReader(src, io.MultiWriter(bar, sizer, checksummer)))
 	_ = bar.Close()
 	if err != nil {
@@ -101,41 +86,49 @@ func Upload(ctx context.Context, client *s3.Client, src io.Reader, bucket, key s
 		return man, fmt.Errorf("close s3 writer error: %w", err)
 	}
 
-	if checksum == "" {
-		checksum = checksummer.SumToString(nil)
-	}
-
 	man.Size = sizer.Size
-	man.Checksum = checksum
+	man.Checksum = checksummer.SumToString(nil)
 	return
 }
 
-func computeChecksum(ctx context.Context, src io.Reader) (string, int64, error) {
-	sizer := &util.Sizer{}
-	checksummer := internal.DefaultChecksum()
-
-	if f, ok := src.(*os.File); ok {
-		fi, err := f.Stat()
-		if err != nil {
-			return "", 0, fmt.Errorf(`stat file "%s" error: %w`, f.Name(), err)
-		}
-
-		bar := tspb.DefaultBytes(fi.Size(), fmt.Sprintf(`computing checksum of "%s"`, filepath.Base(f.Name())))
-		_, err = util.CopyBufferWithContext(ctx, io.MultiWriter(sizer, checksummer), io.TeeReader(f, bar), nil)
-		_ = bar.Close()
-		if err != nil {
-			return "", 0, fmt.Errorf(`compute checksum of "%s" error: %w`, f.Name(), err)
-		}
-
-		return checksummer.SumToString(nil), sizer.Size, nil
+func computeChecksum(ctx context.Context, src io.Reader, input *s3.PutObjectInput) (name string, size int64, err error) {
+	rs, ok := src.(io.ReadSeeker)
+	if !ok {
+		return "", -1, nil
 	}
 
-	bar := tspb.DefaultBytes(-1, "computing checksum")
-	_, err := util.CopyBufferWithContext(ctx, io.MultiWriter(sizer, checksummer), io.TeeReader(src, bar), nil)
-	_ = bar.Close()
+	if f, ok := rs.(*os.File); ok {
+		name = f.Name()
+
+		if fi, err := f.Stat(); err != nil {
+			return name, -1, fmt.Errorf(`stat file "%s" error: %w`, f.Name(), err)
+		} else {
+			size = fi.Size()
+		}
+	}
+
+	var (
+		sizer       = &util.Sizer{}
+		checksummer = internal.DefaultChecksum()
+		bar         io.WriteCloser
+	)
+
+	if name != "" {
+		bar = tspb.DefaultBytes(size, fmt.Sprintf(`computing checksum of "%s"`, filepath.Base(name)))
+	} else {
+		bar = tspb.DefaultBytes(size, "computing checksum")
+	}
+
+	rsc := util.ResetOnCloseReadSeeker(rs)
+	_, err = util.CopyBufferWithContext(ctx, io.MultiWriter(sizer, checksummer), io.TeeReader(rsc, bar), nil)
+	if err == nil {
+		err = rsc.Close()
+	}
 	if err != nil {
-		return "", 0, fmt.Errorf("compute checksum error: %w", err)
+		return name, size, err
 	}
 
-	return checksummer.SumToString(nil), sizer.Size, nil
+	size = sizer.Size
+	input.Metadata = map[string]string{"checksum": checksummer.SumToString(nil)}
+	return
 }
