@@ -78,6 +78,10 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 				return fmt.Errorf(`stat file "%s" error: %w`, path, err)
 			}
 
+			if path, err = filepath.Rel(dir, path); err != nil {
+				return fmt.Errorf(`compute file "%s" path in archive error: %w`, path, err)
+			}
+
 			w, err := add(path, fi)
 			if err != nil {
 				return fmt.Errorf(`create archive file "%s" error: %w`, path, err)
