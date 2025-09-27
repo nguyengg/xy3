@@ -17,6 +17,7 @@ import (
 	"github.com/nguyengg/go-aws-commons/s3reader"
 	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
+	"github.com/nguyengg/xy3/internal/config"
 	"github.com/nguyengg/xy3/util"
 )
 
@@ -27,7 +28,7 @@ type Recompress struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the local files each containing a single S3 URI" required:"yes"`
 	} `positional-args:"yes"`
 
-	uploadCfg    internal.BucketConfig
+	uploadCfg    config.BucketConfig
 	uploadClient *s3.Client
 	logger       *log.Logger
 }
@@ -48,7 +49,11 @@ func (c *Recompress) Execute(args []string) (err error) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer stop()
 
-	c.uploadCfg = internal.ConfigForBucket(bucket)
+	if _, err = config.Load(ctx); err != nil {
+		return fmt.Errorf("load config error: %w", err)
+	}
+
+	c.uploadCfg = config.ForBucket(bucket)
 	c.uploadClient, err = internal.NewS3ClientFromProfile(ctx, c.uploadCfg.AWSProfile)
 	if err != nil {
 		return fmt.Errorf("create s3 client error: %w", err)
@@ -83,7 +88,7 @@ func (c *Recompress) recompress(ctx context.Context, originalManifestName, moveT
 		return fmt.Errorf("read manifest error: %w", err)
 	}
 
-	downloadCfg := internal.ConfigForBucket(originalManifest.Bucket)
+	downloadCfg := config.ForBucket(originalManifest.Bucket)
 	downloadExpectedBucketOwner := internal.FirstNonNil(originalManifest.ExpectedBucketOwner, downloadCfg.ExpectedBucketOwner)
 
 	downloadClient, err := internal.NewS3ClientFromProfile(ctx, downloadCfg.AWSProfile, func(options *s3.Options) {

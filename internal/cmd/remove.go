@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jessevdk/go-flags"
 	"github.com/nguyengg/xy3/internal"
+	"github.com/nguyengg/xy3/internal/config"
 )
 
 type Remove struct {
@@ -95,7 +96,7 @@ func (c *Remove) remove(ctx context.Context, name string) error {
 		return err
 	}
 
-	cfg := internal.ConfigForBucket(man.Bucket)
+	cfg := config.ForBucket(man.Bucket)
 	client, err := internal.NewS3ClientFromProfile(ctx, cfg.AWSProfile)
 	if err != nil {
 		return fmt.Errorf("create s3 client error: %w", err)

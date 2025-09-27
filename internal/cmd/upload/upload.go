@@ -85,6 +85,7 @@ func (c *Command) upload(ctx context.Context, name string) error {
 			uploadOpts.PutObjectInputOptions = func(input *s3.PutObjectInput) {
 				input.ContentType = contentType
 				input.ExpectedBucketOwner = c.cfg.ExpectedBucketOwner
+				input.StorageClass = c.cfg.StorageClass
 			}
 		})
 	if err != nil {

@@ -13,17 +13,17 @@ import (
 	"github.com/jessevdk/go-flags"
 	"github.com/nguyengg/go-aws-commons/s3writer"
 	"github.com/nguyengg/xy3/internal"
+	"github.com/nguyengg/xy3/internal/config"
 )
 
 type Command struct {
-	S3Location       string `short:"u" long:"s3-location" description:"name of the S3 bucket and optional key prefix in format s3://bucket/prefix" value-name:"S3_LOCATION" required:"true"`
-	MaxBytesInSecond int64  `long:"throttle" description:"limits the number of bytes that are uploaded in one second; the zero-value indicates no limit."`
+	MaxBytesInSecond int64 `long:"throttle" description:"limits the number of bytes that are uploaded in one second; the zero-value indicates no limit."`
 	Args             struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the local directories to be uploaded to S3 as archives." required:"yes"`
 	} `positional-args:"yes"`
 
 	bucket, prefix string
-	cfg            internal.BucketConfig
+	cfg            config.BucketConfig
 	client         *s3.Client
 	logger         *log.Logger
 }
@@ -33,19 +33,25 @@ func (c *Command) Execute(args []string) (err error) {
 		return fmt.Errorf("unknown positional arguments: %s", strings.Join(args, " "))
 	}
 
-	if c.MaxBytesInSecond <= 0 {
+	if c.MaxBytesInSecond < 0 {
 		return fmt.Errorf("--throttle must be non-negative")
-	}
-
-	c.bucket, c.prefix, err = internal.ParseS3URI(c.S3Location)
-	if err != nil {
-		return fmt.Errorf(`invalid s3 uri "%s": %w`, c.S3Location, err)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer stop()
 
-	c.cfg = internal.ConfigForBucket(c.bucket)
+	if _, err = config.Load(ctx); err != nil {
+		return fmt.Errorf("load config error: %w", err)
+	}
+
+	uCfg := config.ForUpload()
+	if uCfg.Bucket == "" {
+		return fmt.Errorf("no bucket configuration in .xy3")
+	}
+	c.bucket = uCfg.Bucket
+	c.prefix = uCfg.Prefix
+
+	c.cfg = config.ForBucket(c.bucket)
 	c.client, err = internal.NewS3ClientFromProfile(ctx, c.cfg.AWSProfile)
 	if err != nil {
 		return fmt.Errorf("create s3 client error: %w", err)
