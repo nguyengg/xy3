@@ -35,6 +35,10 @@ func (c *Remove) Execute(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer stop()
 
+	if _, err := config.Load(ctx); err != nil {
+		return fmt.Errorf("load config error: %w", err)
+	}
+
 	// to prevent accidental download, prompt for each file.
 	prompt := true
 	reader := bufio.NewReader(os.Stdin)
@@ -101,9 +105,25 @@ func (c *Remove) remove(ctx context.Context, name string) error {
 	if err != nil {
 		return fmt.Errorf("create s3 client error: %w", err)
 	}
-	expectedBucketOwner := man.ExpectedBucketOwner
-	if expectedBucketOwner == nil {
-		expectedBucketOwner = cfg.ExpectedBucketOwner
+	expectedBucketOwner := internal.FirstNonNil(man.ExpectedBucketOwner, cfg.ExpectedBucketOwner)
+
+	// headObject first just in case.
+	if _, err = client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket:              &man.Bucket,
+		Key:                 &man.Bucket,
+		ExpectedBucketOwner: expectedBucketOwner,
+	}); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return err
+		}
+
+		var re *http.ResponseError
+		if errors.As(err, &re) && re.HTTPStatusCode() == 404 {
+			logger.Printf("s3 file no longer exists")
+			return nil
+		}
+
+		logger.Printf("check s3 object metadata error: %v", err)
 	}
 
 	logger.Printf(`deleting "s3://%s/%s"`, man.Bucket, man.Key)
