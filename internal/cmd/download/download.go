@@ -56,11 +56,13 @@ func (c *Command) downloadFromManifest(ctx context.Context, manifestName string)
 		c.logger.Print(err)
 	}
 
-	if c.NoExtract {
-		return nil
+	if !c.NoExtract {
+		if err = c.extract(ctx, name); err == nil {
+			_, _ = f.Close(), os.Remove(name)
+		}
 	}
 
-	return c.extract(ctx, name)
+	return err
 }
 
 func (c *Command) downloadFromS3(ctx context.Context, s3Uri string) error {
@@ -106,17 +108,20 @@ func (c *Command) downloadFromS3(ctx context.Context, s3Uri string) error {
 		c.logger.Print(err)
 	}
 
-	if c.NoExtract {
-		return nil
+	if !c.NoExtract {
+		if err = c.extract(ctx, name); err == nil {
+			_, _ = f.Close(), os.Remove(name)
+		}
 	}
 
-	return c.extract(ctx, name)
+	return err
 }
 
 func (c *Command) extract(ctx context.Context, name string) (err error) {
 	// if file is eligible for auto-extract then proceed to do so.
 	if cd := xy3.NewDecompressorFromName(name); cd != nil {
 		if _, err = xy3.Decompress(ctx, name, "."); err == nil {
+			c.logger.Printf(`deleting temporary archive "%s"`, name)
 			_ = os.Remove(name)
 		}
 	}
