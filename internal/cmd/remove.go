@@ -113,7 +113,7 @@ func (c *Remove) remove(ctx context.Context, name string) error {
 	// headObject first just in case.
 	if _, err = client.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket:              &man.Bucket,
-		Key:                 &man.Bucket,
+		Key:                 &man.Key,
 		ExpectedBucketOwner: expectedBucketOwner,
 	}); err != nil {
 		if errors.Is(err, context.Canceled) {
