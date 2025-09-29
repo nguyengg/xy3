@@ -13,17 +13,19 @@ import (
 	"github.com/nguyengg/xy3/util"
 )
 
-func (c *Command) upload(ctx context.Context, name string) error {
+func (c *Command) upload(ctx context.Context, name string) (err error) {
 	// f will be either name opened as-is, or a new archive created from compressing directory with that name.
 	// if the latter is the case, the file will be deleted upon return.
 	var (
 		f           *os.File
+		fi          os.FileInfo
 		contentType *string
+		success     bool
 	)
 
 	// name can either be a file or a directory, so use stat to determine what to do.
 	// if it's a directory, compress it and the resulting archive will be deleted upon return.
-	switch fi, err := os.Stat(name); {
+	switch fi, err = os.Stat(name); {
 	case err != nil:
 		return fmt.Errorf(`stat file "%s" error: %w`, name, err)
 
@@ -41,13 +43,27 @@ func (c *Command) upload(ctx context.Context, name string) error {
 
 		defer func() {
 			_, _ = f.Close(), os.Remove(archiveName)
+
+			if success && c.Delete {
+				if err = os.RemoveAll(name); err != nil {
+					c.logger.Printf(`delete directory "%s" error: %v`, name, err)
+				}
+			}
 		}()
 
 	default:
 		if f, err = os.Open(name); err != nil {
 			return fmt.Errorf(`open file "%s" error: %w`, name, err)
 		}
-		defer f.Close()
+		defer func() {
+			_ = f.Close()
+
+			if success && c.Delete {
+				if err = os.Remove(name); err != nil {
+					c.logger.Printf(`delete file "%s" error: %v`, name, err)
+				}
+			}
+		}()
 
 		// read first 512 bytes to detect content type.
 		// if this won't produce a usable content type then let S3 decides it (which is probably going to be "binary/octet-stream").
@@ -109,5 +125,6 @@ func (c *Command) upload(ctx context.Context, name string) error {
 
 	c.logger.Printf(`wrote to manifest "%s"`, mf.Name())
 
+	success = true
 	return nil
 }

@@ -17,6 +17,7 @@ import (
 )
 
 type Command struct {
+	Delete           bool  `long:"delete" description:"if specified, delete the original files or directories that were successfully compressed and uploaded."`
 	MaxBytesInSecond int64 `long:"throttle" description:"limits the number of bytes that are uploaded in one second; the zero-value indicates no limit."`
 	Args             struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the local directories to be uploaded to S3 as archives." required:"yes"`

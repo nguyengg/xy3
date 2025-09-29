@@ -19,6 +19,7 @@ import (
 
 type Compress struct {
 	Algorithm      string `short:"a" long:"algorithm" choice:"zstd" choice:"zip" choice:"gzip" choice:"xz" default:"zstd"`
+	Delete         bool   `long:"delete" description:"if specified, delete the original files or directories that were successfully compressed and uploaded."`
 	MaxConcurrency int    `short:"P" long:"max-concurrency"`
 	Args           struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the files/directories to be compressed" required:"yes"`
@@ -61,6 +62,7 @@ func (c *Compress) Execute(args []string) (err error) {
 func (c *Compress) compress(ctx context.Context, name string) error {
 	comp := xy3.NewCompressorFromName(c.Algorithm)
 	ext := comp.ArchiveExt()
+	success := false
 
 	switch fi, err := os.Stat(name); {
 	case err != nil:
@@ -71,7 +73,15 @@ func (c *Compress) compress(ctx context.Context, name string) error {
 		if err != nil {
 			return fmt.Errorf("create archive error: %w", err)
 		}
-		defer dst.Close()
+		defer func() {
+			_ = dst.Close()
+
+			if success && c.Delete {
+				if err = os.RemoveAll(name); err != nil {
+					c.logger.Printf(`delete directory "%s" error: %v`, name, err)
+				}
+			}
+		}()
 
 		if err = xy3.CompressDir(ctx, name, dst, func(opts *xy3.CompressOptions) {
 			opts.Algorithm = c.Algorithm
@@ -98,7 +108,15 @@ func (c *Compress) compress(ctx context.Context, name string) error {
 		if err != nil {
 			return fmt.Errorf("create output file error: %w", err)
 		}
-		defer dst.Close()
+		defer func() {
+			_ = dst.Close()
+
+			if success && c.Delete {
+				if err = os.Remove(name); err != nil {
+					c.logger.Printf(`delete file "%s" error: %v`, name, err)
+				}
+			}
+		}()
 
 		src, err := os.Open(name)
 		if err != nil {
@@ -125,5 +143,6 @@ func (c *Compress) compress(ctx context.Context, name string) error {
 		}
 	}
 
+	success = true
 	return nil
 }
