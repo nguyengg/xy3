@@ -22,7 +22,7 @@ import (
 )
 
 type Recompress struct {
-	Profile   string `long:"profile" description:"the AWS profile to use; takes precedence over .xy3 aws-profile setting"`
+	Profile   string `long:"profile" description:"the AWS profile to use; takes precedence over .xy3 setting"`
 	Algorithm string `short:"a" long:"algorithm" choice:"zstd" choice:"zip" choice:"gzip" choice:"xz" default:"zstd"`
 	MoveTo    string `long:"move-to" description:"if present in format s3://bucket/prefix, the new archive will be uploaded to this S3 bucket and optional key prefix instead" value-name:"S3_LOCATION"`
 	Args      struct {
@@ -43,7 +43,7 @@ func (c *Recompress) Execute(args []string) (err error) {
 	var bucket, prefix string
 	if c.MoveTo != "" {
 		if bucket, prefix, err = internal.ParseS3URI(c.MoveTo); err != nil {
-			return fmt.Errorf("invalid MoveTo: %w", err)
+			return fmt.Errorf("invalid --move-to: %w", err)
 		}
 	}
 

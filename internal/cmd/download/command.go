@@ -16,7 +16,7 @@ import (
 )
 
 type Command struct {
-	Profile           string `long:"profile" description:"the AWS profile to use; takes precedence over .xy3 aws-profile setting"`
+	Profile           string `long:"profile" description:"the AWS profile to use; takes precedence over .xy3 setting"`
 	DownloadManifests bool   `long:"manifests" description:"if specified, the positional arguments must be come S3 locations in format s3://bucket/prefix (optional prefix) in order to download manifests of files found in those S3 location"`
 	NoExtract         bool   `long:"no-extract" description:"if specified, the downloaded archives will not be automatically decompressed and extracted if it's an archive"`
 	MaxBytesInSecond  int64  `long:"throttle" description:"limits the number of bytes that are downloaded per second; the zero-value indicates no limit."`

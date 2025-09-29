@@ -17,7 +17,8 @@ import (
 )
 
 type Command struct {
-	Profile          string `long:"profile" description:"the AWS profile to use; takes precedence over .xy3 aws-profile setting"`
+	Profile          string `long:"profile" description:"the AWS profile to use; takes precedence over .xy3 setting"`
+	UploadTo         string `short:"u" long:"upload-to" description:"the S3 bucket and prefix in format s3://bucket/prefix to upload the files to; takes precedence over .xy3 setting" value-name:"S3_LOCATION"`
 	Delete           bool   `long:"delete" description:"if specified, delete the original files or directories that were successfully compressed and uploaded."`
 	MaxBytesInSecond int64  `long:"throttle" description:"limits the number of bytes that are uploaded in one second; the zero-value indicates no limit."`
 	Args             struct {
@@ -39,6 +40,12 @@ func (c *Command) Execute(args []string) (err error) {
 		return fmt.Errorf("--throttle must be non-negative")
 	}
 
+	if c.UploadTo != "" {
+		if c.bucket, c.prefix, err = internal.ParseS3URI(c.UploadTo); err != nil {
+			return fmt.Errorf("invalid --upload-to: %w", err)
+		}
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer stop()
 
@@ -46,12 +53,15 @@ func (c *Command) Execute(args []string) (err error) {
 		return err
 	}
 
-	uCfg := config.ForUpload()
-	if uCfg.Bucket == "" {
-		return fmt.Errorf("no bucket configuration in .xy3")
+	if c.bucket == "" {
+		uCfg := config.ForUpload()
+		if uCfg.Bucket == "" {
+			return fmt.Errorf("no bucket configuration in .xy3")
+		}
+
+		c.bucket = uCfg.Bucket
+		c.prefix = uCfg.Prefix
 	}
-	c.bucket = uCfg.Bucket
-	c.prefix = uCfg.Prefix
 
 	c.cfg = config.ForBucket(c.bucket)
 	c.client, err = config.NewS3ClientForBucket(ctx, c.bucket)

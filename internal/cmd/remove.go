@@ -21,7 +21,7 @@ import (
 )
 
 type Remove struct {
-	Profile   string `long:"profile" description:"the AWS profile to use; takes precedence over .xy3 aws-profile setting"`
+	Profile   string `long:"profile" description:"the AWS profile to use; takes precedence over .xy3 setting"`
 	KeepLocal bool   `long:"keep-local" description:"by default, the local files will be deleted upon successfully deleted in S3; specify this to keep the local files intact"`
 	Args      struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the local files each containing a single S3 URI" required:"yes"`
