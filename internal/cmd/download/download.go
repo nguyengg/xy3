@@ -39,7 +39,7 @@ func (c *Command) downloadFromManifest(ctx context.Context, manifestName string)
 		man.Bucket,
 		man.Key,
 		f,
-		xy3.WithExpectedBucketOwner(internal.FirstNonNil(man.ExpectedBucketOwner, cfg.ExpectedBucketOwner)),
+		xy3.WithExpectedBucketOwner(internal.FirstNonNilPtr(man.ExpectedBucketOwner, cfg.ExpectedBucketOwner)),
 		func(opts *xy3.DownloadOptions) {
 			opts.S3ReaderOptions = func(opts *s3reader.Options) {
 				opts.MaxBytesInSecond = c.MaxBytesInSecond

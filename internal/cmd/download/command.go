@@ -16,9 +16,10 @@ import (
 )
 
 type Command struct {
-	DownloadManifests bool  `long:"manifests" description:"if specified, the positional arguments must be come S3 locations in format s3://bucket/prefix (optional prefix) in order to download manifests of files found in those S3 location"`
-	NoExtract         bool  `long:"no-extract" description:"if specified, the downloaded archives will not be automatically decompressed and extracted if it's an archive"`
-	MaxBytesInSecond  int64 `long:"throttle" description:"limits the number of bytes that are downloaded per second; the zero-value indicates no limit."`
+	Profile           string `long:"profile" description:"the AWS profile to use; takes precedence over .xy3 aws-profile setting"`
+	DownloadManifests bool   `long:"manifests" description:"if specified, the positional arguments must be come S3 locations in format s3://bucket/prefix (optional prefix) in order to download manifests of files found in those S3 location"`
+	NoExtract         bool   `long:"no-extract" description:"if specified, the downloaded archives will not be automatically decompressed and extracted if it's an archive"`
+	MaxBytesInSecond  int64  `long:"throttle" description:"limits the number of bytes that are downloaded per second; the zero-value indicates no limit."`
 	Args              struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the local files each containing a single S3 URI; or S3 URI in format s3://bucket/key to download directly from S3; or S3 locations in format s3://bucket/prefix to download manifests (with --manifests)"`
 	} `positional-args:"yes"`
@@ -38,8 +39,8 @@ func (c *Command) Execute(args []string) (err error) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer stop()
 
-	if _, err = config.Load(ctx); err != nil {
-		return fmt.Errorf("load config error: %w", err)
+	if _, err = config.LoadProfile(ctx, c.Profile); err != nil {
+		return err
 	}
 
 	if c.DownloadManifests {
@@ -93,14 +94,12 @@ func (c *Command) Execute(args []string) (err error) {
 
 func (c *Command) createClient(ctx context.Context, bucket string) (cfg config.BucketConfig, client *s3.Client, err error) {
 	cfg = config.ForBucket(bucket)
-	client, err = internal.NewS3ClientFromProfile(ctx, cfg.AWSProfile, func(opts *s3.Options) {
+
+	client, err = config.NewS3ClientForBucket(ctx, bucket, func(opts *s3.Options) {
 		// without this, getting a bunch of WARN message below:
 		// WARN Response has no supported checksum. Not validating response payload.
 		opts.DisableLogOutputChecksumValidationSkipped = true
 	})
-	if err != nil {
-		return cfg, nil, fmt.Errorf("create s3 client error: %w", err)
-	}
 
 	return
 }

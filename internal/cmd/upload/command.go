@@ -17,8 +17,9 @@ import (
 )
 
 type Command struct {
-	Delete           bool  `long:"delete" description:"if specified, delete the original files or directories that were successfully compressed and uploaded."`
-	MaxBytesInSecond int64 `long:"throttle" description:"limits the number of bytes that are uploaded in one second; the zero-value indicates no limit."`
+	Profile          string `long:"profile" description:"the AWS profile to use; takes precedence over .xy3 aws-profile setting"`
+	Delete           bool   `long:"delete" description:"if specified, delete the original files or directories that were successfully compressed and uploaded."`
+	MaxBytesInSecond int64  `long:"throttle" description:"limits the number of bytes that are uploaded in one second; the zero-value indicates no limit."`
 	Args             struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the local directories to be uploaded to S3 as archives." required:"yes"`
 	} `positional-args:"yes"`
@@ -41,8 +42,8 @@ func (c *Command) Execute(args []string) (err error) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer stop()
 
-	if _, err = config.Load(ctx); err != nil {
-		return fmt.Errorf("load config error: %w", err)
+	if _, err = config.LoadProfile(ctx, c.Profile); err != nil {
+		return err
 	}
 
 	uCfg := config.ForUpload()
@@ -53,7 +54,7 @@ func (c *Command) Execute(args []string) (err error) {
 	c.prefix = uCfg.Prefix
 
 	c.cfg = config.ForBucket(c.bucket)
-	c.client, err = internal.NewS3ClientFromProfile(ctx, c.cfg.AWSProfile)
+	c.client, err = config.NewS3ClientForBucket(ctx, c.bucket)
 	if err != nil {
 		return fmt.Errorf("create s3 client error: %w", err)
 	}

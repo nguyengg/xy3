@@ -21,7 +21,8 @@ import (
 )
 
 type Remove struct {
-	KeepLocal bool `long:"keep-local" description:"by default, the local files will be deleted upon successfully deleted in S3; specify this to keep the local files intact"`
+	Profile   string `long:"profile" description:"the AWS profile to use; takes precedence over .xy3 aws-profile setting"`
+	KeepLocal bool   `long:"keep-local" description:"by default, the local files will be deleted upon successfully deleted in S3; specify this to keep the local files intact"`
 	Args      struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the local files each containing a single S3 URI" required:"yes"`
 	} `positional-args:"yes"`
@@ -37,8 +38,8 @@ func (c *Remove) Execute(args []string) (err error) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer stop()
 
-	if _, err := config.Load(ctx); err != nil {
-		return fmt.Errorf("load config error: %w", err)
+	if _, err = config.LoadProfile(ctx, c.Profile); err != nil {
+		return err
 	}
 
 	// to prevent accidental download, prompt for each file.
@@ -103,9 +104,9 @@ func (c *Remove) remove(ctx context.Context, name string) error {
 	}
 
 	cfg := config.ForBucket(man.Bucket)
-	expectedBucketOwner := internal.FirstNonNil(man.ExpectedBucketOwner, cfg.ExpectedBucketOwner)
+	expectedBucketOwner := internal.FirstNonNilPtr(man.ExpectedBucketOwner, cfg.ExpectedBucketOwner)
 
-	client, err := internal.NewS3ClientFromProfile(ctx, cfg.AWSProfile)
+	client, err := config.NewS3ClientForBucket(ctx, man.Bucket)
 	if err != nil {
 		return fmt.Errorf("create s3 client error: %w", err)
 	}

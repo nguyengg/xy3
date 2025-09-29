@@ -22,6 +22,7 @@ import (
 )
 
 type Recompress struct {
+	Profile   string `long:"profile" description:"the AWS profile to use; takes precedence over .xy3 aws-profile setting"`
 	Algorithm string `short:"a" long:"algorithm" choice:"zstd" choice:"zip" choice:"gzip" choice:"xz" default:"zstd"`
 	MoveTo    string `long:"move-to" description:"if present in format s3://bucket/prefix, the new archive will be uploaded to this S3 bucket and optional key prefix instead" value-name:"S3_LOCATION"`
 	Args      struct {
@@ -49,12 +50,12 @@ func (c *Recompress) Execute(args []string) (err error) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer stop()
 
-	if _, err = config.Load(ctx); err != nil {
-		return fmt.Errorf("load config error: %w", err)
+	if _, err = config.LoadProfile(ctx, c.Profile); err != nil {
+		return err
 	}
 
 	c.uploadCfg = config.ForBucket(bucket)
-	c.uploadClient, err = internal.NewS3ClientFromProfile(ctx, c.uploadCfg.AWSProfile)
+	c.uploadClient, err = config.NewS3ClientForBucket(ctx, bucket)
 	if err != nil {
 		return fmt.Errorf("create s3 client error: %w", err)
 	}
@@ -89,9 +90,9 @@ func (c *Recompress) recompress(ctx context.Context, originalManifestName, moveT
 	}
 
 	downloadCfg := config.ForBucket(originalManifest.Bucket)
-	downloadExpectedBucketOwner := internal.FirstNonNil(originalManifest.ExpectedBucketOwner, downloadCfg.ExpectedBucketOwner)
+	downloadExpectedBucketOwner := internal.FirstNonNilPtr(originalManifest.ExpectedBucketOwner, downloadCfg.ExpectedBucketOwner)
 
-	downloadClient, err := internal.NewS3ClientFromProfile(ctx, downloadCfg.AWSProfile, func(options *s3.Options) {
+	downloadClient, err := config.NewS3ClientForBucket(ctx, originalManifest.Bucket, func(options *s3.Options) {
 		// without this, getting a bunch of WARN message below:
 		// WARN Response has no supported checksum. Not validating response payload.
 		options.DisableLogOutputChecksumValidationSkipped = true
@@ -175,7 +176,7 @@ func (c *Recompress) recompress(ctx context.Context, originalManifestName, moveT
 	// bucket and key might be new values if we're moving to a different location.
 	bucket := originalManifest.Bucket
 	key := path.Dir(originalManifest.Key) + stem + comp.ArchiveExt()
-	uploadExpectedBucketOwner := internal.FirstNonNil(originalManifest.ExpectedBucketOwner, downloadCfg.ExpectedBucketOwner)
+	uploadExpectedBucketOwner := internal.FirstNonNilPtr(originalManifest.ExpectedBucketOwner, downloadCfg.ExpectedBucketOwner)
 
 	if moveToBucket != "" {
 		bucket = moveToBucket
