@@ -7,7 +7,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -24,14 +23,15 @@ import (
 type Recompress struct {
 	Profile   string `long:"profile" description:"the AWS profile to use; takes precedence over .xy3 setting"`
 	Algorithm string `short:"a" long:"algorithm" choice:"zstd" choice:"zip" choice:"gzip" choice:"xz" default:"zstd"`
-	MoveTo    string `long:"move-to" description:"if present in format s3://bucket/prefix, the new archive will be uploaded to this S3 bucket and optional key prefix instead" value-name:"S3_LOCATION"`
+	MoveTo    string `long:"move-to" description:"the S3 bucket and prefix in format s3://bucket/prefix to upload the new archives to" value-name:"S3_LOCATION" required:"true"`
 	Args      struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the local files each containing a single S3 URI" required:"yes"`
 	} `positional-args:"yes"`
 
-	uploadCfg    config.BucketConfig
-	uploadClient *s3.Client
-	logger       *log.Logger
+	bucket, prefix string
+	uploadConfig   config.BucketConfig
+	uploadClient   *s3.Client
+	logger         *log.Logger
 }
 
 func (c *Recompress) Execute(args []string) (err error) {
@@ -39,12 +39,8 @@ func (c *Recompress) Execute(args []string) (err error) {
 		return fmt.Errorf("unknown positional arguments: %s", strings.Join(args, " "))
 	}
 
-	// if MoveTo is specified, parse and validate them first.
-	var bucket, prefix string
-	if c.MoveTo != "" {
-		if bucket, prefix, err = internal.ParseS3URI(c.MoveTo); err != nil {
-			return fmt.Errorf("invalid --move-to: %w", err)
-		}
+	if c.bucket, c.prefix, err = internal.ParseS3URI(c.MoveTo); err != nil {
+		return fmt.Errorf("invalid --move-to: %w", err)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
@@ -54,8 +50,8 @@ func (c *Recompress) Execute(args []string) (err error) {
 		return err
 	}
 
-	c.uploadCfg = config.ForBucket(bucket)
-	c.uploadClient, err = config.NewS3ClientForBucket(ctx, bucket)
+	c.uploadConfig = config.ForBucket(c.bucket)
+	c.uploadClient, err = config.NewS3ClientForBucket(ctx, c.bucket)
 	if err != nil {
 		return fmt.Errorf("create s3 client error: %w", err)
 	}
@@ -66,7 +62,7 @@ func (c *Recompress) Execute(args []string) (err error) {
 		c.logger = internal.NewLogger(i, n, file)
 		c.logger.Printf("start recompressing")
 
-		if err = c.recompress(ctx, string(file), bucket, prefix); err == nil {
+		if err = c.recompress(ctx, string(file)); err == nil {
 			c.logger.Printf("done recompressing")
 			success++
 			continue
@@ -83,7 +79,7 @@ func (c *Recompress) Execute(args []string) (err error) {
 	return nil
 }
 
-func (c *Recompress) recompress(ctx context.Context, originalManifestName, moveToBucket, moveToPrefix string) error {
+func (c *Recompress) recompress(ctx context.Context, originalManifestName string) error {
 	originalManifest, err := internal.LoadManifestFromFile(originalManifestName)
 	if err != nil {
 		return fmt.Errorf("read manifest error: %w", err)
@@ -173,22 +169,15 @@ func (c *Recompress) recompress(ctx context.Context, originalManifestName, moveT
 		return fmt.Errorf("open recompressed file error: %w", err)
 	}
 
-	// bucket and key might be new values if we're moving to a different location.
-	bucket := originalManifest.Bucket
-	key := path.Dir(originalManifest.Key) + stem + comp.ArchiveExt()
-	uploadExpectedBucketOwner := internal.FirstNonNilPtr(originalManifest.ExpectedBucketOwner, downloadCfg.ExpectedBucketOwner)
-
-	if moveToBucket != "" {
-		bucket = moveToBucket
-		key = moveToPrefix + stem + comp.ArchiveExt()
-		uploadExpectedBucketOwner = c.uploadCfg.ExpectedBucketOwner
-	}
+	// bucket and key must always be present.
+	bucket := c.bucket
+	key := c.prefix + stem + comp.ArchiveExt()
 
 	newMan, err := xy3.Upload(ctx, c.uploadClient, f, bucket, key, func(opts *xy3.UploadOptions) {
 		opts.PutObjectInputOptions = func(input *s3.PutObjectInput) {
-			input.ExpectedBucketOwner = uploadExpectedBucketOwner
+			input.ExpectedBucketOwner = c.uploadConfig.ExpectedBucketOwner
 			input.ContentType = aws.String(comp.ContentType())
-			input.StorageClass = c.uploadCfg.StorageClass
+			input.StorageClass = c.uploadConfig.StorageClass
 		}
 	})
 	_ = f.Close()
