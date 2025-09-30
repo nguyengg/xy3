@@ -56,3 +56,22 @@ func MkExclDir(parent, stem string, perm os.FileMode) (name string, err error) {
 		}
 	}
 }
+
+// DirBase joins both filepath.Dir and filepath.Base for the given file name.
+//
+// The idea is that sometimes the working directory is not clear so by printing both the directory and the basename of
+// a file, it is clearer where the file is.
+func DirBase(name string) string {
+	dir := filepath.Dir(name)
+	base := filepath.Base(name)
+	if dir != "" && dir != "." {
+		return filepath.Join(filepath.Base(dir), base)
+	}
+
+	abs, err := filepath.Abs(name)
+	if err == nil {
+		return filepath.Join(filepath.Base(filepath.Dir(abs)), base)
+	}
+
+	return base
+}

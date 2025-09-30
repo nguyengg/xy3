@@ -44,11 +44,16 @@ func (c *Command) upload(ctx context.Context, name string) (err error) {
 		}
 
 		defer func() {
-			_, _ = f.Close(), os.Remove(archiveName)
+			_ = f.Close()
 
-			if success && c.Delete {
-				if err = os.RemoveAll(name); err != nil {
-					c.logger.Printf(`delete directory "%s" error: %v`, name, err)
+			if success {
+				_ = os.Remove(archiveName)
+
+				if c.Delete {
+					if err = os.RemoveAll(name); err != nil {
+						c.logger.Printf(`delete directory "%s" error: %v`, name, err)
+					}
+					return
 				}
 			}
 		}()
