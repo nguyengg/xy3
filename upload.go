@@ -176,5 +176,7 @@ func computeChecksum(ctx context.Context, src io.Reader) (string, int64, string,
 		return name, 0, "", err
 	}
 
+	_ = bar.Close()
+
 	return name, sizer.Size, checksummer.SumToString(nil), nil
 }
