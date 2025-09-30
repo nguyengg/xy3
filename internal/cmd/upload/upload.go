@@ -20,6 +20,8 @@ func (c *Command) upload(ctx context.Context, name string) (err error) {
 		f           *os.File
 		fi          os.FileInfo
 		contentType *string
+		size        int64
+		checksum    string
 		success     bool
 	)
 
@@ -31,7 +33,7 @@ func (c *Command) upload(ctx context.Context, name string) (err error) {
 
 	case fi.IsDir():
 		var archiveName string
-		archiveName, contentType, err = c.compressDir(ctx, name)
+		archiveName, contentType, size, checksum, err = c.compressDir(ctx, name)
 		if err != nil {
 			return fmt.Errorf(`compress directory "%s" error: %w`, name, err)
 		}
@@ -103,6 +105,9 @@ func (c *Command) upload(ctx context.Context, name string) (err error) {
 				input.ExpectedBucketOwner = c.cfg.ExpectedBucketOwner
 				input.StorageClass = c.cfg.StorageClass
 			}
+
+			uploadOpts.ExpectedChecksum = checksum
+			uploadOpts.ExpectedSize = size
 		})
 	if err != nil {
 		return fmt.Errorf("upload error: %w", err)

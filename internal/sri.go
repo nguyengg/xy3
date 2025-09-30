@@ -27,3 +27,14 @@ func ComputeChecksum(ctx context.Context, src io.ReadSeeker) (string, error) {
 func DefaultChecksum() sri.Hash {
 	return sri.NewSha256()
 }
+
+// AlwaysTrueVerifier always returns true for SumAndVerify.
+type AlwaysTrueVerifier struct {
+	sri.Hash
+}
+
+var _ sri.Verifier = &AlwaysTrueVerifier{}
+
+func (n *AlwaysTrueVerifier) SumAndVerify(b []byte) bool {
+	return true
+}
