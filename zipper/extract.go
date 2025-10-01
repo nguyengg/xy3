@@ -11,8 +11,8 @@ import (
 	"strconv"
 	"strings"
 
+	commons "github.com/nguyengg/go-aws-commons"
 	"github.com/nguyengg/xy3/internal"
-	"github.com/nguyengg/xy3/util"
 )
 
 // ExtractOptions is an opaque struct for customising Extract.
@@ -211,10 +211,10 @@ func Extract(ctx context.Context, src, dir string, optFns ...func(*ExtractOption
 		}
 
 		if pr == nil {
-			_, err = util.CopyBufferWithContext(ctx, dst, src, buf)
+			_, err = commons.CopyBufferWithContext(ctx, dst, src, buf)
 		} else {
 			w := pr.CreateWriter(name, rel(dir, dst.Name()))
-			_, err = util.CopyBufferWithContext(ctx, io.MultiWriter(dst, w), src, buf)
+			_, err = commons.CopyBufferWithContext(ctx, io.MultiWriter(dst, w), src, buf)
 			if err == nil {
 				_ = w.Close()
 			}

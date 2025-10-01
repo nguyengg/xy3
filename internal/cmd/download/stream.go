@@ -13,11 +13,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/krolaw/zipstream"
+	commons "github.com/nguyengg/go-aws-commons"
 	"github.com/nguyengg/go-aws-commons/s3reader"
 	"github.com/nguyengg/go-aws-commons/sri"
 	"github.com/nguyengg/go-aws-commons/tspb"
 	"github.com/nguyengg/xy3/internal"
-	"github.com/nguyengg/xy3/util"
 	"github.com/nguyengg/xy3/zipper"
 	"github.com/schollz/progressbar/v3"
 )
@@ -90,8 +90,8 @@ func (c *Command) stream(ctx context.Context, man internal.Manifest) (bool, erro
 
 	// attempt to create the local directory that will store the extracted files.
 	// if we fail to download the file complete, clean up by deleting the directory.
-	stem, _ := util.StemAndExt(man.Key)
-	dir, err := util.MkExclDir(".", stem, 0755)
+	stem, _ := commons.StemExt(man.Key)
+	dir, err := commons.MkExclDir(".", stem, 0755)
 	if err != nil {
 		return true, fmt.Errorf("create output directory error: %w", err)
 	}
@@ -179,7 +179,7 @@ func (c *Command) stream(ctx context.Context, man internal.Manifest) (bool, erro
 			break
 		}
 
-		_, err = util.CopyBufferWithContext(ctx, io.MultiWriter(f, bar), zr, buf)
+		_, err = commons.CopyBufferWithContext(ctx, io.MultiWriter(f, bar), zr, buf)
 		_ = f.Close()
 		if err != nil {
 			err = fmt.Errorf("write to file error: %w", err)

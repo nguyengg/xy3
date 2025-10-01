@@ -13,11 +13,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jessevdk/go-flags"
+	commons "github.com/nguyengg/go-aws-commons"
 	"github.com/nguyengg/go-aws-commons/s3reader"
 	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/config"
-	"github.com/nguyengg/xy3/util"
 )
 
 type Recompress struct {
@@ -99,7 +99,7 @@ func (c *Recompress) recompress(ctx context.Context, originalManifestName string
 
 	// we'll create a temp directory to store all intermediate artifacts.
 	// this temp directory is deleted only after complete success.
-	stem, ext := util.StemAndExt(originalManifest.Key)
+	stem, ext := commons.StemExt(originalManifest.Key)
 
 	dir, err := os.MkdirTemp(".", stem+"-tmp-*")
 	if err != nil {
@@ -186,7 +186,7 @@ func (c *Recompress) recompress(ctx context.Context, originalManifestName string
 	}
 
 	// write manifest to a unique local .s3 file.
-	f, err = util.OpenExclFile(".", stem, comp.ArchiveExt()+".s3", 0666)
+	f, err = commons.OpenExclFile(".", stem, comp.ArchiveExt()+".s3", 0666)
 	if err == nil {
 		err = newMan.SaveTo(f)
 	}

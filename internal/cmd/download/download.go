@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 
+	commons "github.com/nguyengg/go-aws-commons"
 	"github.com/nguyengg/go-aws-commons/s3reader"
 	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
-	"github.com/nguyengg/xy3/util"
 )
 
 func (c *Command) downloadFromManifest(ctx context.Context, manifestName string) error {
@@ -24,8 +24,8 @@ func (c *Command) downloadFromManifest(ctx context.Context, manifestName string)
 
 	// attempt to create the local file that will store the downloaded artifact.
 	// if we fail to download the file successfully, clean up by deleting the local file.
-	stem, ext := util.StemAndExt(man.Key)
-	f, err := util.OpenExclFile(".", stem, ext, 0666)
+	stem, ext := commons.StemExt(man.Key)
+	f, err := commons.OpenExclFile(".", stem, ext, 0666)
 	if err != nil {
 		return fmt.Errorf("create file error: %w", err)
 	}
@@ -78,8 +78,8 @@ func (c *Command) downloadFromS3(ctx context.Context, s3Uri string) error {
 
 	// attempt to create the local file that will store the downloaded artifact.
 	// if we fail to download the file successfully, clean up by deleting the local file.
-	stem, ext := util.StemAndExt(key)
-	f, err := util.OpenExclFile(".", stem, ext, 0666)
+	stem, ext := commons.StemExt(key)
+	f, err := commons.OpenExclFile(".", stem, ext, 0666)
 	if err != nil {
 		return fmt.Errorf("create file error: %w", err)
 	}

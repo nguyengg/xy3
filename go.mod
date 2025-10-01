@@ -1,6 +1,6 @@
 module github.com/nguyengg/xy3
 
-go 1.24.0
+go 1.25
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.39.2
@@ -11,6 +11,7 @@ require (
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/klauspost/compress v1.18.0
 	github.com/krolaw/zipstream v0.0.0-20241109034754-4a67be70fe31
+	github.com/nguyengg/go-aws-commons v0.1.6
 	github.com/nguyengg/go-aws-commons/s3reader v0.1.3
 	github.com/nguyengg/go-aws-commons/s3writer v0.1.3
 	github.com/nguyengg/go-aws-commons/sri v0.1.0
@@ -20,6 +21,7 @@ require (
 	github.com/stretchr/testify v1.10.0
 	github.com/ulikunitz/xz v0.5.15
 	github.com/valyala/bytebufferpool v1.0.0
+	golang.org/x/term v0.35.0
 )
 
 require (
@@ -45,14 +47,12 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
-	github.com/nguyengg/go-aws-commons v0.1.3 // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	go4.org v0.0.0-20230225012048-214862532bf5 // indirect
 	golang.org/x/sys v0.36.0 // indirect
-	golang.org/x/term v0.35.0 // indirect
 	golang.org/x/text v0.29.0 // indirect
 	golang.org/x/time v0.13.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

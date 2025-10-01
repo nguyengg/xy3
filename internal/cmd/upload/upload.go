@@ -8,9 +8,9 @@ import (
 	"os"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	commons "github.com/nguyengg/go-aws-commons"
 	"github.com/nguyengg/go-aws-commons/s3writer"
 	"github.com/nguyengg/xy3"
-	"github.com/nguyengg/xy3/util"
 )
 
 func (c *Command) upload(ctx context.Context, name string) (err error) {
@@ -89,7 +89,7 @@ func (c *Command) upload(ctx context.Context, name string) (err error) {
 	}
 
 	// use the name of the archive (in the case of directory) to have meaningful extensions.
-	stem, ext := util.StemAndExt(f.Name())
+	stem, ext := commons.StemExt(f.Name())
 	key := c.prefix + stem + ext
 
 	c.logger.Printf(`uploading to "s3://%s/%s"`, c.bucket, key)
@@ -122,7 +122,7 @@ func (c *Command) upload(ctx context.Context, name string) (err error) {
 
 	// now generate the local .s3 file that contains the S3 URI. if writing to file fails, prints the JSON content
 	// to standard output so that they can be saved manually later.
-	mf, err := util.OpenExclFile(".", stem, ext+".s3", 0666)
+	mf, err := commons.OpenExclFile(".", stem, ext+".s3", 0666)
 	if err != nil {
 		_ = man.SaveTo(os.Stdout)
 		return fmt.Errorf("create manifest file error: %w", err)

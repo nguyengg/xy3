@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	commons "github.com/nguyengg/go-aws-commons"
 	"github.com/nguyengg/go-aws-commons/s3writer"
 	"github.com/nguyengg/go-aws-commons/sri"
 	"github.com/nguyengg/go-aws-commons/tspb"
@@ -57,7 +58,7 @@ func Upload(ctx context.Context, client *s3.Client, src io.Reader, bucket, key s
 	var (
 		name             string
 		size             int64 = -1
-		sizer                  = &util.Sizer{}
+		sizer                  = &commons.Sizer{}
 		expectedChecksum       = opts.ExpectedChecksum
 		verifier         sri.Verifier
 		bar              io.WriteCloser
@@ -146,7 +147,7 @@ func computeChecksum(ctx context.Context, src io.Reader) (string, int64, string,
 	var (
 		name        string
 		size        int64 = -1
-		sizer             = &util.Sizer{}
+		sizer             = &commons.Sizer{}
 		checksummer       = internal.DefaultChecksum()
 		bar         io.WriteCloser
 	)
@@ -168,7 +169,7 @@ func computeChecksum(ctx context.Context, src io.Reader) (string, int64, string,
 	}
 
 	rsc := util.ResetOnCloseReadSeeker(rs)
-	_, err := util.CopyBufferWithContext(ctx, io.MultiWriter(sizer, checksummer), io.TeeReader(rsc, bar), nil)
+	_, err := commons.CopyBufferWithContext(ctx, io.MultiWriter(sizer, checksummer), io.TeeReader(rsc, bar), nil)
 	if err == nil {
 		err = rsc.Close()
 	}

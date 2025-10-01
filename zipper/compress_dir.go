@@ -11,7 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/nguyengg/xy3/util"
+	commons "github.com/nguyengg/go-aws-commons"
 )
 
 // CompressDirOptions customises CompressDir.
@@ -180,7 +180,7 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 			}
 
 			if pr == nil {
-				if _, err = util.CopyBufferWithContext(ctx, f, src, buf); err != nil {
+				if _, err = commons.CopyBufferWithContext(ctx, f, src, buf); err != nil {
 					return fmt.Errorf("add file (path=%s) to archive file (name=%s) error: %w", srcPath, dstPath, err)
 				}
 
@@ -188,7 +188,7 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 			}
 
 			w := pr.CreateWriter(rel(dir, srcPath), dstPath)
-			if _, err = util.CopyBufferWithContext(ctx, io.MultiWriter(f, w), src, buf); err != nil {
+			if _, err = commons.CopyBufferWithContext(ctx, io.MultiWriter(f, w), src, buf); err != nil {
 				if errors.Is(err, context.Canceled) {
 					return err
 				}

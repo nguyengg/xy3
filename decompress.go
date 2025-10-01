@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	commons "github.com/nguyengg/go-aws-commons"
 	"github.com/nguyengg/go-aws-commons/tspb"
 	"github.com/nguyengg/xy3/archive"
 	"github.com/nguyengg/xy3/internal"
@@ -48,8 +49,8 @@ func decompress(ctx context.Context, name, dir string) (string, error) {
 	}
 
 	// the name of the output file will be the original with the codec ext trimmed off.
-	stem, ext := util.StemAndExt(strings.TrimSuffix(name, cd.Ext()))
-	dst, err := util.OpenExclFile(dir, stem, ext, 0666)
+	stem, ext := commons.StemExt(strings.TrimSuffix(name, cd.Ext()))
+	dst, err := commons.OpenExclFile(dir, stem, ext, 0666)
 	if err != nil {
 		return "", fmt.Errorf("create output file error: %w", err)
 	}
@@ -70,7 +71,7 @@ func decompress(ctx context.Context, name, dir string) (string, error) {
 
 	closer := util.ChainCloser(r.Close, src.Close, dst.Close)
 
-	if _, err = util.CopyBufferWithContext(ctx, dst, r, nil); err != nil {
+	if _, err = commons.CopyBufferWithContext(ctx, dst, r, nil); err != nil {
 		_, _ = closer(), os.Remove(dst.Name())
 		return "", fmt.Errorf(`decompress file "%s" error: %w`, name, err)
 	}
@@ -91,8 +92,8 @@ func extract(ctx context.Context, name, dir string) (string, error) {
 	}
 
 	// decompress and extract contents into a unique directory.
-	stem, _ := util.StemAndExt(strings.TrimSuffix(name, arc.ArchiveExt()))
-	target, err := util.MkExclDir(dir, stem, 0755)
+	stem, _ := commons.StemExt(strings.TrimSuffix(name, arc.ArchiveExt()))
+	target, err := commons.MkExclDir(dir, stem, 0755)
 	if err != nil {
 		return "", fmt.Errorf("create output directory error: %w", err)
 	}
@@ -157,7 +158,7 @@ func extract(ctx context.Context, name, dir string) (string, error) {
 
 		closer := util.ChainCloser(w.Close, r.Close)
 
-		if _, err = util.CopyBufferWithContext(ctx, w, io.TeeReader(r, bar), buf); err != nil {
+		if _, err = commons.CopyBufferWithContext(ctx, w, io.TeeReader(r, bar), buf); err != nil {
 			_ = closer()
 			return "", fmt.Errorf(`write to file "%s" error: %w`, path, err)
 		}

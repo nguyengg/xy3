@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	commons "github.com/nguyengg/go-aws-commons"
 	"github.com/nguyengg/go-aws-commons/tspb"
 	"github.com/nguyengg/xy3/codec"
 	"github.com/nguyengg/xy3/util"
@@ -87,7 +88,7 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 				return fmt.Errorf(`create archive file "%s" error: %w`, path, err)
 			}
 
-			if _, err = util.CopyBufferWithContext(ctx, w, io.TeeReader(src, bar), buf); err != nil {
+			if _, err = commons.CopyBufferWithContext(ctx, w, io.TeeReader(src, bar), buf); err != nil {
 				_ = w.Close()
 				return fmt.Errorf(`write archive file "%s" error: %w`, path, err)
 			}
@@ -141,7 +142,7 @@ func Compress(ctx context.Context, src io.Reader, fi os.FileInfo, dst io.Writer,
 			return fmt.Errorf("create encoder error: %w", err)
 		}
 
-		if _, err = util.CopyBufferWithContext(ctx, w, io.TeeReader(src, bar), nil); err != nil {
+		if _, err = commons.CopyBufferWithContext(ctx, w, io.TeeReader(src, bar), nil); err != nil {
 			_ = w.Close()
 			return err
 		}
@@ -170,7 +171,7 @@ func Compress(ctx context.Context, src io.Reader, fi os.FileInfo, dst io.Writer,
 
 	closer = util.ChainCloser(w.Close, closer)
 
-	if _, err = util.CopyBufferWithContext(ctx, w, io.TeeReader(src, bar), nil); err != nil {
+	if _, err = commons.CopyBufferWithContext(ctx, w, io.TeeReader(src, bar), nil); err != nil {
 		_ = closer()
 		return err
 	}

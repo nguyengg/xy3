@@ -10,7 +10,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/nguyengg/xy3/util"
+	commons "github.com/nguyengg/go-aws-commons"
 )
 
 const (
@@ -94,7 +94,7 @@ func CompressFile(ctx context.Context, name string, dst io.Writer, optFns ...fun
 	buf := make([]byte, opts.BufferSize)
 	pr := opts.ProgressReporter
 	if pr == nil {
-		if _, err = util.CopyBufferWithContext(ctx, f, src, buf); err != nil {
+		if _, err = commons.CopyBufferWithContext(ctx, f, src, buf); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return err
 			}
@@ -106,7 +106,7 @@ func CompressFile(ctx context.Context, name string, dst io.Writer, optFns ...fun
 	}
 
 	w := pr.CreateWriter(name, fi.Name())
-	if _, err = util.CopyBufferWithContext(ctx, io.MultiWriter(f, w), src, buf); err != nil {
+	if _, err = commons.CopyBufferWithContext(ctx, io.MultiWriter(f, w), src, buf); err != nil {
 		if errors.Is(err, context.Canceled) {
 			return err
 		}

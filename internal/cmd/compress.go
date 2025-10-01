@@ -11,10 +11,10 @@ import (
 	"strings"
 
 	"github.com/jessevdk/go-flags"
+	commons "github.com/nguyengg/go-aws-commons"
 	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/codec"
 	"github.com/nguyengg/xy3/internal"
-	"github.com/nguyengg/xy3/util"
 )
 
 type Compress struct {
@@ -69,7 +69,7 @@ func (c *Compress) compress(ctx context.Context, name string) error {
 		return fmt.Errorf(`stat file "%s" error: %w`, name, err)
 
 	case fi.IsDir():
-		dst, err := util.OpenExclFile(".", filepath.Base(name), ext, 0666)
+		dst, err := commons.OpenExclFile(".", filepath.Base(name), ext, 0666)
 		if err != nil {
 			return fmt.Errorf("create archive error: %w", err)
 		}
@@ -104,7 +104,7 @@ func (c *Compress) compress(ctx context.Context, name string) error {
 			ext = cd.Ext()
 		}
 
-		dst, err := util.OpenExclFile(".", filepath.Base(name), ext, 0666)
+		dst, err := commons.OpenExclFile(".", filepath.Base(name), ext, 0666)
 		if err != nil {
 			return fmt.Errorf("create output file error: %w", err)
 		}
