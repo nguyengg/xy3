@@ -136,8 +136,8 @@ github.com/nguyengg/go-aws-commons/s3writer v0.1.3 h1:9Rh0DILya16ktiQ4FwY8k6vLNd
 github.com/nguyengg/go-aws-commons/s3writer v0.1.3/go.mod h1:murOvnH2ryT1AySS4VOuVhEooUABLZB9iNibWoA+fY0=
 github.com/nguyengg/go-aws-commons/sri v0.1.0 h1:NuYDIWIGxpfqZ01VkNPwstDLdykoU/hPe732xNltxpU=
 github.com/nguyengg/go-aws-commons/sri v0.1.0/go.mod h1:TjOwNWKjGWfJpONPI+XUkxVczEC3xNPC79knv2ephWQ=
-github.com/nguyengg/go-aws-commons/tspb v0.1.3 h1:zbTT96Fk/nG2n+j7cUfDhR9d72zr307KMOCCi/QKQGA=
-github.com/nguyengg/go-aws-commons/tspb v0.1.3/go.mod h1:2hlB+os3xBQMQOfTBZT/5BUWTUPIZzoXcK5wPPqcih4=
+github.com/nguyengg/go-aws-commons/tspb v0.1.5 h1:TP6woqeOE48HNOdYA4vrCRmav6Q/ieoSlNvnEMtfwos=
+github.com/nguyengg/go-aws-commons/tspb v0.1.5/go.mod h1:+MJMZDkbG2PJ2OGu+5R4eqgtHxH1up1tYEWIKOVbWsk=
 github.com/nwaples/rardecode v1.1.3 h1:cWCaZwfM5H7nAD6PyEdcVnczzV8i/JtotnyW/dD9lEc=
 github.com/nwaples/rardecode v1.1.3/go.mod h1:5DzqNKiOdpKKBH87u8VlvAnPZMXcGRhxWkRpHbbfGS0=
 github.com/pierrec/lz4/v4 v4.1.22 h1:cKFw6uJDK+/gfw5BcDL0JL5aBsAFdsIT18eRtLj7VIU=

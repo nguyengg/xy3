@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"iter"
 	"os"
 	"path/filepath"
 	"strings"
@@ -62,7 +61,8 @@ func decompress(ctx context.Context, name, dir string) (string, error) {
 	}
 	defer src.Close()
 
-	bar := internal.FileProgressBar(src, fmt.Sprintf(`decompressing "%s"`, filepath.Base(name)))
+	bar := tspb.DefaultBytesWriter(src, `decompressing "{basename}"`)
+	defer bar.Close()
 
 	r, err := cd.NewDecoder(io.TeeReader(src, bar))
 	if err != nil {
@@ -80,7 +80,7 @@ func decompress(ctx context.Context, name, dir string) (string, error) {
 		return "", fmt.Errorf(`complete writing to file "%s" error: %w`, name, err)
 	}
 
-	_ = bar.Close()
+	_ = bar.Finish()
 	return dst.Name(), nil
 }
 
@@ -113,6 +113,7 @@ func extract(ctx context.Context, name, dir string) (string, error) {
 	}
 
 	bar := tspb.DefaultBytes(uncompressedSize, fmt.Sprintf(`extracting "%s"`, filepath.Base(name)))
+	defer bar.Close()
 
 	// now go through the archive files again, this time opening each file for reading.
 	src, err := os.Open(name)
@@ -173,6 +174,7 @@ func extract(ctx context.Context, name, dir string) (string, error) {
 	}
 
 	success = true
+	_ = bar.Finish()
 	return target, nil
 }
 
@@ -218,20 +220,4 @@ func findRootDir(ctx context.Context, name string, archiver archive.Archiver) (r
 	}
 
 	return
-}
-
-// extractor abstracts methods to browse and extract contents from an archive.
-type extractor interface {
-	// Files produces an iterator returning the archive entries.
-	//
-	// The src io.Reader will be consumed by the end of the iterator.
-	Files(src io.Reader, open bool) (iter.Seq2[archiveFile, error], error)
-}
-
-// archiveFile represents a file in an archive.
-type archiveFile interface {
-	Name() string
-	FileInfo() os.FileInfo
-	FileMode() os.FileMode
-	io.ReadCloser
 }

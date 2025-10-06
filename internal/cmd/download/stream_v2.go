@@ -154,6 +154,7 @@ func (c *Command) streamV2(ctx context.Context, man internal.Manifest) (bool, er
 	done := make(chan struct{}, 1)
 	go func() {
 		wg.Wait()
+		_ = bar.Finish()
 		close(done)
 	}()
 

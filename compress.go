@@ -47,6 +47,7 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 	if err != nil {
 		return err
 	}
+	defer bar.Close()
 
 	buf := make([]byte, 32*1024)
 
@@ -104,14 +105,13 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 		}
 	})
 	if err == nil {
-		if err = closer(); err == nil {
-			_ = bar.Close()
-		}
+		err = closer()
 	}
 	if err != nil {
 		return fmt.Errorf(`compress directory "%s" error: %w`, dir, err)
 	}
 
+	_ = bar.Finish()
 	return nil
 }
 
@@ -128,12 +128,13 @@ func Compress(ctx context.Context, src io.Reader, fi os.FileInfo, dst io.Writer,
 
 	comp := NewCompressorFromName(opts.Algorithm)
 
-	var bar io.WriteCloser
+	var bar *tspb.ProgressLogger
 	if fi != nil {
 		bar = tspb.DefaultBytes(fi.Size(), fmt.Sprintf(`compressing "%s"`, fi.Name()))
 	} else {
 		bar = tspb.DefaultBytes(-1, "compressing")
 	}
+	defer bar.Close()
 
 	// if the compressor implements codec.Codec then use that interface directly.
 	if c, ok := comp.(codec.Codec); ok {
@@ -180,11 +181,11 @@ func Compress(ctx context.Context, src io.Reader, fi os.FileInfo, dst io.Writer,
 		return err
 	}
 
-	_ = bar.Close()
+	_ = bar.Finish()
 	return nil
 }
 
-func compressDirProgressBar(dir string) (io.WriteCloser, error) {
+func compressDirProgressBar(dir string) (*tspb.ProgressLogger, error) {
 	var size int64
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		switch {
