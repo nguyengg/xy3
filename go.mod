@@ -15,13 +15,13 @@ require (
 	github.com/nguyengg/go-aws-commons/s3reader v0.1.3
 	github.com/nguyengg/go-aws-commons/s3writer v0.1.3
 	github.com/nguyengg/go-aws-commons/sri v0.1.0
-	github.com/nguyengg/go-aws-commons/tspb v0.1.5
+	github.com/nguyengg/go-aws-commons/tspb v0.1.6
 	github.com/nwaples/rardecode v1.1.3
 	github.com/schollz/progressbar/v3 v3.18.0
 	github.com/stretchr/testify v1.10.0
 	github.com/ulikunitz/xz v0.5.15
 	github.com/valyala/bytebufferpool v1.0.0
-	golang.org/x/term v0.35.0
+	golang.org/x/term v0.36.0
 )
 
 require (
@@ -52,8 +52,8 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	go4.org v0.0.0-20230225012048-214862532bf5 // indirect
-	golang.org/x/sys v0.36.0 // indirect
+	golang.org/x/sys v0.37.0 // indirect
 	golang.org/x/text v0.29.0 // indirect
-	golang.org/x/time v0.13.0 // indirect
+	golang.org/x/time v0.14.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
