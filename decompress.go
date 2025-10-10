@@ -112,7 +112,7 @@ func extract(ctx context.Context, name, dir string) (string, error) {
 		return "", fmt.Errorf("find root dir error: %w", err)
 	}
 
-	bar := tspb.DefaultBytes(uncompressedSize, fmt.Sprintf(`extracting "%s"`, filepath.Base(name)))
+	bar := tspb.DefaultBytes(uncompressedSize, fmt.Sprintf(`extracting "%s"`, util.TruncateRightWithSuffix(filepath.Base(name), 15, "...")))
 	defer bar.Close()
 
 	// now go through the archive files again, this time opening each file for reading.

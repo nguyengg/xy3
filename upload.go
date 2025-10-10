@@ -96,7 +96,7 @@ func Upload(ctx context.Context, client *s3.Client, src io.Reader, bucket, key s
 	defer cancel()
 
 	if name != "" {
-		bar = tspb.DefaultBytes(size, fmt.Sprintf(`uploading "%s"`, filepath.Base(name)))
+		bar = tspb.DefaultBytes(size, fmt.Sprintf(`uploading "%s"`, util.TruncateRightWithSuffix(filepath.Base(name), 15, "...")))
 	} else {
 		bar = tspb.DefaultBytes(size, "uploading")
 	}
@@ -164,7 +164,7 @@ func computeChecksum(ctx context.Context, src io.Reader) (string, int64, string,
 	}
 
 	if name != "" {
-		bar = tspb.DefaultBytes(size, fmt.Sprintf(`computing checksum of "%s"`, filepath.Base(name)))
+		bar = tspb.DefaultBytes(size, fmt.Sprintf(`computing checksum of "%s"`, util.TruncateRightWithSuffix(filepath.Base(name), 15, "...")))
 	} else {
 		bar = tspb.DefaultBytes(size, "computing checksum")
 	}

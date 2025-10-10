@@ -130,7 +130,7 @@ func Compress(ctx context.Context, src io.Reader, fi os.FileInfo, dst io.Writer,
 
 	var bar *tspb.ProgressLogger
 	if fi != nil {
-		bar = tspb.DefaultBytes(fi.Size(), fmt.Sprintf(`compressing "%s"`, fi.Name()))
+		bar = tspb.DefaultBytes(fi.Size(), fmt.Sprintf(`compressing "%s"`, util.TruncateRightWithSuffix(fi.Name(), 15, "...")))
 	} else {
 		bar = tspb.DefaultBytes(-1, "compressing")
 	}
@@ -205,5 +205,5 @@ func compressDirProgressBar(dir string) (*tspb.ProgressLogger, error) {
 		return nil, err
 	}
 
-	return tspb.DefaultBytes(size, fmt.Sprintf(`compressing "%s"`, filepath.Base(dir))), nil
+	return tspb.DefaultBytes(size, fmt.Sprintf(`compressing "%s"`, util.TruncateRightWithSuffix(filepath.Base(dir), 15, "..."))), nil
 }
