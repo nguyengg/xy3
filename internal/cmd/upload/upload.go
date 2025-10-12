@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	commons "github.com/nguyengg/go-aws-commons"
@@ -22,6 +23,7 @@ func (c *Command) upload(ctx context.Context, name string) (err error) {
 		contentType *string
 		size        int64
 		checksum    string
+		stem, ext   string
 		success     bool
 	)
 
@@ -58,6 +60,11 @@ func (c *Command) upload(ctx context.Context, name string) (err error) {
 			}
 		}()
 
+		// we'll use the ext from the archive, but the stem will be the directory's name.
+		// this way, even if the archive's stem has unique numeric suffixes (dir-1.zip, dir-2.zip, etc.), the
+		// S3 key will use the directory's original name (e.g. "dir.zip").
+		_, ext = commons.StemExt(archiveName)
+		stem = filepath.Base(name)
 	default:
 		if f, err = os.Open(name); err != nil {
 			return fmt.Errorf(`open file "%s" error: %w`, name, err)
@@ -86,10 +93,11 @@ func (c *Command) upload(ctx context.Context, name string) (err error) {
 		if _, err = f.Seek(0, io.SeekStart); err != nil {
 			return fmt.Errorf(`seek start of "%s" error: %w`, name, err)
 		}
+
+		stem, ext = commons.StemExt(name)
 	}
 
-	// use the name of the archive (in the case of directory) to have meaningful extensions.
-	stem, ext := commons.StemExt(f.Name())
+	// we used to pick a "unique" S3 key as well, but with bucket versioning enabled, that is no longer needed.
 	key := c.prefix + stem + ext
 
 	c.logger.Printf(`uploading to "s3://%s/%s"`, c.bucket, key)
