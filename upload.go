@@ -13,7 +13,6 @@ import (
 	"github.com/nguyengg/go-aws-commons/sri"
 	"github.com/nguyengg/go-aws-commons/tspb"
 	"github.com/nguyengg/xy3/internal"
-	"github.com/nguyengg/xy3/util"
 )
 
 // UploadOptions customises Upload.
@@ -96,7 +95,7 @@ func Upload(ctx context.Context, client *s3.Client, src io.Reader, bucket, key s
 	defer cancel()
 
 	if name != "" {
-		bar = tspb.DefaultBytes(size, fmt.Sprintf(`uploading "%s"`, util.TruncateRightWithSuffix(filepath.Base(name), 15, "...")))
+		bar = tspb.DefaultBytes(size, fmt.Sprintf(`uploading "%s"`, internal.TruncateRightWithSuffix(filepath.Base(name), 15, "...")))
 	} else {
 		bar = tspb.DefaultBytes(size, "uploading")
 	}
@@ -164,13 +163,13 @@ func computeChecksum(ctx context.Context, src io.Reader) (string, int64, string,
 	}
 
 	if name != "" {
-		bar = tspb.DefaultBytes(size, fmt.Sprintf(`computing checksum of "%s"`, util.TruncateRightWithSuffix(filepath.Base(name), 15, "...")))
+		bar = tspb.DefaultBytes(size, fmt.Sprintf(`computing checksum of "%s"`, internal.TruncateRightWithSuffix(filepath.Base(name), 15, "...")))
 	} else {
 		bar = tspb.DefaultBytes(size, "computing checksum")
 	}
 	defer bar.Close()
 
-	rsc := util.ResetOnCloseReadSeeker(rs)
+	rsc := internal.ResetOnCloseReadSeeker(rs)
 	_, err := commons.CopyBufferWithContext(ctx, io.MultiWriter(sizer, checksummer), io.TeeReader(rsc, bar), nil)
 	if err == nil {
 		err = rsc.Close()

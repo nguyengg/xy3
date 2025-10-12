@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/krolaw/zipstream"
-	"github.com/nguyengg/xy3/util"
+	"github.com/nguyengg/xy3/internal"
 )
 
 // Zip implements Archiver for ZIP files.
@@ -49,7 +49,7 @@ func (z Zip) Create(dst io.Writer, root string) (add AddFunction, closer CloseFu
 			return nil, err
 		}
 
-		return &util.WriteNoopCloser{Writer: fw}, nil
+		return &internal.WriteNoopCloser{Writer: fw}, nil
 	}
 
 	closer = w.Close

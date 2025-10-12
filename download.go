@@ -12,7 +12,7 @@ import (
 	"github.com/nguyengg/go-aws-commons/s3reader"
 	"github.com/nguyengg/go-aws-commons/sri"
 	"github.com/nguyengg/go-aws-commons/tspb"
-	"github.com/nguyengg/xy3/util"
+	"github.com/nguyengg/xy3/internal"
 )
 
 // DownloadOptions customises Download.
@@ -74,7 +74,7 @@ func Download(ctx context.Context, client *s3.Client, bucket, key string, dst io
 		return fmt.Errorf("create s3 reader error: %w", err)
 	}
 
-	bar := tspb.DefaultBytes(aws.ToInt64(headObjectResult.ContentLength), fmt.Sprintf(`downloading "%s"`, util.TruncateRightWithSuffix(path.Base(key), 15, "...")))
+	bar := tspb.DefaultBytes(aws.ToInt64(headObjectResult.ContentLength), fmt.Sprintf(`downloading "%s"`, internal.TruncateRightWithSuffix(path.Base(key), 15, "...")))
 	defer bar.Close()
 
 	var (

@@ -31,7 +31,6 @@ type Recompress struct {
 	bucket, prefix string
 	uploadConfig   config.BucketConfig
 	uploadClient   *s3.Client
-	logger         *log.Logger
 }
 
 func (c *Recompress) Execute(args []string) (err error) {
@@ -57,13 +56,15 @@ func (c *Recompress) Execute(args []string) (err error) {
 	}
 
 	success := 0
+	failures := make([]error, 0)
 	n := len(c.Args.Files)
 	for i, file := range c.Args.Files {
-		c.logger = internal.NewLogger(i, n, file)
-		c.logger.Printf("start recompressing")
+		ctx := internal.WithPrefixLogger(ctx, internal.Prefix(i+1, n, file))
+		logger := internal.MustLogger(ctx)
+		logger.Printf("start recompressing")
 
 		if err = c.recompress(ctx, string(file)); err == nil {
-			c.logger.Printf("done recompressing")
+			logger.Printf("done recompressing")
 			success++
 			continue
 		}
@@ -72,14 +73,22 @@ func (c *Recompress) Execute(args []string) (err error) {
 			break
 		}
 
-		c.logger.Printf("recompress error: %v", err)
+		logger.Printf("recompress error: %v", err)
+		failures = append(failures, fmt.Errorf(`recompress "%s" error: %v`, file, err))
 	}
 
 	log.Printf("successfully recompressed %d/%d files", success, n)
+	if len(failures) != 0 {
+		for _, err = range failures {
+			log.Print(err)
+		}
+	}
 	return nil
 }
 
 func (c *Recompress) recompress(ctx context.Context, originalManifestName string) error {
+	logger := internal.MustLogger(ctx)
+
 	originalManifest, err := internal.LoadManifestFromFile(originalManifestName)
 	if err != nil {
 		return fmt.Errorf("read manifest error: %w", err)
@@ -110,7 +119,7 @@ func (c *Recompress) recompress(ctx context.Context, originalManifestName string
 	defer func() {
 		if success {
 			if err = os.RemoveAll(dir); err != nil {
-				c.logger.Printf(`clean up "%s" error: %v`, dir, err)
+				logger.Printf(`clean up "%s" error: %v`, dir, err)
 			}
 		}
 	}()
@@ -143,7 +152,7 @@ func (c *Recompress) recompress(ctx context.Context, originalManifestName string
 			return err
 		}
 
-		c.logger.Print(err)
+		logger.Print(err)
 	}
 
 	// extract to a new directory inside the working directory.
@@ -198,18 +207,18 @@ func (c *Recompress) recompress(ctx context.Context, originalManifestName string
 	success = true
 
 	// delete old file locally as well as in s3.
-	c.logger.Printf(`deleting "s3://%s/%s"`, originalManifest.Bucket, originalManifest.Key)
+	logger.Printf(`deleting "s3://%s/%s"`, originalManifest.Bucket, originalManifest.Key)
 	if _, err = downloadClient.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket:              &originalManifest.Bucket,
 		Key:                 &originalManifest.Key,
 		ExpectedBucketOwner: downloadExpectedBucketOwner,
 	}); err != nil {
-		c.logger.Printf("delete old S3 file error: %v", err)
+		logger.Printf("delete old S3 file error: %v", err)
 	}
 
-	c.logger.Printf(`deleting "%s"`, originalManifestName)
+	logger.Printf(`deleting "%s"`, originalManifestName)
 	if err = os.Remove(originalManifestName); err != nil {
-		c.logger.Printf("delete old manifest error: %v", err)
+		logger.Printf("delete old manifest error: %v", err)
 	}
 
 	return nil

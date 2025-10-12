@@ -12,9 +12,12 @@ import (
 	commons "github.com/nguyengg/go-aws-commons"
 	"github.com/nguyengg/go-aws-commons/s3writer"
 	"github.com/nguyengg/xy3"
+	"github.com/nguyengg/xy3/internal"
 )
 
 func (c *Command) upload(ctx context.Context, name string) (err error) {
+	logger := internal.MustLogger(ctx)
+
 	// f will be either name opened as-is, or a new archive created from compressing directory with that name.
 	// if the latter is the case, the file will be deleted upon return.
 	var (
@@ -53,7 +56,7 @@ func (c *Command) upload(ctx context.Context, name string) (err error) {
 
 				if c.Delete {
 					if err = os.RemoveAll(name); err != nil {
-						c.logger.Printf(`delete directory "%s" error: %v`, name, err)
+						logger.Printf(`delete directory "%s" error: %v`, name, err)
 					}
 					return
 				}
@@ -74,7 +77,7 @@ func (c *Command) upload(ctx context.Context, name string) (err error) {
 
 			if success && c.Delete {
 				if err = os.Remove(name); err != nil {
-					c.logger.Printf(`delete file "%s" error: %v`, name, err)
+					logger.Printf(`delete file "%s" error: %v`, name, err)
 				}
 			}
 		}()
@@ -100,7 +103,7 @@ func (c *Command) upload(ctx context.Context, name string) (err error) {
 	// we used to pick a "unique" S3 key as well, but with bucket versioning enabled, that is no longer needed.
 	key := c.prefix + stem + ext
 
-	c.logger.Printf(`uploading to "s3://%s/%s"`, c.bucket, key)
+	logger.Printf(`uploading to "s3://%s/%s"`, c.bucket, key)
 
 	man, err := xy3.Upload(
 		ctx,
@@ -126,7 +129,7 @@ func (c *Command) upload(ctx context.Context, name string) (err error) {
 		return fmt.Errorf("upload error: %w", err)
 	}
 
-	c.logger.Printf("done uploading")
+	logger.Printf("done uploading")
 
 	// now generate the local .s3 file that contains the S3 URI. if writing to file fails, prints the JSON content
 	// to standard output so that they can be saved manually later.
@@ -141,7 +144,7 @@ func (c *Command) upload(ctx context.Context, name string) (err error) {
 		return fmt.Errorf("write manifest error: %w", err)
 	}
 
-	c.logger.Printf(`wrote to manifest "%s"`, mf.Name())
+	logger.Printf(`wrote to manifest "%s"`, mf.Name())
 
 	success = true
 	return nil

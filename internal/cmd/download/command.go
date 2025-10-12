@@ -23,8 +23,6 @@ type Command struct {
 	Args              struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the local files each containing a single S3 URI; or S3 URI in format s3://bucket/key to download directly from S3; or S3 locations in format s3://bucket/prefix to download manifests (with --manifests)"`
 	} `positional-args:"yes"`
-
-	logger *log.Logger
 }
 
 func (c *Command) Execute(args []string) (err error) {
@@ -63,20 +61,22 @@ func (c *Command) Execute(args []string) (err error) {
 	}
 
 	success := 0
+	failures := make([]error, 0)
 	n := len(c.Args.Files)
 	for i, file := range c.Args.Files {
-		c.logger = internal.NewLogger(i, n, file)
-		c.logger.Printf("start downloading")
+		ctx := internal.WithPrefixLogger(ctx, internal.Prefix(i+1, n, file))
+		logger := internal.MustLogger(ctx)
+		logger.Printf("start downloading")
 
 		name := string(file)
 		if strings.HasPrefix(name, "s3://") {
 			if err = c.downloadFromS3(ctx, name); err == nil {
-				c.logger.Printf("done downloading")
+				logger.Printf("done downloading")
 				success++
 				continue
 			}
 		} else if err = c.downloadFromManifest(ctx, name); err == nil {
-			c.logger.Printf("done downloading")
+			logger.Printf("done downloading")
 			success++
 			continue
 		}
@@ -85,10 +85,16 @@ func (c *Command) Execute(args []string) (err error) {
 			break
 		}
 
-		c.logger.Printf("download error: %v", err)
+		logger.Printf("download error: %v", err)
+		failures = append(failures, fmt.Errorf(`download "%s" error: %v`, file, err))
 	}
 
 	log.Printf("successfully downloaded %d/%d files", success, n)
+	if len(failures) != 0 {
+		for _, err = range failures {
+			log.Print(err)
+		}
+	}
 	return nil
 }
 

@@ -28,7 +28,6 @@ type Command struct {
 	bucket, prefix string
 	cfg            config.BucketConfig
 	client         *s3.Client
-	logger         *log.Logger
 }
 
 func (c *Command) Execute(args []string) (err error) {
@@ -70,9 +69,12 @@ func (c *Command) Execute(args []string) (err error) {
 	}
 
 	success := 0
+	failures := make([]error, 0)
 	n := len(c.Args.Files)
 	for i, file := range c.Args.Files {
-		c.logger = internal.NewLogger(i, n, file)
+		ctx := internal.WithPrefixLogger(ctx, internal.Prefix(i+1, n, file))
+		logger := internal.MustLogger(ctx)
+		logger.Printf("start uploading")
 
 		if err = c.upload(ctx, string(file)); err == nil {
 			success++
@@ -86,22 +88,28 @@ func (c *Command) Execute(args []string) (err error) {
 			if errors.As(err, &mErr) {
 				switch mErr.Abort {
 				case s3writer.AbortSuccess:
-					c.logger.Printf("upload was interrupted and its multipart upload was aborted successfully")
+					logger.Printf("upload was interrupted and its multipart upload was aborted successfully")
 				case s3writer.AbortFailure:
-					c.logger.Printf("upload was interrupted and its multipart upload (upload Id %s) was not aborted successfully: %v", mErr.UploadID, mErr.AbortErr)
+					logger.Printf("upload was interrupted and its multipart upload (upload Id %s) was not aborted successfully: %v", mErr.UploadID, mErr.AbortErr)
 				default:
-					c.logger.Printf("upload was interrupted without an attempt to abort its multipart upload (upload Id %s)", mErr.UploadID)
+					logger.Printf("upload was interrupted without an attempt to abort its multipart upload (upload Id %s)", mErr.UploadID)
 				}
 				break
 			}
 
-			c.logger.Printf("upload was interrupted without having started a multipart upload")
+			logger.Printf("upload was interrupted without having started a multipart upload")
 			break
 		}
 
-		c.logger.Printf("upload error: %v", err)
+		logger.Printf("upload error: %v", err)
+		failures = append(failures, fmt.Errorf(`upload "%s" error: %v`, file, err))
 	}
 
 	log.Printf("successfully uploaded %d/%d files", success, n)
+	if len(failures) != 0 {
+		for _, err = range failures {
+			log.Print(err)
+		}
+	}
 	return nil
 }

@@ -22,6 +22,8 @@ import (
 )
 
 func (c *Command) streamV2(ctx context.Context, man internal.Manifest) (bool, error) {
+	logger := internal.MustLogger(ctx)
+
 	cfg, client, err := c.createClient(ctx, man.Bucket)
 	if err != nil {
 		return false, err
@@ -49,7 +51,7 @@ func (c *Command) streamV2(ctx context.Context, man internal.Manifest) (bool, er
 		return true, fmt.Errorf("create output directory error: %w", err)
 	}
 
-	c.logger.Printf(`extracting to "%s"`, dir)
+	logger.Printf(`extracting to "%s"`, dir)
 
 	// TODO figure out how to compute checksum while downloading.
 	// it might be impossible due to this algorithm not streaming full file.
@@ -57,9 +59,9 @@ func (c *Command) streamV2(ctx context.Context, man internal.Manifest) (bool, er
 	success := false
 	defer func(name string) {
 		if !success {
-			c.logger.Printf(`deleting output directory "%s"`, name)
+			logger.Printf(`deleting output directory "%s"`, name)
 			if err = os.RemoveAll(name); err != nil {
-				c.logger.Printf("delete output directory error: %v", err)
+				logger.Printf("delete output directory error: %v", err)
 			}
 		}
 	}(dir)

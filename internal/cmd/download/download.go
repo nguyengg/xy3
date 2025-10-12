@@ -12,6 +12,8 @@ import (
 )
 
 func (c *Command) downloadFromManifest(ctx context.Context, manifestName string) error {
+	logger := internal.MustLogger(ctx)
+
 	man, err := internal.LoadManifestFromFile(manifestName)
 	if err != nil {
 		return fmt.Errorf("read manifest error: %w", err)
@@ -53,7 +55,7 @@ func (c *Command) downloadFromManifest(ctx context.Context, manifestName string)
 			return err
 		}
 
-		c.logger.Print(err)
+		logger.Print(err)
 	}
 
 	if !c.NoExtract {
@@ -66,6 +68,8 @@ func (c *Command) downloadFromManifest(ctx context.Context, manifestName string)
 }
 
 func (c *Command) downloadFromS3(ctx context.Context, s3Uri string) error {
+	logger := internal.MustLogger(ctx)
+
 	bucket, key, err := internal.ParseS3URI(s3Uri)
 	if err != nil {
 		return fmt.Errorf(`invalid s3 URI "%s": %w`, s3Uri, err)
@@ -105,7 +109,7 @@ func (c *Command) downloadFromS3(ctx context.Context, s3Uri string) error {
 			return err
 		}
 
-		c.logger.Print(err)
+		logger.Print(err)
 	}
 
 	if !c.NoExtract {
@@ -118,10 +122,12 @@ func (c *Command) downloadFromS3(ctx context.Context, s3Uri string) error {
 }
 
 func (c *Command) extract(ctx context.Context, name string) (err error) {
+	logger := internal.MustLogger(ctx)
+
 	// if file is eligible for auto-extract then proceed to do so.
 	if cd := xy3.NewDecompressorFromName(name); cd != nil {
 		if _, err = xy3.Decompress(ctx, name, "."); err == nil {
-			c.logger.Printf(`deleting temporary archive "%s"`, name)
+			logger.Printf(`deleting temporary archive "%s"`, name)
 			_ = os.Remove(name)
 		}
 	}

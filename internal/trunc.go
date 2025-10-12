@@ -1,4 +1,4 @@
-package util
+package internal
 
 // TruncateRight keeps the first len number of runes of text.
 func TruncateRight(text string, len int) string {

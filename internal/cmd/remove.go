@@ -9,7 +9,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -26,8 +25,6 @@ type Remove struct {
 	Args      struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the local files each containing a single S3 URI" required:"yes"`
 	} `positional-args:"yes"`
-
-	logger *log.Logger
 }
 
 func (c *Remove) Execute(args []string) (err error) {
@@ -47,11 +44,13 @@ func (c *Remove) Execute(args []string) (err error) {
 	reader := bufio.NewReader(os.Stdin)
 
 	success := 0
+	failures := make([]error, 0)
 	n := len(c.Args.Files)
 
 fileLoop:
 	for i, file := range c.Args.Files {
-		c.logger = internal.NewLogger(i, n, file)
+		ctx := internal.WithPrefixLogger(ctx, internal.Prefix(i+1, n, file))
+		logger := internal.MustLogger(ctx)
 
 	promptLoop:
 		for prompt {
@@ -86,18 +85,24 @@ fileLoop:
 		}
 
 		if errors.Is(err, context.Canceled) {
-			log.Printf("interrupted; successfully deleted %d/%d files", success, n)
 			return nil
 		}
 
-		c.logger.Printf(`remove "%s" error: %v`, filepath.Base(string(file)), err)
+		logger.Printf("remove error: %v", err)
+		failures = append(failures, fmt.Errorf(`remove "%s" error: %v`, file, err))
 	}
 
 	log.Printf("successfully deleted %d/%d files", success, n)
+	if len(failures) != 0 {
+		for _, err = range failures {
+			log.Print(err)
+		}
+	}
 	return nil
 }
 
 func (c *Remove) remove(ctx context.Context, name string) error {
+	logger := internal.MustLogger(ctx)
 	man, err := internal.LoadManifestFromFile(name)
 	if err != nil {
 		return fmt.Errorf("load manifest error: %w", err)
@@ -123,15 +128,15 @@ func (c *Remove) remove(ctx context.Context, name string) error {
 
 		var re *http.ResponseError
 		if errors.As(err, &re) && re.HTTPStatusCode() == 404 {
-			c.logger.Printf("s3 file no longer exists, will not attempt to delete")
+			logger.Printf("s3 file no longer exists, will not attempt to delete")
 
 			return c.unlink(name)
 		}
 
-		c.logger.Printf("check s3 object metadata error: %v", err)
+		logger.Printf("check s3 object metadata error: %v", err)
 	}
 
-	c.logger.Printf(`deleting "s3://%s/%s"`, man.Bucket, man.Key)
+	logger.Printf(`deleting "s3://%s/%s"`, man.Bucket, man.Key)
 
 	if _, err = client.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket:              aws.String(man.Bucket),
@@ -147,7 +152,7 @@ func (c *Remove) remove(ctx context.Context, name string) error {
 			return fmt.Errorf("remove s3 object error: %w", err)
 		}
 
-		c.logger.Printf("s3 file no longer exists while attempting delete")
+		logger.Printf("s3 file no longer exists while attempting delete")
 	}
 
 	return c.unlink(name)

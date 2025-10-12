@@ -24,8 +24,6 @@ type Compress struct {
 	Args           struct {
 		Files []flags.Filename `positional-arg-name:"file" description:"the files/directories to be compressed" required:"yes"`
 	} `positional-args:"yes"`
-
-	logger *log.Logger
 }
 
 func (c *Compress) Execute(args []string) (err error) {
@@ -37,13 +35,15 @@ func (c *Compress) Execute(args []string) (err error) {
 	defer stop()
 
 	success := 0
+	failures := make([]error, 0)
 	n := len(c.Args.Files)
 	for i, file := range c.Args.Files {
-		c.logger = internal.NewLogger(i, n, file)
-		c.logger.Printf("start compressing")
+		ctx := internal.WithPrefixLogger(ctx, internal.Prefix(i+1, n, file))
+		logger := internal.MustLogger(ctx)
+		logger.Printf("start compressing")
 
 		if err = c.compress(ctx, string(file)); err == nil {
-			c.logger.Printf("done compressing")
+			logger.Printf("done compressing")
 			success++
 			continue
 		}
@@ -52,14 +52,21 @@ func (c *Compress) Execute(args []string) (err error) {
 			break
 		}
 
-		c.logger.Printf(`compress "%s" error: %v`, file, err)
+		logger.Printf("compress error: %v", err)
+		failures = append(failures, fmt.Errorf(`compress "%s" error: %v`, file, err))
 	}
 
 	log.Printf("successfully compressed %d/%d files", success, n)
+	if len(failures) != 0 {
+		for _, err = range failures {
+			log.Print(err)
+		}
+	}
 	return nil
 }
 
 func (c *Compress) compress(ctx context.Context, name string) error {
+	logger := internal.MustLogger(ctx)
 	comp := xy3.NewCompressorFromName(c.Algorithm)
 	ext := comp.ArchiveExt()
 	success := false
@@ -78,7 +85,7 @@ func (c *Compress) compress(ctx context.Context, name string) error {
 
 			if success && c.Delete {
 				if err = os.RemoveAll(name); err != nil {
-					c.logger.Printf(`delete directory "%s" error: %v`, name, err)
+					logger.Printf(`delete directory "%s" error: %v`, name, err)
 				}
 			}
 		}()
@@ -113,7 +120,7 @@ func (c *Compress) compress(ctx context.Context, name string) error {
 
 			if success && c.Delete {
 				if err = os.Remove(name); err != nil {
-					c.logger.Printf(`delete file "%s" error: %v`, name, err)
+					logger.Printf(`delete file "%s" error: %v`, name, err)
 				}
 			}
 		}()

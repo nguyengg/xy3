@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/nguyengg/xy3/codec"
-	"github.com/nguyengg/xy3/util"
+	"github.com/nguyengg/xy3/internal"
 )
 
 // Tar implements Archiver for tar archives.
@@ -32,7 +32,7 @@ func (t *Tar) Create(dst io.Writer, root string) (add AddFunction, closer CloseF
 			return
 		}
 	} else {
-		enc = &util.WriteNoopCloser{Writer: dst}
+		enc = &internal.WriteNoopCloser{Writer: dst}
 	}
 
 	w := tar.NewWriter(enc)
@@ -56,10 +56,10 @@ func (t *Tar) Create(dst io.Writer, root string) (add AddFunction, closer CloseF
 			return nil, err
 		}
 
-		return &util.WriteNoopCloser{Writer: w}, nil
+		return &internal.WriteNoopCloser{Writer: w}, nil
 	}
 
-	closer = util.ChainCloser(w.Close, enc.Close)
+	closer = internal.ChainCloser(w.Close, enc.Close)
 
 	return
 }

@@ -13,7 +13,6 @@ import (
 	"github.com/nguyengg/go-aws-commons/tspb"
 	"github.com/nguyengg/xy3/archive"
 	"github.com/nguyengg/xy3/internal"
-	"github.com/nguyengg/xy3/util"
 )
 
 // DecompressOptions customises Decompress.
@@ -69,7 +68,7 @@ func decompress(ctx context.Context, name, dir string) (string, error) {
 		return "", fmt.Errorf("create decoder error: %w", err)
 	}
 
-	closer := util.ChainCloser(r.Close, src.Close, dst.Close)
+	closer := internal.ChainCloser(r.Close, src.Close, dst.Close)
 
 	if _, err = commons.CopyBufferWithContext(ctx, dst, r, nil); err != nil {
 		_, _ = closer(), os.Remove(dst.Name())
@@ -112,7 +111,7 @@ func extract(ctx context.Context, name, dir string) (string, error) {
 		return "", fmt.Errorf("find root dir error: %w", err)
 	}
 
-	bar := tspb.DefaultBytes(uncompressedSize, fmt.Sprintf(`extracting "%s"`, util.TruncateRightWithSuffix(filepath.Base(name), 15, "...")))
+	bar := tspb.DefaultBytes(uncompressedSize, fmt.Sprintf(`extracting "%s"`, internal.TruncateRightWithSuffix(filepath.Base(name), 15, "...")))
 	defer bar.Close()
 
 	// now go through the archive files again, this time opening each file for reading.
@@ -157,7 +156,7 @@ func extract(ctx context.Context, name, dir string) (string, error) {
 			return "", fmt.Errorf(`create file "%s" error: %w`, path, err)
 		}
 
-		closer := util.ChainCloser(w.Close, r.Close)
+		closer := internal.ChainCloser(w.Close, r.Close)
 
 		if _, err = commons.CopyBufferWithContext(ctx, w, io.TeeReader(r, bar), buf); err != nil {
 			_ = closer()

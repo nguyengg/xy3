@@ -67,6 +67,8 @@ func (c *Command) canStream(ctx context.Context, man internal.Manifest) (headers
 }
 
 func (c *Command) stream(ctx context.Context, man internal.Manifest) (bool, error) {
+	logger := internal.MustLogger(ctx)
+
 	cfg, client, err := c.createClient(ctx, man.Bucket)
 	if err != nil {
 		return false, err
@@ -96,14 +98,14 @@ func (c *Command) stream(ctx context.Context, man internal.Manifest) (bool, erro
 		return true, fmt.Errorf("create output directory error: %w", err)
 	}
 
-	c.logger.Printf(`extracting to "%s"`, dir)
+	logger.Printf(`extracting to "%s"`, dir)
 
 	success := false
 	defer func(name string) {
 		if !success {
-			c.logger.Printf(`deleting output directory "%s"`, name)
+			logger.Printf(`deleting output directory "%s"`, name)
 			if err = os.RemoveAll(name); err != nil {
-				c.logger.Printf("delete output directory error: %v", err)
+				logger.Printf("delete output directory error: %v", err)
 			}
 		}
 	}(dir)
@@ -199,14 +201,14 @@ func (c *Command) stream(ctx context.Context, man internal.Manifest) (bool, erro
 	_ = bar.Finish()
 
 	if verifier == nil {
-		c.logger.Printf("done downloading; no checksum to verify")
+		logger.Printf("done downloading; no checksum to verify")
 		return true, nil
 	}
 
 	if verifier.SumAndVerify(nil) {
-		c.logger.Printf("done downloading; checksum matches")
+		logger.Printf("done downloading; checksum matches")
 	} else {
-		c.logger.Printf("done downloading; checksum does not match: expect %s, got %s", man.Checksum, verifier.SumToString(nil))
+		logger.Printf("done downloading; checksum does not match: expect %s, got %s", man.Checksum, verifier.SumToString(nil))
 	}
 
 	return true, nil

@@ -11,7 +11,7 @@ import (
 	commons "github.com/nguyengg/go-aws-commons"
 	"github.com/nguyengg/go-aws-commons/tspb"
 	"github.com/nguyengg/xy3/codec"
-	"github.com/nguyengg/xy3/util"
+	"github.com/nguyengg/xy3/internal"
 )
 
 // CompressOptions customises Compress.
@@ -130,7 +130,7 @@ func Compress(ctx context.Context, src io.Reader, fi os.FileInfo, dst io.Writer,
 
 	var bar *tspb.ProgressLogger
 	if fi != nil {
-		bar = tspb.DefaultBytes(fi.Size(), fmt.Sprintf(`compressing "%s"`, util.TruncateRightWithSuffix(fi.Name(), 15, "...")))
+		bar = tspb.DefaultBytes(fi.Size(), fmt.Sprintf(`compressing "%s"`, internal.TruncateRightWithSuffix(fi.Name(), 15, "...")))
 	} else {
 		bar = tspb.DefaultBytes(-1, "compressing")
 	}
@@ -170,7 +170,7 @@ func Compress(ctx context.Context, src io.Reader, fi os.FileInfo, dst io.Writer,
 		return err
 	}
 
-	closer = util.ChainCloser(w.Close, closer)
+	closer = internal.ChainCloser(w.Close, closer)
 
 	if _, err = commons.CopyBufferWithContext(ctx, w, io.TeeReader(src, bar), nil); err != nil {
 		_ = closer()
@@ -205,5 +205,5 @@ func compressDirProgressBar(dir string) (*tspb.ProgressLogger, error) {
 		return nil, err
 	}
 
-	return tspb.DefaultBytes(size, fmt.Sprintf(`compressing "%s"`, util.TruncateRightWithSuffix(filepath.Base(dir), 15, "..."))), nil
+	return tspb.DefaultBytes(size, fmt.Sprintf(`compressing "%s"`, internal.TruncateRightWithSuffix(filepath.Base(dir), 15, "..."))), nil
 }
