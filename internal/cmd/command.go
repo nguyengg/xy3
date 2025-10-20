@@ -7,12 +7,11 @@ import (
 )
 
 type Xy3 struct {
-	Compress   Compress         `command:"compress" alias:"c" description:"compress files"`
-	Extract    Extract          `command:"extract" alias:"x" description:"extract archives"`
-	Recompress Recompress       `command:"recompress" description:"recompress archives"`
-	Download   download.Command `command:"download" alias:"down" description:"download from S3"`
-	Upload     upload.Command   `command:"upload" alias:"up" description:"upload files to S3"`
-	Remove     Remove           `command:"remove" alias:"rm" description:"remove both local and S3 files"`
+	Compress Compress         `command:"compress" alias:"c" description:"compress files"`
+	Extract  Extract          `command:"extract" alias:"x" description:"extract archives"`
+	Download download.Command `command:"download" alias:"down" description:"download from S3"`
+	Upload   upload.Command   `command:"upload" alias:"up" description:"upload files to S3"`
+	Remove   Remove           `command:"remove" alias:"rm" description:"remove both local and S3 files"`
 }
 
 func NewParser() (*flags.Parser, error) {
