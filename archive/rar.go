@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/nwaples/rardecode"
+	"github.com/nwaples/rardecode/v2"
 )
 
 // Rar implements Archiver for RAR files.
@@ -21,12 +21,12 @@ func (r Rar) Create(_ io.Writer, _ string) (AddFunction, CloseFunction, error) {
 
 func (r Rar) Open(src io.Reader) (iter.Seq2[File, error], error) {
 	if f, ok := src.(*os.File); ok {
-		if rr, err := rardecode.OpenReader(f.Name(), ""); err == nil {
+		if rr, err := rardecode.OpenReader(f.Name()); err == nil {
 			return fromRarReader(&rr.Reader, rr.Close), nil
 		}
 	}
 
-	rr, err := rardecode.NewReader(src, "")
+	rr, err := rardecode.NewReader(src)
 	if err != nil {
 		return nil, err
 	}

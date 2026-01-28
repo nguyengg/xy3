@@ -79,8 +79,8 @@ github.com/nguyengg/go-aws-commons/sri v0.1.1 h1:zhe5JVxGNgWIhFvIb9JUN6q/J4+k9Qm
 github.com/nguyengg/go-aws-commons/sri v0.1.1/go.mod h1:TjOwNWKjGWfJpONPI+XUkxVczEC3xNPC79knv2ephWQ=
 github.com/nguyengg/go-aws-commons/tspb v0.1.14 h1:V96zcpffs4M0qMtcYEiE8SCctwmuDj7WVhAK7NDC1Gk=
 github.com/nguyengg/go-aws-commons/tspb v0.1.14/go.mod h1:+MJMZDkbG2PJ2OGu+5R4eqgtHxH1up1tYEWIKOVbWsk=
-github.com/nwaples/rardecode v1.1.3 h1:cWCaZwfM5H7nAD6PyEdcVnczzV8i/JtotnyW/dD9lEc=
-github.com/nwaples/rardecode v1.1.3/go.mod h1:5DzqNKiOdpKKBH87u8VlvAnPZMXcGRhxWkRpHbbfGS0=
+github.com/nwaples/rardecode/v2 v2.2.2 h1:/5oL8dzYivRM/tqX9VcTSWfbpwcbwKG1QtSJr3b3KcU=
+github.com/nwaples/rardecode/v2 v2.2.2/go.mod h1:7uz379lSxPe6j9nvzxUZ+n7mnJNgjsRNb6IbvGVHRmw=
 github.com/pierrec/lz4/v4 v4.1.25 h1:kocOqRffaIbU5djlIBr7Wh+cx82C0vtFb0fOurZHqD0=
 github.com/pierrec/lz4/v4 v4.1.25/go.mod h1:EoQMVJgeeEOMsCqCzqFm2O0cJvljX2nGZjcRIPL34O4=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=

@@ -16,7 +16,7 @@ require (
 	github.com/nguyengg/go-aws-commons/s3writer v0.1.4
 	github.com/nguyengg/go-aws-commons/sri v0.1.1
 	github.com/nguyengg/go-aws-commons/tspb v0.1.14
-	github.com/nwaples/rardecode v1.1.3
+	github.com/nwaples/rardecode/v2 v2.2.2
 	github.com/schollz/progressbar/v3 v3.19.0
 	github.com/stretchr/testify v1.10.0
 	github.com/ulikunitz/xz v0.5.15
