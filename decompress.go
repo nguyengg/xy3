@@ -60,7 +60,12 @@ func decompress(ctx context.Context, name, dir string) (string, error) {
 	}
 	defer src.Close()
 
-	bar := tspb.DefaultBytesWriter(src, `decompressing "{basename}"`)
+	var size int64 = -1
+	if fi, err := src.Stat(); err == nil {
+		size = fi.Size()
+	}
+
+	bar := tspb.DefaultBytes(size, fmt.Sprintf(`decompressing "%s"`, internal.TruncateRightWithSuffix(filepath.Base(name), 15, "...")))
 	defer bar.Close()
 
 	r, err := cd.NewDecoder(io.TeeReader(src, bar))
@@ -79,7 +84,6 @@ func decompress(ctx context.Context, name, dir string) (string, error) {
 		return "", fmt.Errorf(`complete writing to file "%s" error: %w`, name, err)
 	}
 
-	_ = bar.Finish()
 	return dst.Name(), nil
 }
 
@@ -173,7 +177,6 @@ func extract(ctx context.Context, name, dir string) (string, error) {
 	}
 
 	success = true
-	_ = bar.Finish()
 	return target, nil
 }
 

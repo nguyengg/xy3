@@ -111,7 +111,6 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 		return fmt.Errorf(`compress directory "%s" error: %w`, dir, err)
 	}
 
-	_ = bar.Finish()
 	return nil
 }
 
@@ -128,7 +127,7 @@ func Compress(ctx context.Context, src io.Reader, fi os.FileInfo, dst io.Writer,
 
 	comp := NewCompressorFromName(opts.Algorithm)
 
-	var bar *tspb.ProgressLogger
+	var bar io.WriteCloser
 	if fi != nil {
 		bar = tspb.DefaultBytes(fi.Size(), fmt.Sprintf(`compressing "%s"`, internal.TruncateRightWithSuffix(fi.Name(), 15, "...")))
 	} else {
@@ -181,11 +180,10 @@ func Compress(ctx context.Context, src io.Reader, fi os.FileInfo, dst io.Writer,
 		return err
 	}
 
-	_ = bar.Finish()
 	return nil
 }
 
-func compressDirProgressBar(dir string) (*tspb.ProgressLogger, error) {
+func compressDirProgressBar(dir string) (io.WriteCloser, error) {
 	var size int64
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		switch {

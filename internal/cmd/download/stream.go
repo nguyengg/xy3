@@ -198,7 +198,6 @@ func (c *Command) stream(ctx context.Context, man internal.Manifest) (bool, erro
 	}
 
 	success = true
-	_ = bar.Finish()
 
 	if verifier == nil {
 		logger.Printf("done downloading; no checksum to verify")

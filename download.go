@@ -97,8 +97,6 @@ func Download(ctx context.Context, client *s3.Client, bucket, key string, dst io
 		return fmt.Errorf("download error: %w", err)
 	}
 
-	_ = bar.Finish()
-
 	if verifier != nil && !verifier.SumAndVerify(nil) {
 		return &ErrChecksumMismatch{Expected: checksum, Actual: verifier.SumToString(nil)}
 	}

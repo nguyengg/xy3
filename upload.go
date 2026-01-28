@@ -60,7 +60,7 @@ func Upload(ctx context.Context, client *s3.Client, src io.Reader, bucket, key s
 		sizer                  = &commons.Sizer{}
 		expectedChecksum       = opts.ExpectedChecksum
 		verifier         sri.Verifier
-		bar              *tspb.ProgressLogger
+		bar              io.WriteCloser
 	)
 
 	// if checksum and size are given from opts then use them to skip precomputing.
@@ -131,8 +131,6 @@ func Upload(ctx context.Context, client *s3.Client, src io.Reader, bucket, key s
 		return man, fmt.Errorf("close s3 writer error: %w", err)
 	}
 
-	_ = bar.Finish()
-
 	man.Size = sizer.Size
 	man.Checksum = verifier.SumToString(nil)
 	return
@@ -149,7 +147,7 @@ func computeChecksum(ctx context.Context, src io.Reader) (string, int64, string,
 		size        int64 = -1
 		sizer             = &commons.Sizer{}
 		checksummer       = internal.DefaultChecksum()
-		bar         *tspb.ProgressLogger
+		bar         io.WriteCloser
 	)
 
 	if f, ok := rs.(*os.File); ok {
@@ -177,8 +175,6 @@ func computeChecksum(ctx context.Context, src io.Reader) (string, int64, string,
 	if err != nil {
 		return name, 0, "", err
 	}
-
-	_ = bar.Finish()
 
 	return name, sizer.Size, checksummer.SumToString(nil), nil
 }
