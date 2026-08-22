@@ -1,5 +1,10 @@
 .env
 /bin/
+coverage.out
+coverage.html
+
+# Task runner cache
+.task/
 
 # Binaries for programs and plugins
 *.exe
@@ -27,4 +32,11 @@ go.work
 *.iml
 *.iws
 *.ipr
-.idea/
+.idea
+
+# KiroCrew agent workspace — deny by default, but keep the shareable knowledge.
+# Uses `.kiro/*` (not `.kiro/`) so git descends into the dir and the negations apply.
+.kiro/*
+!.kiro/steering/
+!.kiro/specs/
+!.kiro/hooks/

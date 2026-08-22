@@ -1,0 +1,132 @@
+# Task runner config — https://taskfile.dev/
+# Run `task --list` for all targets, `task <name>` to invoke one.
+version: '3'
+
+vars:
+  BIN_DIR: bin
+  PKG:     ./cmd/xy3
+  MODULE:  github.com/nguyengg/xy3
+
+tasks:
+  default:
+    desc: Show available tasks
+    silent: true
+    cmds:
+      - task --list
+
+  # ---------- setup ----------
+
+  setup:
+    desc: Install dev toolchain (via mise) and wire up git hooks
+    cmds:
+      - mise install
+      - pre-commit install
+      - pre-commit install --hook-type pre-push
+
+  tools:
+    desc: Install / refresh dev tools via mise
+    cmds:
+      - mise install
+
+  # ---------- build ----------
+
+  build:
+    desc: Build linux + windows binaries into ./bin/
+    deps: [build-linux, build-windows]
+
+  build-linux:
+    desc: Build the linux binary (./bin/xy3)
+    env:
+      GOOS: linux
+      GOARCH: amd64
+      CGO_ENABLED: '0'
+    cmds:
+      - go build -trimpath -o {{.BIN_DIR}}/xy3 {{.PKG}}
+    sources:
+      - '**/*.go'
+      - go.mod
+      - go.sum
+    generates:
+      - '{{.BIN_DIR}}/xy3'
+
+  build-windows:
+    desc: Build the windows binary (./bin/xy3.exe)
+    env:
+      GOOS: windows
+      GOARCH: amd64
+      CGO_ENABLED: '0'
+    cmds:
+      - go build -trimpath -o {{.BIN_DIR}}/xy3.exe {{.PKG}}
+    sources:
+      - '**/*.go'
+      - go.mod
+      - go.sum
+    generates:
+      - '{{.BIN_DIR}}/xy3.exe'
+
+  # ---------- quality ----------
+
+  fmt:
+    desc: Format sources (gofumpt + goimports)
+    cmds:
+      - gofumpt -w .
+      - goimports -w -local {{.MODULE}} .
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  lint:
+    desc: Run the full golangci-lint suite
+    cmds:
+      - golangci-lint run
+
+  lint-fast:
+    desc: Run golangci-lint fast preset (matches pre-commit)
+    cmds:
+      - golangci-lint run --fast-only
+
+  vuln:
+    desc: Run govulncheck against the module
+    cmds:
+      - govulncheck ./...
+
+  tidy:
+    desc: Tidy go.mod / go.sum
+    cmds:
+      - go mod tidy
+
+  # ---------- test ----------
+
+  test:
+    desc: Run tests
+    cmds:
+      - go test ./...
+
+  test-race:
+    desc: Run tests with the race detector
+    cmds:
+      - go test -race ./...
+
+  cover:
+    desc: Run tests with coverage and print a per-func summary
+    cmds:
+      - go test -coverprofile=coverage.out ./...
+      - go tool cover -func=coverage.out
+
+  # ---------- aggregate ----------
+
+  ci:
+    desc: Everything a CI run would do (fmt + vet + lint + test-race + vuln)
+    cmds:
+      - task: fmt
+      - task: vet
+      - task: lint
+      - task: test-race
+      - task: vuln
+
+  clean:
+    desc: Remove build + coverage artifacts
+    cmds:
+      - rm -rf {{.BIN_DIR}} coverage.out

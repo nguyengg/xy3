@@ -1,0 +1,22 @@
+[tools]
+# language toolchain
+go = "1.27"
+
+# task runner (single command to build linux + windows)
+task = "3"
+
+# git-hooks framework
+pre-commit = "4"
+
+# lint + secret-scan
+golangci-lint = "2"
+gitleaks = "8"
+
+# go-native tools installed as project-local binaries
+"go:golang.org/x/tools/cmd/goimports"    = "latest"
+"go:mvdan.cc/gofumpt"                    = "latest"
+"go:golang.org/x/vuln/cmd/govulncheck"   = "latest"
+
+[env]
+# use whichever go is on PATH (mise-managed here); don't auto-download a different toolchain
+GOTOOLCHAIN = "local"

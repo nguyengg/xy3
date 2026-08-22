@@ -1,0 +1,77 @@
+# Runs on every commit unless a hook opts into pre-push.
+# See https://pre-commit.com/  |  bootstrap with `pre-commit install`
+minimum_pre_commit_version: "3.5.0"
+default_stages: [pre-commit]
+
+repos:
+  # Generic hygiene.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: '\.(zip|7z|rar|tar\.gz|tar\.xz|tar\.zst|xz|zst|gz)$'
+      - id: end-of-file-fixer
+        exclude: '\.(zip|7z|rar|tar\.gz|tar\.xz|tar\.zst|xz|zst|gz)$'
+      - id: check-yaml
+      - id: check-added-large-files
+        args: [--maxkb=2048]
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  # Secret scan.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+
+  # Go-specific hooks — bind to the mise-installed binaries so versions stay in sync
+  # with mise.toml. `language: system` means "just call the executable on PATH".
+  - repo: local
+    hooks:
+      - id: gofumpt
+        name: gofumpt
+        description: Format Go source with gofumpt (stricter gofmt superset).
+        entry: gofumpt -w
+        language: system
+        types: [go]
+
+      - id: goimports
+        name: goimports
+        description: Sort and group Go imports (project imports last).
+        entry: goimports -w -local github.com/nguyengg/xy3
+        language: system
+        types: [go]
+
+      - id: go-vet
+        name: go vet
+        entry: go vet ./...
+        language: system
+        types: [go]
+        pass_filenames: false
+
+      - id: go-mod-tidy
+        name: go mod tidy (drift check)
+        description: Fails if go.mod / go.sum are not tidy.
+        entry: bash -c 'go mod tidy && git diff --exit-code -- go.mod go.sum'
+        language: system
+        files: '(^go\.(mod|sum)$|\.go$)'
+        pass_filenames: false
+
+      - id: golangci-lint
+        name: golangci-lint (fast preset)
+        description: Runs golangci-lint's fast preset on the whole module.
+        entry: golangci-lint run --fast-only
+        language: system
+        types: [go]
+        pass_filenames: false
+
+      # Vulnerability scan — runs on `git push`, not every commit,
+      # because it hits the module proxy + vuln DB.
+      - id: govulncheck
+        name: govulncheck
+        entry: govulncheck ./...
+        language: system
+        types: [go]
+        pass_filenames: false
+        stages: [pre-push]

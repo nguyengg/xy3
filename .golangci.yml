@@ -1,0 +1,80 @@
+# golangci-lint v2 configuration.
+# Curated linter set — not the enable-all firehose.
+# Run: `task lint`  |  Fast preset (also pre-commit): `task lint-fast`
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - errcheck        # unhandled errors
+    - govet           # official vet
+    - staticcheck     # staticcheck's SA/ST/QF checks
+    - ineffassign     # ineffectual assignments
+    - unused          # unused code
+    - gocritic        # diagnostic/style/perf checks
+    - revive          # replacement for golint
+    - gosec           # security issues
+    - misspell        # common english typos
+    - unparam         # unused function params / results
+    - unconvert       # redundant type conversions
+    - prealloc        # slices that could be preallocated
+    - nolintlint      # keep //nolint directives well-formed
+
+  settings:
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+      disabled-checks:
+        - ifElseChain     # noisy on switch-like error paths
+        - hugeParam       # 80-byte threshold is aggressive for this codebase
+        - commentedOutCode
+
+    revive:
+      rules:
+        - name: unused-parameter
+          disabled: true   # allow explicit unused params in interface impls
+        - name: unused-receiver
+          disabled: true
+
+    gosec:
+      excludes:
+        - G104   # errcheck already covers unhandled errors
+        - G304   # this tool legitimately opens user-supplied paths
+
+    misspell:
+      locale: US
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      # tests can be noisier
+      - path: _test\.go
+        linters:
+          - gosec
+          - unparam
+          - errcheck
+          - gocritic
+      # cmd wiring is allowed to shadow err / use exit()
+      - path: cmd/
+        linters:
+          - gosec
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/nguyengg/xy3
