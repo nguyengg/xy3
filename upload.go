@@ -2,6 +2,7 @@ package xy3
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -76,14 +77,25 @@ func Upload(ctx context.Context, client *s3.Client, src io.Reader, bucket, key s
 		}
 	}
 
-	if verifier, _ = sri.NewVerifier(expectedChecksum); verifier == nil {
-		return man, fmt.Errorf("unknown expected checksum: %s", expectedChecksum)
+	// if the caller supplied (or we precomputed) an expected checksum, wire up a verifier that
+	// will fail SumAndVerify on mismatch. otherwise the source is non-seekable (documented as
+	// supported) — we compute the checksum during upload without pre-verification, so use an
+	// always-true verifier that still hashes as bytes flow through.
+	if expectedChecksum != "" {
+		if verifier, _ = sri.NewVerifier(expectedChecksum); verifier == nil {
+			return man, fmt.Errorf("unknown expected checksum: %s", expectedChecksum)
+		}
+	} else {
+		verifier = &internal.AlwaysTrueVerifier{Hash: internal.DefaultChecksum()}
 	}
 
 	putObjectInput := &s3.PutObjectInput{
-		Bucket:   &bucket,
-		Key:      &key,
-		Metadata: map[string]string{"checksum": expectedChecksum},
+		Bucket: &bucket,
+		Key:    &key,
+	}
+	// only stamp the "checksum" metadata when we actually have a value to store.
+	if expectedChecksum != "" {
+		putObjectInput.Metadata = map[string]string{"checksum": expectedChecksum}
 	}
 
 	if opts.PutObjectInputOptions != nil {
@@ -120,12 +132,19 @@ func Upload(ctx context.Context, client *s3.Client, src io.Reader, bucket, key s
 	// if this verification fails, don't complete the multipart upload.
 	if !verifier.SumAndVerify(nil) {
 		cancel()
-		_ = w.Close()
 
-		return man, &ErrChecksumMismatch{
+		mismatch := &ErrChecksumMismatch{
 			Expected: expectedChecksum,
 			Actual:   verifier.SumToString(nil),
 		}
+
+		// surface the abort outcome — s3writer.Close returns MultipartUploadError carrying
+		// AbortSuccess / AbortFailure / AbortErr, so a failed AbortMultipartUpload (which
+		// would orphan multipart parts in S3) is observable via errors.As on the returned error.
+		if cerr := w.Close(); cerr != nil {
+			return man, errors.Join(mismatch, fmt.Errorf("multipart abort: %w", cerr))
+		}
+		return man, mismatch
 	}
 
 	if err = w.Close(); err != nil {

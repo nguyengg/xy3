@@ -46,6 +46,27 @@ func (c *Remove) Execute(args []string) (err error) {
 	prompt := true
 	reader := bufio.NewReader(os.Stdin)
 
+	// readLine wraps bufio.Reader.ReadString('\n') in a goroutine so a ctx cancellation
+	// (Ctrl-C / SIGTERM) can unblock the prompt. the goroutine still blocks on stdin, but
+	// the process is exiting anyway — it is torn down with main.
+	readLine := func() (string, error) {
+		type result struct {
+			line string
+			err  error
+		}
+		ch := make(chan result, 1)
+		go func() {
+			line, err := reader.ReadString('\n')
+			ch <- result{line: line, err: err}
+		}()
+		select {
+		case r := <-ch:
+			return r.line, r.err
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
+
 	success := 0
 	skipped := 0
 	failures := make([]error, 0)
@@ -63,8 +84,12 @@ fileLoop:
 			fmt.Printf("\tN/n: to skip this file\n")
 			fmt.Printf("\tF/f: to start deleting without prompt for all remaining files including this\n")
 
-			line, rerr := reader.ReadString('\n')
+			line, rerr := readLine()
 			if rerr != nil {
+				if errors.Is(rerr, context.Canceled) || errors.Is(rerr, context.DeadlineExceeded) {
+					// Ctrl-C at the prompt — bail out to the tail-end summary + interrupt exit.
+					break fileLoop
+				}
 				if errors.Is(rerr, io.EOF) {
 					log.Printf("stdin ended; successfully deleted %d/%d files (%d skipped)", success, n, skipped)
 					return nil

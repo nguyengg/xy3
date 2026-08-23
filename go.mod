@@ -9,7 +9,7 @@ require (
 	github.com/bodgit/sevenzip v1.6.1
 	github.com/go-ini/ini v1.67.0
 	github.com/jessevdk/go-flags v1.6.1
-	github.com/klauspost/compress v1.18.3
+	github.com/klauspost/compress v1.19.2
 	github.com/krolaw/zipstream v0.0.0-20241109034754-4a67be70fe31
 	github.com/nguyengg/go-aws-commons v0.1.8
 	github.com/nguyengg/go-aws-commons/s3reader v0.1.3
@@ -17,7 +17,6 @@ require (
 	github.com/nguyengg/go-aws-commons/sri v0.1.1
 	github.com/nguyengg/go-aws-commons/tspb v0.1.14
 	github.com/nwaples/rardecode/v2 v2.2.2
-	github.com/schollz/progressbar/v3 v3.19.0
 	github.com/stretchr/testify v1.10.0
 	github.com/ulikunitz/xz v0.5.15
 	github.com/valyala/bytebufferpool v1.0.0
@@ -51,10 +50,11 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.25 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
+	github.com/schollz/progressbar/v3 v3.19.0 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	go4.org v0.0.0-20260112195520-a5071408f32f // indirect
-	golang.org/x/sys v0.40.0 // indirect
-	golang.org/x/text v0.33.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
