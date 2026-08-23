@@ -97,11 +97,11 @@ func (fi *rarFileInfo) Name() string {
 }
 
 func (fi *rarFileInfo) Size() int64 {
-	return fi.FileHeader.UnPackedSize
+	return fi.UnPackedSize
 }
 
 func (fi *rarFileInfo) ModTime() time.Time {
-	return fi.FileHeader.ModificationTime
+	return fi.ModificationTime
 }
 
 func (fi *rarFileInfo) IsDir() bool {

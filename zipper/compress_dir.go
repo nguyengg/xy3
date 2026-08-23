@@ -163,7 +163,7 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 				return fmt.Errorf("describe file (path=%s) error: %w", srcPath, err)
 			}
 
-			src, err := os.Open(srcPath)
+			src, err := os.Open(srcPath) //nolint:gosec // G122: user is compressing their own directory tree; following symlinks is desired.
 			if err != nil {
 				return fmt.Errorf("open file (path=%s) error: %w", srcPath, err)
 			}

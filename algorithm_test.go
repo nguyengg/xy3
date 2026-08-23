@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/nguyengg/xy3/archive"
-	"github.com/nguyengg/xy3/codec"
 )
 
 func TestNewDecompressorFromName(t *testing.T) {
@@ -149,9 +148,7 @@ func TestNewCompressorFromName_TarCodecWiring(t *testing.T) {
 			tarComp, ok := got.(*archive.Tar)
 			assert.True(t, ok, "expected *archive.Tar for %q", tt.alg)
 			assert.NotNil(t, tarComp.Codec)
-			cd, ok := tarComp.Codec.(codec.Codec)
-			assert.True(t, ok)
-			assert.Equal(t, tt.wantCodecExt, cd.Ext())
+			assert.Equal(t, tt.wantCodecExt, tarComp.Ext())
 		})
 	}
 }

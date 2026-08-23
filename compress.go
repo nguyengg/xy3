@@ -70,7 +70,7 @@ func CompressDir(ctx context.Context, dir string, dst io.Writer, optFns ...func(
 			return fmt.Errorf("walk dir error: %w", err)
 
 		case d.Type().IsRegular():
-			src, err := os.Open(path)
+			src, err := os.Open(path) //nolint:gosec // G122: user is compressing their own directory tree; following symlinks is desired.
 			if err != nil {
 				return fmt.Errorf(`open file "%s" error: %w`, path, err)
 			}
@@ -130,7 +130,7 @@ func Compress(ctx context.Context, src io.Reader, fi os.FileInfo, dst io.Writer,
 
 	var bar io.WriteCloser
 	if fi != nil {
-		bar = tspb.DefaultBytes(fi.Size(), fmt.Sprintf(`compressing "%s"`, internal.TruncateRightWithSuffix(fi.Name(), 15, "...")))
+		bar = tspb.DefaultBytes(fi.Size(), fmt.Sprintf(`compressing %q`, internal.TruncateRightWithSuffix(fi.Name(), 15, "...")))
 	} else {
 		bar = tspb.DefaultBytes(-1, "compressing")
 	}
@@ -177,7 +177,7 @@ func Compress(ctx context.Context, src io.Reader, fi os.FileInfo, dst io.Writer,
 		return err
 	}
 
-	if err = closer(); err != nil {
+	if err := closer(); err != nil {
 		return err
 	}
 
@@ -204,5 +204,5 @@ func compressDirProgressBar(dir string) (io.WriteCloser, error) {
 		return nil, err
 	}
 
-	return tspb.DefaultBytes(size, fmt.Sprintf(`compressing "%s"`, internal.TruncateRightWithSuffix(filepath.Base(dir), 15, "..."))), nil
+	return tspb.DefaultBytes(size, fmt.Sprintf(`compressing %q`, internal.TruncateRightWithSuffix(filepath.Base(dir), 15, "..."))), nil
 }

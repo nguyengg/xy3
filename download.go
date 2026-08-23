@@ -75,7 +75,7 @@ func Download(ctx context.Context, client *s3.Client, bucket, key string, dst io
 		return fmt.Errorf("create s3 reader error: %w", err)
 	}
 
-	bar := tspb.DefaultBytes(aws.ToInt64(headObjectResult.ContentLength), fmt.Sprintf(`downloading "%s"`, internal.TruncateRightWithSuffix(path.Base(key), 15, "...")))
+	bar := tspb.DefaultBytes(aws.ToInt64(headObjectResult.ContentLength), fmt.Sprintf(`downloading %q`, internal.TruncateRightWithSuffix(path.Base(key), 15, "...")))
 	defer bar.Close()
 
 	var (

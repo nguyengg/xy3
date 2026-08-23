@@ -66,7 +66,7 @@ func decompress(ctx context.Context, name, dir string) (string, error) {
 		size = fi.Size()
 	}
 
-	bar := tspb.DefaultBytes(size, fmt.Sprintf(`decompressing "%s"`, internal.TruncateRightWithSuffix(filepath.Base(name), 15, "...")))
+	bar := tspb.DefaultBytes(size, fmt.Sprintf(`decompressing %q`, internal.TruncateRightWithSuffix(filepath.Base(name), 15, "...")))
 	defer bar.Close()
 
 	r, err := cd.NewDecoder(io.TeeReader(src, bar))
@@ -116,7 +116,7 @@ func extract(ctx context.Context, name, dir string) (string, error) {
 		return "", fmt.Errorf("find root dir error: %w", err)
 	}
 
-	bar := tspb.DefaultBytes(uncompressedSize, fmt.Sprintf(`extracting "%s"`, internal.TruncateRightWithSuffix(filepath.Base(name), 15, "...")))
+	bar := tspb.DefaultBytes(uncompressedSize, fmt.Sprintf(`extracting %q`, internal.TruncateRightWithSuffix(filepath.Base(name), 15, "...")))
 	defer bar.Close()
 
 	// now go through the archive files again, this time opening each file for reading.

@@ -1,6 +1,6 @@
 package internal
 
-func FirstNonNilPtr[T any](a *T, b *T) *T {
+func FirstNonNilPtr[T any](a, b *T) *T {
 	if a != nil {
 		return a
 	}

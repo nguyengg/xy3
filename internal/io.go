@@ -1,9 +1,7 @@
 package internal
 
 import (
-	"errors"
 	"io"
-	"strings"
 )
 
 type resetOnCloseReadSeeker struct {
@@ -60,7 +58,7 @@ func (w *WriteNoopCloser) Close() error {
 // subsequent errors.
 //
 // The order of wrapping assumes the first close function is the most important.
-func ChainCloser(fn1 func() error, fn2 func() error, fns ...func() error) func() error {
+func ChainCloser(fn1, fn2 func() error, fns ...func() error) func() error {
 	return func() error {
 		err, err2 := fn1(), fn2()
 
@@ -76,39 +74,4 @@ func ChainCloser(fn1 func() error, fn2 func() error, fns ...func() error) func()
 
 		return err
 	}
-}
-
-type chainedError struct {
-	cause, next error
-}
-
-func (c *chainedError) Error() string {
-	next := c.next
-	if next == nil {
-		return c.cause.Error()
-	}
-
-	var sb strings.Builder
-	sb.WriteString(c.cause.Error())
-
-	for next != nil {
-		var ce *chainedError
-		if !errors.As(next, &ce) {
-			sb.WriteString(", " + next.Error())
-			break
-		}
-
-		sb.WriteString(", " + ce.cause.Error())
-		next = ce.next
-	}
-
-	return sb.String()
-}
-
-func (c *chainedError) Unwrap() []error {
-	if c.next == nil {
-		return []error{c.cause}
-	}
-
-	return []error{c.cause, c.next}
 }

@@ -224,7 +224,7 @@ func fill(name string, data []byte) error {
 func sortedNames(files []*zip.File) []string {
 	names := make([]string, len(files))
 	for i, file := range files {
-		names[i] = file.FileHeader.Name
+		names[i] = file.Name
 	}
 
 	slices.Sort(names)

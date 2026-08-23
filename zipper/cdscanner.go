@@ -101,7 +101,6 @@ type cdScanner struct {
 	size        int
 	offset      int64
 	err         error
-	eof         bool
 }
 
 func (s *cdScanner) RecordCount() int {
@@ -199,15 +198,18 @@ func (s *cdScanner) All() iter.Seq[CDFileHeader] {
 //
 // https://en.wikipedia.org/wiki/ZIP_(file_format)#Central_directory_file_header_(CDFH)
 func toFileHeader(data []byte) (fh CDFileHeader) {
+	// parse the raw DOS date + time up front so we can populate the modern zip.FileHeader.Modified
+	// field directly, avoiding the deprecated ModifiedDate / ModifiedTime u16 fields (Go 1.10+).
+	dosTime := binary.LittleEndian.Uint16(data[12:14])
+	dosDate := binary.LittleEndian.Uint16(data[14:16])
+
 	fh = CDFileHeader{
 		FileHeader: zip.FileHeader{
 			CreatorVersion:     binary.LittleEndian.Uint16(data[4:6]),
 			ReaderVersion:      binary.LittleEndian.Uint16(data[6:8]),
 			Flags:              binary.LittleEndian.Uint16(data[8:10]),
 			Method:             binary.LittleEndian.Uint16(data[10:12]),
-			Modified:           time.Time{},
-			ModifiedTime:       binary.LittleEndian.Uint16(data[12:14]),
-			ModifiedDate:       binary.LittleEndian.Uint16(data[14:16]),
+			Modified:           msDosTimeToTime(dosDate, dosTime),
 			CRC32:              binary.LittleEndian.Uint32(data[16:20]),
 			CompressedSize64:   uint64(binary.LittleEndian.Uint32(data[20:24])),
 			UncompressedSize64: uint64(binary.LittleEndian.Uint32(data[24:28])),
@@ -216,7 +218,6 @@ func toFileHeader(data []byte) (fh CDFileHeader) {
 		DiskNumber: binary.LittleEndian.Uint16(data[34:46]),
 		Offset:     uint64(binary.LittleEndian.Uint32(data[42:46])),
 	}
-	fh.Modified = msDosTimeToTime(fh.ModifiedDate, fh.ModifiedTime)
 
 	n := int(data[28]) | int(data[29])<<8
 	m := int(data[30]) | int(data[31])<<8

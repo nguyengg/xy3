@@ -14,7 +14,7 @@ import (
 //
 // i and n are the zero-based ordinal and expected count.
 func Prefix(i, n int, name flags.Filename) string {
-	return fmt.Sprintf(`[%d/%d] "%s" - `, i, n, TruncateRightWithSuffix(filepath.Base(string(name)), 30, "..."))
+	return fmt.Sprintf(`[%d/%d] %q - `, i, n, TruncateRightWithSuffix(filepath.Base(string(name)), 30, "..."))
 }
 
 type (

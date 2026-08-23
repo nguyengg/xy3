@@ -108,7 +108,7 @@ func Upload(ctx context.Context, client *s3.Client, src io.Reader, bucket, key s
 	defer cancel()
 
 	if name != "" {
-		bar = tspb.DefaultBytes(size, fmt.Sprintf(`uploading "%s"`, internal.TruncateRightWithSuffix(filepath.Base(name), 15, "...")))
+		bar = tspb.DefaultBytes(size, fmt.Sprintf(`uploading %q`, internal.TruncateRightWithSuffix(filepath.Base(name), 15, "...")))
 	} else {
 		bar = tspb.DefaultBytes(size, "uploading")
 	}
@@ -156,19 +156,18 @@ func Upload(ctx context.Context, client *s3.Client, src io.Reader, bucket, key s
 	return
 }
 
-func computeChecksum(ctx context.Context, src io.Reader) (string, int64, string, error) {
+func computeChecksum(ctx context.Context, src io.Reader) (name string, size int64, checksum string, err error) {
 	rs, ok := src.(io.ReadSeeker)
 	if !ok {
 		return "", -1, "", nil
 	}
 
 	var (
-		name        string
-		size        int64 = -1
-		sizer             = &commons.Sizer{}
-		checksummer       = internal.DefaultChecksum()
+		sizer       = &commons.Sizer{}
+		checksummer = internal.DefaultChecksum()
 		bar         io.WriteCloser
 	)
+	size = -1
 
 	if f, ok := rs.(*os.File); ok {
 		name = f.Name()
@@ -181,14 +180,14 @@ func computeChecksum(ctx context.Context, src io.Reader) (string, int64, string,
 	}
 
 	if name != "" {
-		bar = tspb.DefaultBytes(size, fmt.Sprintf(`computing checksum of "%s"`, internal.TruncateRightWithSuffix(filepath.Base(name), 15, "...")))
+		bar = tspb.DefaultBytes(size, fmt.Sprintf(`computing checksum of %q`, internal.TruncateRightWithSuffix(filepath.Base(name), 15, "...")))
 	} else {
 		bar = tspb.DefaultBytes(size, "computing checksum")
 	}
 	defer bar.Close()
 
 	rsc := internal.ResetOnCloseReadSeeker(rs)
-	_, err := commons.CopyBufferWithContext(ctx, io.MultiWriter(sizer, checksummer), io.TeeReader(rsc, bar), nil)
+	_, err = commons.CopyBufferWithContext(ctx, io.MultiWriter(sizer, checksummer), io.TeeReader(rsc, bar), nil)
 	if err == nil {
 		err = rsc.Close()
 	}

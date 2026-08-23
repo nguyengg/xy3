@@ -2,6 +2,7 @@ package download
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
@@ -36,7 +37,7 @@ func (c *Command) downloadFromManifest(ctx context.Context, manifestName string)
 
 	name := f.Name()
 
-	err = xy3.Download(
+	downloadErr := xy3.Download(
 		ctx,
 		client,
 		man.Bucket,
@@ -50,22 +51,30 @@ func (c *Command) downloadFromManifest(ctx context.Context, manifestName string)
 
 			opts.ExpectedChecksum = man.Checksum
 		})
-	if err != nil {
-		if _, ok := xy3.IsErrChecksumMismatch(err); !ok {
+	if downloadErr != nil {
+		if _, ok := xy3.IsErrChecksumMismatch(downloadErr); !ok {
 			_, _ = f.Close(), os.Remove(name)
-			return err
+			return downloadErr
 		}
 
-		logger.Print(err)
+		// checksum mismatch: log it, keep the file (and any extract that follows), but preserve
+		// downloadErr so the CLI counts this as a failure and exits non-zero.
+		logger.Print(downloadErr)
 	}
 
 	if !c.NoExtract {
-		if err = c.extract(ctx, name); err == nil {
-			_, _ = f.Close(), os.Remove(name)
+		if extractErr := c.extract(ctx, name); extractErr != nil {
+			if downloadErr != nil {
+				return errors.Join(downloadErr, extractErr)
+			}
+			return extractErr
 		}
+		// extract succeeded — the extracted directory stays on disk;
+		// clean up only the intermediate archive file.
+		_, _ = f.Close(), os.Remove(name)
 	}
 
-	return err
+	return downloadErr
 }
 
 func (c *Command) downloadFromS3(ctx context.Context, s3Uri string) error {
@@ -92,7 +101,7 @@ func (c *Command) downloadFromS3(ctx context.Context, s3Uri string) error {
 
 	name := f.Name()
 
-	err = xy3.Download(
+	downloadErr := xy3.Download(
 		ctx,
 		client,
 		bucket,
@@ -104,22 +113,27 @@ func (c *Command) downloadFromS3(ctx context.Context, s3Uri string) error {
 				opts.MaxBytesInSecond = c.MaxBytesInSecond
 			}
 		})
-	if err != nil {
-		if _, ok := xy3.IsErrChecksumMismatch(err); !ok {
+	if downloadErr != nil {
+		if _, ok := xy3.IsErrChecksumMismatch(downloadErr); !ok {
 			_, _ = f.Close(), os.Remove(name)
-			return err
+			return downloadErr
 		}
 
-		logger.Print(err)
+		// see downloadFromManifest for policy: on mismatch, keep the file, still exit non-zero.
+		logger.Print(downloadErr)
 	}
 
 	if !c.NoExtract {
-		if err = c.extract(ctx, name); err == nil {
-			_, _ = f.Close(), os.Remove(name)
+		if extractErr := c.extract(ctx, name); extractErr != nil {
+			if downloadErr != nil {
+				return errors.Join(downloadErr, extractErr)
+			}
+			return extractErr
 		}
+		_, _ = f.Close(), os.Remove(name)
 	}
 
-	return err
+	return downloadErr
 }
 
 func (c *Command) extract(ctx context.Context, name string) (err error) {

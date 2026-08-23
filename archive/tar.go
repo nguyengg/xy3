@@ -28,7 +28,7 @@ func (t *Tar) Create(dst io.Writer, root string) (add AddFunction, closer CloseF
 	var enc io.WriteCloser
 
 	if t.Codec != nil {
-		enc, err = t.Codec.NewEncoder(dst)
+		enc, err = t.NewEncoder(dst)
 		if err != nil {
 			return
 		}
@@ -53,8 +53,8 @@ func (t *Tar) Create(dst io.Writer, root string) (add AddFunction, closer CloseF
 			hdr.Name = path.Join(root, name)
 		}
 
-		if err = w.WriteHeader(hdr); err != nil {
-			return nil, err
+		if werr := w.WriteHeader(hdr); werr != nil {
+			return nil, werr
 		}
 
 		return &internal.WriteNoopCloser{Writer: w}, nil
@@ -69,7 +69,7 @@ func (t *Tar) Open(src io.Reader) (_ iter.Seq2[File, error], err error) {
 	var dec io.ReadCloser
 
 	if t.Codec != nil {
-		if dec, err = t.Codec.NewDecoder(src); err != nil {
+		if dec, err = t.NewDecoder(src); err != nil {
 			return
 		}
 	} else {
@@ -83,19 +83,19 @@ func (t *Tar) Open(src io.Reader) (_ iter.Seq2[File, error], err error) {
 		// or normal EOF. sync.OnceValue caches the close error so we can surface it on the EOF
 		// path AND still safely re-invoke via the deferred call on any other exit.
 		closeDec := sync.OnceValue(dec.Close)
-		defer closeDec()
+		defer func() { _ = closeDec() }()
 
 		for {
 			hdr, err := tr.Next()
 			if err == io.EOF {
 				if cerr := closeDec(); cerr != nil {
-					yield(nil, cerr)
+					_ = yield(nil, cerr)
 				}
 				return
 			}
 			if err != nil {
 				// on a non-EOF error hdr is nil; do not construct a tarFile around it.
-				yield(nil, err)
+				_ = yield(nil, err)
 				return
 			}
 
@@ -111,7 +111,7 @@ func (t *Tar) Open(src io.Reader) (_ iter.Seq2[File, error], err error) {
 
 func (t *Tar) ArchiveExt() string {
 	if t.Codec != nil {
-		return ".tar" + t.Codec.Ext()
+		return ".tar" + t.Ext()
 	}
 
 	return ".tar"
@@ -137,7 +137,9 @@ func (f *tarFile) Name() string {
 }
 
 func (f *tarFile) Mode() os.FileMode {
-	return os.FileMode(f.Header.Mode)
+	// tar Header.Mode is int64 by the archive/tar API but only carries POSIX-mode bits that
+	// fit in a uint32; the truncation is well-defined here.
+	return os.FileMode(f.Header.Mode) //nolint:gosec // G115: intentional; see comment above.
 }
 
 func (f *tarFile) Open() (io.ReadCloser, error) {
