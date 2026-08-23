@@ -48,7 +48,6 @@ func (l *Loader) NewS3ClientForBucket(ctx context.Context, bucket string, optFns
 	c := s3.NewFromConfig(cfg, optFns...)
 	l.s3clientCache.Store(key, c)
 	return c, nil
-
 }
 
 func NewS3ClientForBucket(ctx context.Context, bucket string, optFns ...func(*s3.Options)) (*s3.Client, error) {

@@ -209,11 +209,11 @@ func TestCompressDir_InMemory(t *testing.T) {
 }
 
 func fill(name string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(name), 0777); err != nil {
+	if err := os.MkdirAll(filepath.Dir(name), 0o777); err != nil {
 		return err
 	}
 
-	f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE, 0666)
+	f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE, 0o666)
 	if err == nil {
 		_, err = f.Write(data)
 		_ = f.Close()

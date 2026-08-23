@@ -9,6 +9,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	commons "github.com/nguyengg/go-aws-commons"
+
 	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
 )
@@ -21,7 +22,7 @@ func (c *Command) compressDir(ctx context.Context, dir string) (name string, con
 	comp := xy3.NewCompressorFromName(alg)
 	ext := comp.ArchiveExt()
 
-	f, err := commons.OpenExclFile(".", filepath.Base(dir), ext, 0666)
+	f, err := commons.OpenExclFile(".", filepath.Base(dir), ext, 0o666)
 	if err != nil {
 		return "", nil, 0, "", fmt.Errorf("create archive error: %w", err)
 	}

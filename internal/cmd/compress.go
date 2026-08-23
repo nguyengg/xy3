@@ -9,9 +9,11 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/jessevdk/go-flags"
 	commons "github.com/nguyengg/go-aws-commons"
+
 	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/codec"
 	"github.com/nguyengg/xy3/internal"
@@ -31,7 +33,7 @@ func (c *Compress) Execute(args []string) (err error) {
 		return fmt.Errorf("unknown positional arguments: %s", strings.Join(args, " "))
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	success := 0
@@ -53,14 +55,18 @@ func (c *Compress) Execute(args []string) (err error) {
 		}
 
 		logger.Printf("compress error: %v", err)
-		failures = append(failures, fmt.Errorf(`compress "%s" error: %v`, file, err))
+		failures = append(failures, fmt.Errorf(`compress "%s" error: %w`, file, err))
 	}
 
 	log.Printf("successfully compressed %d/%d files", success, n)
+
+	// surface interrupt so the process exits non-zero on Ctrl-C mid-batch.
+	if cerr := ctx.Err(); cerr != nil {
+		return cerr
+	}
+
 	if len(failures) != 0 {
-		for _, err = range failures {
-			log.Print(err)
-		}
+		return errors.Join(failures...)
 	}
 	return nil
 }
@@ -76,7 +82,7 @@ func (c *Compress) compress(ctx context.Context, name string) error {
 		return fmt.Errorf(`stat file "%s" error: %w`, name, err)
 
 	case fi.IsDir():
-		dst, err := commons.OpenExclFile(".", filepath.Base(name), ext, 0666)
+		dst, err := commons.OpenExclFile(".", filepath.Base(name), ext, 0o666)
 		if err != nil {
 			return fmt.Errorf("create archive error: %w", err)
 		}
@@ -111,7 +117,7 @@ func (c *Compress) compress(ctx context.Context, name string) error {
 			ext = cd.Ext()
 		}
 
-		dst, err := commons.OpenExclFile(".", filepath.Base(name), ext, 0666)
+		dst, err := commons.OpenExclFile(".", filepath.Base(name), ext, 0o666)
 		if err != nil {
 			return fmt.Errorf("create output file error: %w", err)
 		}

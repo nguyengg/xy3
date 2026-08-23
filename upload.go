@@ -12,6 +12,7 @@ import (
 	"github.com/nguyengg/go-aws-commons/s3writer"
 	"github.com/nguyengg/go-aws-commons/sri"
 	"github.com/nguyengg/go-aws-commons/tspb"
+
 	"github.com/nguyengg/xy3/internal"
 )
 
@@ -122,7 +123,7 @@ func Upload(ctx context.Context, client *s3.Client, src io.Reader, bucket, key s
 		_ = w.Close()
 
 		return man, &ErrChecksumMismatch{
-			Expected: opts.ExpectedChecksum,
+			Expected: expectedChecksum,
 			Actual:   verifier.SumToString(nil),
 		}
 	}

@@ -13,7 +13,10 @@ var _ Codec = ZstdCodec{}
 
 func (c ZstdCodec) NewDecoder(src io.Reader) (io.ReadCloser, error) {
 	dec, err := zstd.NewReader(src)
-	return &zstdDecoder{dec}, err
+	if err != nil {
+		return nil, err
+	}
+	return &zstdDecoder{dec}, nil
 }
 
 type zstdDecoder struct {

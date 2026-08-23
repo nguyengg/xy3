@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/nguyengg/xy3/codec"
 	"github.com/nguyengg/xy3/internal"
@@ -78,22 +79,32 @@ func (t *Tar) Open(src io.Reader) (_ iter.Seq2[File, error], err error) {
 	tr := tar.NewReader(dec)
 
 	return func(yield func(File, error) bool) {
+		// ensure the decoder is closed on every exit path — early yield-false, mid-stream error,
+		// or normal EOF. sync.OnceValue caches the close error so we can surface it on the EOF
+		// path AND still safely re-invoke via the deferred call on any other exit.
+		closeDec := sync.OnceValue(dec.Close)
+		defer closeDec()
+
 		for {
 			hdr, err := tr.Next()
 			if err == io.EOF {
-				break
+				if cerr := closeDec(); cerr != nil {
+					yield(nil, cerr)
+				}
+				return
+			}
+			if err != nil {
+				// on a non-EOF error hdr is nil; do not construct a tarFile around it.
+				yield(nil, err)
+				return
 			}
 
 			if !yield(&tarFile{
 				Reader: tr,
 				Header: hdr,
-			}, err) || err != nil {
+			}, nil) {
 				return
 			}
-		}
-
-		if err = dec.Close(); err != nil {
-			yield(nil, err)
 		}
 	}, nil
 }

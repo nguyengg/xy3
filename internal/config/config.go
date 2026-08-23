@@ -48,11 +48,13 @@ func (l *Loader) ForBucket(bucket string) (c BucketConfig) {
 
 	c.AWSProfile = sec.Key("aws-profile").Value()
 
-	if k := sec.Key("expected-bucket-owner"); k != nil {
-		c.ExpectedBucketOwner = aws.String(k.Value())
+	// go-ini's Section.Key auto-creates missing keys, so we cannot check for nil to detect absence.
+	// gate on the value being non-empty instead, otherwise a spurious aws.String("") is sent to S3.
+	if v := sec.Key("expected-bucket-owner").Value(); v != "" {
+		c.ExpectedBucketOwner = aws.String(v)
 	}
-	if k := sec.Key("storage-class"); k != nil {
-		c.StorageClass = types.StorageClass(k.Value())
+	if v := sec.Key("storage-class").Value(); v != "" {
+		c.StorageClass = types.StorageClass(v)
 	}
 
 	return

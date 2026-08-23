@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"github.com/jessevdk/go-flags"
+
 	"github.com/nguyengg/xy3/internal/cmd/download"
 	"github.com/nguyengg/xy3/internal/cmd/upload"
 )

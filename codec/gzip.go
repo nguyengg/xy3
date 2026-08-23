@@ -6,8 +6,7 @@ import (
 )
 
 // GzipCodec implements Codec for gzip compression algorithm.
-type GzipCodec struct {
-}
+type GzipCodec struct{}
 
 var _ Codec = GzipCodec{}
 

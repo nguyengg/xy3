@@ -10,8 +10,7 @@ import (
 )
 
 // SevenZip implements Archiver.Open for 7z files.
-type SevenZip struct {
-}
+type SevenZip struct{}
 
 var _ Archiver = SevenZip{}
 

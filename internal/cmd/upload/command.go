@@ -8,10 +8,12 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jessevdk/go-flags"
 	"github.com/nguyengg/go-aws-commons/s3writer"
+
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/config"
 )
@@ -45,7 +47,7 @@ func (c *Command) Execute(args []string) (err error) {
 		}
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	if _, err = config.LoadProfile(ctx, c.Profile); err != nil {
@@ -84,7 +86,7 @@ func (c *Command) Execute(args []string) (err error) {
 		// if an error happens due to context being cancelled (interrupt signal), manually log about whether the
 		// multipart upload was successfully aborted.
 		if errors.Is(err, context.Canceled) {
-			var mErr = s3writer.MultipartUploadError{}
+			mErr := s3writer.MultipartUploadError{}
 			if errors.As(err, &mErr) {
 				switch mErr.Abort {
 				case s3writer.AbortSuccess:
@@ -102,14 +104,18 @@ func (c *Command) Execute(args []string) (err error) {
 		}
 
 		logger.Printf("upload error: %v", err)
-		failures = append(failures, fmt.Errorf(`upload "%s" error: %v`, file, err))
+		failures = append(failures, fmt.Errorf(`upload "%s" error: %w`, file, err))
 	}
 
 	log.Printf("successfully uploaded %d/%d files", success, n)
+
+	// surface interrupt so the process exits non-zero on Ctrl-C mid-batch.
+	if cerr := ctx.Err(); cerr != nil {
+		return cerr
+	}
+
 	if len(failures) != 0 {
-		for _, err = range failures {
-			log.Print(err)
-		}
+		return errors.Join(failures...)
 	}
 	return nil
 }

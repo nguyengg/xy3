@@ -7,8 +7,7 @@ import (
 )
 
 // XzCodec implements Codec for xz compression algorithm.
-type XzCodec struct {
-}
+type XzCodec struct{}
 
 var _ Codec = XzCodec{}
 

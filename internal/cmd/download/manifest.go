@@ -10,6 +10,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+
 	"github.com/nguyengg/xy3/internal"
 )
 
@@ -57,7 +58,7 @@ func (c *Command) downloadManifests(ctx context.Context, s3Location string) (n i
 				Checksum:            headObjectResult.Metadata["checksum"],
 			}
 
-			f, err := os.OpenFile(path.Base(m.Key)+".s3", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
+			f, err := os.OpenFile(path.Base(m.Key)+".s3", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o666)
 			if err != nil {
 				return n, fmt.Errorf("create manifest file error: %w", err)
 			}

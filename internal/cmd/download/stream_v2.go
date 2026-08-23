@@ -17,6 +17,7 @@ import (
 	commons "github.com/nguyengg/go-aws-commons"
 	"github.com/nguyengg/go-aws-commons/s3reader"
 	"github.com/nguyengg/go-aws-commons/tspb"
+
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/zipper"
 )
@@ -46,7 +47,7 @@ func (c *Command) streamV2(ctx context.Context, man internal.Manifest) (bool, er
 	// attempt to create the local directory that will store the extracted files.
 	// if we fail to download the file complete, clean up by deleting the directory.
 	stem, _ := commons.StemExt(man.Key)
-	dir, err := commons.MkExclDir(".", stem, 0755)
+	dir, err := commons.MkExclDir(".", stem, 0o755)
 	if err != nil {
 		return true, fmt.Errorf("create output directory error: %w", err)
 	}
@@ -109,7 +110,7 @@ func (c *Command) streamV2(ctx context.Context, man internal.Manifest) (bool, er
 					continue
 				}
 
-				var decompressor = io.NopCloser
+				decompressor := io.NopCloser
 				if fh.Method == zip.Deflate {
 					decompressor = flate.NewReader
 				}
@@ -126,7 +127,7 @@ func (c *Command) streamV2(ctx context.Context, man internal.Manifest) (bool, er
 				m := int(data[28]) | int(data[29])<<8
 				dst := decompressor(io.NewSectionReader(r, offset+int64(30+n+m), int64(fh.CompressedSize64)))
 
-				if err = os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+				if err = os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 					cancel(fmt.Errorf("create path to file error: %w", err))
 					return
 				}

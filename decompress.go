@@ -11,6 +11,7 @@ import (
 
 	commons "github.com/nguyengg/go-aws-commons"
 	"github.com/nguyengg/go-aws-commons/tspb"
+
 	"github.com/nguyengg/xy3/archive"
 	"github.com/nguyengg/xy3/internal"
 )
@@ -48,7 +49,7 @@ func decompress(ctx context.Context, name, dir string) (string, error) {
 
 	// the name of the output file will be the original with the codec ext trimmed off.
 	stem, ext := commons.StemExt(strings.TrimSuffix(name, cd.Ext()))
-	dst, err := commons.OpenExclFile(dir, stem, ext, 0666)
+	dst, err := commons.OpenExclFile(dir, stem, ext, 0o666)
 	if err != nil {
 		return "", fmt.Errorf("create output file error: %w", err)
 	}
@@ -96,7 +97,7 @@ func extract(ctx context.Context, name, dir string) (string, error) {
 
 	// decompress and extract contents into a unique directory.
 	stem, _ := commons.StemExt(strings.TrimSuffix(name, arc.ArchiveExt()))
-	target, err := commons.MkExclDir(dir, stem, 0755)
+	target, err := commons.MkExclDir(dir, stem, 0o755)
 	if err != nil {
 		return "", fmt.Errorf("create output directory error: %w", err)
 	}
@@ -149,7 +150,7 @@ func extract(ctx context.Context, name, dir string) (string, error) {
 		}
 
 		path := rootDir.Join(target, name)
-		if err = os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		if err = os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			_ = r.Close()
 			return "", fmt.Errorf(`create path to file "%s" error: %w`, path, err)
 		}

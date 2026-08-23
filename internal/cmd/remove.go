@@ -10,11 +10,13 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jessevdk/go-flags"
+
 	"github.com/nguyengg/xy3/internal"
 	"github.com/nguyengg/xy3/internal/config"
 )
@@ -32,7 +34,8 @@ func (c *Remove) Execute(args []string) (err error) {
 		return fmt.Errorf("unknown positional arguments: %s", strings.Join(args, " "))
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
+	// SIGKILL cannot be caught by a Go handler; register SIGINT and SIGTERM instead.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	if _, err = config.LoadProfile(ctx, c.Profile); err != nil {
@@ -44,6 +47,7 @@ func (c *Remove) Execute(args []string) (err error) {
 	reader := bufio.NewReader(os.Stdin)
 
 	success := 0
+	skipped := 0
 	failures := make([]error, 0)
 	n := len(c.Args.Files)
 
@@ -59,20 +63,20 @@ fileLoop:
 			fmt.Printf("\tN/n: to skip this file\n")
 			fmt.Printf("\tF/f: to start deleting without prompt for all remaining files including this\n")
 
-			line, err := reader.ReadString('\n')
-			if err != nil {
-				if errors.Is(err, io.EOF) {
-					log.Printf("stdin ended; successfully deleted %d/%d files", success, n)
+			line, rerr := reader.ReadString('\n')
+			if rerr != nil {
+				if errors.Is(rerr, io.EOF) {
+					log.Printf("stdin ended; successfully deleted %d/%d files (%d skipped)", success, n, skipped)
 					return nil
 				}
 
-				return fmt.Errorf("read prompt error: %w", err)
+				return fmt.Errorf("read prompt error: %w", rerr)
 			}
 			switch strings.ToLower(strings.TrimSpace(line)) {
 			case "y":
 				break promptLoop
 			case "n":
-				success++
+				skipped++
 				continue fileLoop
 			case "f":
 				prompt = false
@@ -85,18 +89,23 @@ fileLoop:
 		}
 
 		if errors.Is(err, context.Canceled) {
-			return nil
+			// break out so we can log a summary and return a non-zero-worthy interrupt error below.
+			break
 		}
 
 		logger.Printf("remove error: %v", err)
-		failures = append(failures, fmt.Errorf(`remove "%s" error: %v`, file, err))
+		failures = append(failures, fmt.Errorf(`remove "%s" error: %w`, file, err))
 	}
 
-	log.Printf("successfully deleted %d/%d files", success, n)
+	log.Printf("successfully deleted %d/%d files (%d skipped)", success, n, skipped)
+
+	// surface interrupt as an error so the process exits non-zero on Ctrl-C mid-batch.
+	if cerr := ctx.Err(); cerr != nil {
+		return cerr
+	}
+
 	if len(failures) != 0 {
-		for _, err = range failures {
-			log.Print(err)
-		}
+		return errors.Join(failures...)
 	}
 	return nil
 }

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	commons "github.com/nguyengg/go-aws-commons"
+
 	"github.com/nguyengg/xy3/internal"
 )
 
@@ -138,7 +139,7 @@ func Extract(ctx context.Context, src, dir string, optFns ...func(*ExtractOption
 		name := filepath.Join(dir, stem)
 	mkdirLoop:
 		for i := 0; ; {
-			switch err = os.Mkdir(name, 0755); {
+			switch err = os.Mkdir(name, 0o755); {
 			case err == nil:
 				dir = name
 				break mkdirLoop

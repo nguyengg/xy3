@@ -17,8 +17,10 @@ func Prefix(i, n int, name flags.Filename) string {
 	return fmt.Sprintf(`[%d/%d] "%s" - `, i, n, TruncateRightWithSuffix(filepath.Base(string(name)), 30, "..."))
 }
 
-type prefixKey struct{}
-type loggerKey struct{}
+type (
+	prefixKey struct{}
+	loggerKey struct{}
+)
 
 // WithPrefixLogger creates a new logger using the given prefix, then attaches both the logger and prefix to context.
 func WithPrefixLogger(ctx context.Context, prefix string) context.Context {

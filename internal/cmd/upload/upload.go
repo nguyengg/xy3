@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	commons "github.com/nguyengg/go-aws-commons"
 	"github.com/nguyengg/go-aws-commons/s3writer"
+
 	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
 )
@@ -82,12 +83,15 @@ func (c *Command) upload(ctx context.Context, name string) (err error) {
 			}
 		}()
 
-		// read first 512 bytes to detect content type.
-		// if this won't produce a usable content type then let S3 decides it (which is probably going to be "binary/octet-stream").
+		// read up to the first 512 bytes to detect content type.
+		// http.DetectContentType is happy with a short prefix, so tolerate io.EOF / io.ErrUnexpectedEOF —
+		// otherwise files under 512 bytes fail here on the short read.
 		data := make([]byte, 512)
-		if _, err = f.Read(data); err != nil {
+		n, err := io.ReadFull(f, data)
+		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
 			return fmt.Errorf("read first 512 bytes error: %w", err)
 		}
+		data = data[:n]
 
 		if v := http.DetectContentType(data); v != "application/octet-stream" {
 			contentType = &v
@@ -133,7 +137,7 @@ func (c *Command) upload(ctx context.Context, name string) (err error) {
 
 	// now generate the local .s3 file that contains the S3 URI. if writing to file fails, prints the JSON content
 	// to standard output so that they can be saved manually later.
-	mf, err := commons.OpenExclFile(".", stem, ext+".s3", 0666)
+	mf, err := commons.OpenExclFile(".", stem, ext+".s3", 0o666)
 	if err != nil {
 		_ = man.SaveTo(os.Stdout)
 		return fmt.Errorf("create manifest file error: %w", err)

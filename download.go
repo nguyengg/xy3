@@ -12,6 +12,7 @@ import (
 	"github.com/nguyengg/go-aws-commons/s3reader"
 	"github.com/nguyengg/go-aws-commons/sri"
 	"github.com/nguyengg/go-aws-commons/tspb"
+
 	"github.com/nguyengg/xy3/internal"
 )
 
@@ -93,7 +94,12 @@ func Download(ctx context.Context, client *s3.Client, bucket, key string, dst io
 		_, err = r.WriteTo(io.MultiWriter(dst, bar))
 	}
 
-	if _ = r.Close(); err != nil {
+	// close the reader unconditionally, but only surface its error if WriteTo itself succeeded —
+	// otherwise the WriteTo error is the more actionable one to return.
+	if cerr := r.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
 		return fmt.Errorf("download error: %w", err)
 	}
 

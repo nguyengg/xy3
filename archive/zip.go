@@ -12,12 +12,12 @@ import (
 	"strings"
 
 	"github.com/krolaw/zipstream"
+
 	"github.com/nguyengg/xy3/internal"
 )
 
 // Zip implements Archiver for ZIP files.
-type Zip struct {
-}
+type Zip struct{}
 
 var _ Archiver = Zip{}
 

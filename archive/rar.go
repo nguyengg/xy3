@@ -10,8 +10,7 @@ import (
 )
 
 // Rar implements Archiver for RAR files.
-type Rar struct {
-}
+type Rar struct{}
 
 var _ Archiver = Rar{}
 

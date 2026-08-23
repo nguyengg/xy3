@@ -1,23 +1,31 @@
 package internal
 
-// TruncateRight keeps the first len number of runes of text.
-func TruncateRight(text string, len int) string {
-	return TruncateRightWithSuffix(text, len, "")
+// TruncateRight keeps the first n runes of text.
+func TruncateRight(text string, n int) string {
+	return TruncateRightWithSuffix(text, n, "")
 }
 
-// TruncateRightWithSuffix keeps the first len number of runes of text and only append the suffix if truncation happens.
-func TruncateRightWithSuffix(text string, len int, suffix string) string {
-	if len <= 0 {
+// TruncateRightWithSuffix keeps the first n runes of text and only appends the suffix if truncation happens.
+func TruncateRightWithSuffix(text string, n int, suffix string) string {
+	if n <= 0 {
 		return suffix
 	}
 
-	rs := make([]rune, 0, len)
-	for i, r := range text {
-		if i >= len {
+	rs := make([]rune, 0, n)
+	count := 0
+	truncated := false
+	for _, r := range text {
+		if count >= n {
+			truncated = true
 			break
 		}
 
 		rs = append(rs, r)
+		count++
+	}
+
+	if !truncated {
+		return string(rs)
 	}
 
 	for _, r := range suffix {

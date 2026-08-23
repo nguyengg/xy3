@@ -8,8 +8,10 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/jessevdk/go-flags"
+
 	"github.com/nguyengg/xy3"
 	"github.com/nguyengg/xy3/internal"
 )
@@ -26,7 +28,8 @@ func (c *Extract) Execute(args []string) (err error) {
 		return fmt.Errorf("unknown positional arguments: %s", strings.Join(args, " "))
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
+	// SIGKILL cannot be caught by a Go handler; register SIGINT and SIGTERM instead.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	success := 0
@@ -40,7 +43,7 @@ func (c *Extract) Execute(args []string) (err error) {
 		if _, err = xy3.Decompress(ctx, string(file), ".", func(opts *xy3.DecompressOptions) {
 			opts.NoExtract = c.DecompressOnly
 		}); err == nil {
-			logger.Printf("done decompresing")
+			logger.Printf("done decompressing")
 			success++
 			continue
 		}
@@ -50,14 +53,18 @@ func (c *Extract) Execute(args []string) (err error) {
 		}
 
 		logger.Printf("decompress error: %v", err)
-		failures = append(failures, fmt.Errorf(`decompress "%s" error: %v`, file, err))
+		failures = append(failures, fmt.Errorf(`decompress "%s" error: %w`, file, err))
 	}
 
 	log.Printf("successfully decompressed %d/%d files", success, n)
+
+	// surface interrupt so the process exits non-zero on Ctrl-C mid-batch.
+	if cerr := ctx.Err(); cerr != nil {
+		return cerr
+	}
+
 	if len(failures) != 0 {
-		for _, err = range failures {
-			log.Print(err)
-		}
+		return errors.Join(failures...)
 	}
 	return nil
 }

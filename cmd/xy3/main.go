@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/jessevdk/go-flags"
+
 	"github.com/nguyengg/xy3/internal/cmd"
 )
 
@@ -17,7 +18,7 @@ func main() {
 		_, err = p.Parse()
 	}
 	if err != nil && !flags.WroteHelp(err) {
-		_, _ = fmt.Fprintf(os.Stderr, "%v", err)
+		_, _ = fmt.Fprintf(os.Stderr, "%v\n", err)
 	}
 
 	exit(err)

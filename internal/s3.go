@@ -23,7 +23,7 @@ func FindUnusedS3Key(ctx context.Context, client *s3.Client, bucket, prefix, ste
 			Key:    aws.String(key),
 			// TODO support ExpectedBucketOwner
 		}); err != nil {
-			if errors.Is(err, context.Canceled) {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return "", err
 			}
 

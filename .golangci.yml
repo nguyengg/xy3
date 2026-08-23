@@ -48,7 +48,7 @@ linters:
         - G304   # this tool legitimately opens user-supplied paths
 
     misspell:
-      locale: US
+      locale: UK
 
   exclusions:
     generated: lax

@@ -46,7 +46,9 @@ func (l *Loader) Load(ctx context.Context) (string, error) {
 				break
 			}
 
-			continue
+			// a directory literally named ".xy3" is not a valid config; treat it like "not found"
+			// and continue upward. skipping this case previously spun the loop forever on the same path.
+			err = os.ErrNotExist
 		}
 
 		if os.IsNotExist(err) {
