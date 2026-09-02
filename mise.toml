@@ -1,6 +1,6 @@
 [tools]
 # language toolchain
-go = "1.27"
+go = "1.27.1"
 
 # task runner (single command to build linux + windows)
 task = "3"
